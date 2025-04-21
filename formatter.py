@@ -476,8 +476,9 @@ def format_articles(articles, html=False):
 
 def filter_articles_by_date(articles, days=1):
     """
-    Filter articles to only include those published exactly on the target date.
-    Much stricter date filtering to ensure accuracy.
+    Filter articles based on publication date with fallback options.
+    First tries to get articles from exactly the target date (yesterday by default).
+    If no articles are found, falls back to including articles from today.
     
     Args:
         articles (list): List of article dictionaries
@@ -486,74 +487,133 @@ def filter_articles_by_date(articles, days=1):
     Returns:
         list: Filtered list of articles
     """
-    filtered_articles = []
     target_date = datetime.now() - timedelta(days=days)
     target_date_str = target_date.strftime('%Y-%m-%d')
-    print(f"[INFO] Filtering for articles from exactly: {target_date_str}")
+    today_date = datetime.now().date()
+    
+    print(f"[INFO] Filtering for articles from: {target_date_str}")
     print(f"[INFO] Starting with {len(articles)} articles")
     
-    # First pass with strict filtering
+    # First pass - strict filtering for target date only
+    filtered_articles = []
+    
+    # Date formats to try
+    date_formats = [
+        '%a, %d %b %Y %H:%M:%S %z',  # RFC 822 format
+        '%a, %d %b %Y %H:%M:%S %Z',
+        '%Y-%m-%dT%H:%M:%S%z',       # ISO format
+        '%Y-%m-%dT%H:%M:%SZ',
+        '%Y-%m-%dT%H:%M:%S.%f%z',
+        '%Y-%m-%d %H:%M:%S',
+        '%a, %d %b %Y %H:%M:%S',
+        '%d %b %Y %H:%M:%S',
+        '%Y/%m/%d',
+        '%m/%d/%Y',
+        '%B %d, %Y',
+        '%d %B %Y',
+        '%A, %B %d, %Y',
+        '%A, %d %B %Y'
+    ]
+    
     for article in articles:
         try:
             # Try different date formats
             published_str = article.get('published', '')
             if not published_str or published_str == 'Unknown Date':
-                # Skip articles with unknown dates for strict filtering
-                print(f"[INFO] Excluding article with unknown date: {article.get('title', 'No Title')}")
                 continue
                 
-            # Try parsing the date in different formats
-            date_formats = [
-                '%a, %d %b %Y %H:%M:%S %z',  # RFC 822 format
-                '%a, %d %b %Y %H:%M:%S %Z',
-                '%Y-%m-%dT%H:%M:%S%z',       # ISO format
-                '%Y-%m-%dT%H:%M:%SZ',
-                '%Y-%m-%dT%H:%M:%S.%f%z',
-                '%Y-%m-%d %H:%M:%S',
-                '%a, %d %b %Y %H:%M:%S',
-                '%d %b %Y %H:%M:%S',
-                '%Y/%m/%d',
-                '%m/%d/%Y',
-                '%B %d, %Y',
-                '%d %B %Y',
-                '%A, %B %d, %Y',
-                '%A, %d %B %Y'
-            ]
-            
             parsed = False
             for date_format in date_formats:
                 try:
                     published_date = datetime.strptime(published_str, date_format)
                     parsed = True
-                    # Strict check: only include articles from exactly the target date
+                    
+                    # If article is from target date, include it
                     if published_date.date() == target_date.date():
                         filtered_articles.append(article)
-                        print(f"[INFO] Including article from {published_date.date()}: {article.get('title', 'No Title')}")
+                        print(f"[INFO] Including article from target date {published_date.date()}: {article.get('title', 'No Title')}")
                     else:
                         print(f"[INFO] Excluding article from {published_date.date()}: {article.get('title', 'No Title')}")
                     break
                 except ValueError:
                     continue
             
-            # If we couldn't parse the date with any format, skip the article
             if not parsed:
                 print(f"[INFO] Excluding article with unparseable date: {article.get('title', 'No Title')}")
                 
         except Exception as e:
-            # If date parsing fails completely, also skip
             print(f"[INFO] Excluding article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
     
-    # If we end up with too few articles, add a fallback mechanism but with a note
-    min_articles = 3  # At least 3 articles to make the newsletter worthwhile
-    if len(filtered_articles) < min_articles and len(articles) > min_articles:
-        print(f"[WARN] Only {len(filtered_articles)} articles passed strict date filtering.")
-        print(f"[INFO] Adding a note to the newsletter about incomplete daily coverage.")
+    # If we don't have enough articles from target date, include today's articles
+    if len(filtered_articles) < 3:
+        print(f"[INFO] Not enough articles from {target_date_str}. Including today's articles as well.")
+        today_articles = []
         
-        # We don't automatically include non-matching articles anymore
-        # Instead we'll add a note to the newsletter later
-        # This maintains date accuracy
+        for article in articles:
+            try:
+                published_str = article.get('published', '')
+                if not published_str or published_str == 'Unknown Date':
+                    # For articles with no date, include a few to ensure we have content
+                    if len(filtered_articles) + len(today_articles) < 10:
+                        today_articles.append(article)
+                        print(f"[INFO] Including article with unknown date: {article.get('title', 'No Title')}")
+                    continue
+                    
+                for date_format in date_formats:
+                    try:
+                        published_date = datetime.strptime(published_str, date_format)
+                        # Include articles from today
+                        if published_date.date() == today_date:
+                            today_articles.append(article)
+                            print(f"[INFO] Including article from today {published_date.date()}: {article.get('title', 'No Title')}")
+                        break
+                    except ValueError:
+                        continue
+                        
+            except Exception:
+                pass
+        
+        filtered_articles.extend(today_articles)
     
-    print(f"[INFO] Filtered to {len(filtered_articles)} articles exactly from {target_date_str}")
+    # If we still don't have enough articles, include the most recent ones regardless of date
+    if len(filtered_articles) < 3:
+        print(f"[INFO] Still not enough articles. Including most recent available articles.")
+        
+        # Try to sort articles by date if possible
+        dated_articles = []
+        for article in articles:
+            if article in filtered_articles:
+                continue  # Skip articles already included
+                
+            try:
+                published_str = article.get('published', '')
+                if not published_str or published_str == 'Unknown Date':
+                    continue
+                    
+                for date_format in date_formats:
+                    try:
+                        published_date = datetime.strptime(published_str, date_format)
+                        dated_articles.append((published_date, article))
+                        break
+                    except ValueError:
+                        continue
+            except Exception:
+                pass
+        
+        # Sort by date (most recent first) and take what we need
+        if dated_articles:
+            dated_articles.sort(reverse=True)  # Sort most recent first
+            needed = max(0, 5 - len(filtered_articles))  # Get enough to have at least 5 articles
+            for _, article in dated_articles[:needed]:
+                filtered_articles.append(article)
+                print(f"[INFO] Including recent article: {article.get('title', 'No Title')}")
+    
+    # If we still have no articles, include some without date checking (last resort)
+    if not filtered_articles and articles:
+        print(f"[WARN] No dated articles found. Including up to 5 articles without date checking.")
+        filtered_articles = articles[:5]  # Include up to 5 articles
+    
+    print(f"[INFO] Final article count: {len(filtered_articles)} articles")
     return filtered_articles
 
 def deduplicate_articles(articles, similarity_threshold=0.7):
