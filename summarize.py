@@ -100,10 +100,17 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                         count += 1
                     except Exception as fallback_error:
                         print(f"    [ERROR] Fallback failed for: {entry.link}\n    Reason: {fallback_error}")
-                        skipped_articles.append({
+                        # Use RSS feed's summary as a last resort
+                        preview_content = entry.summary if 'summary' in entry else "No preview available."
+                        all_articles.append({
+                            'title': entry.title if 'title' in entry else "No Title",
                             'url': entry.link,
-                            'reason': str(fallback_error)
+                            'source': source_name,
+                            'category': category,
+                            'published': entry.published if 'published' in entry else "Unknown",
+                            'content': preview_content
                         })
+                        count += 1
 
     # Log skipped articles
     if skipped_articles:
