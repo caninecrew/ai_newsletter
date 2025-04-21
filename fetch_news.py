@@ -1,5 +1,11 @@
 import feedparser
 from newspaper import Article
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import WebDriverException
+import time
 
 # --- RSS Feed Definitions ---
 
@@ -38,32 +44,73 @@ RSS_FEEDS = {
 
 def fetch_articles_from_all_feeds(max_articles_per_source=3):
     all_articles = []
+    skipped_articles = []  # To log skipped articles
 
-    for category, feeds in RSS_FEEDS.items():
-        print(f"\n[INFO] Fetching articles for category: {category}")
-        for source_name, feed_url in feeds.items():
-            print(f"  • From: {source_name}")
-            feed = feedparser.parse(feed_url)
-            count = 0
+    # Configure Selenium WebDriver
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    service = Service("path/to/chromedriver")  # Update with the path to your ChromeDriver
 
-            for entry in feed.entries:
-                if count >= max_articles_per_source:
-                    break
-                try:
-                    article = Article(entry.link)
-                    article.download()
-                    article.parse()
-                    all_articles.append({
-                        'title': article.title,
-                        'url': article.url,
-                        'source': source_name,
-                        'category': category,
-                        'published': entry.published if 'published' in entry else "Unknown",
-                        'content': article.text
-                    })
-                    count += 1
-                except Exception as e:
-                    print(f"    [WARN] Skipping article: {entry.link}\n    Reason: {e}")
+    try:
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        for category, feeds in RSS_FEEDS.items():
+            print(f"\n[INFO] Fetching articles for category: {category}")
+            for source_name, feed_url in feeds.items():
+                print(f"  • From: {source_name}")
+                feed = feedparser.parse(feed_url)
+                count = 0
+
+                for entry in feed.entries:
+                    if count >= max_articles_per_source:
+                        break
+                    try:
+                        article = Article(entry.link)
+                        article.download()
+                        article.parse()
+                        all_articles.append({
+                            'title': article.title,
+                            'url': article.url,
+                            'source': source_name,
+                            'category': category,
+                            'published': entry.published if 'published' in entry else "Unknown",
+                            'content': article.text
+                        })
+                        count += 1
+                    except Exception as e:
+                        print(f"    [WARN] Newspaper failed for: {entry.link}\n    Reason: {e}")
+                        # Fallback to Selenium
+                        try:
+                            driver.get(entry.link)
+                            time.sleep(3)  # Allow time for the page to load
+                            content = driver.find_element(By.TAG_NAME, "body").text
+                            all_articles.append({
+                                'title': entry.title if 'title' in entry else "No Title",
+                                'url': entry.link,
+                                'source': source_name,
+                                'category': category,
+                                'published': entry.published if 'published' in entry else "Unknown",
+                                'content': content[:10000]  # Limit content length
+                            })
+                            count += 1
+                        except WebDriverException as selenium_error:
+                            print(f"    [ERROR] Selenium failed for: {entry.link}\n    Reason: {selenium_error}")
+                            skipped_articles.append({
+                                'url': entry.link,
+                                'reason': str(selenium_error)
+                            })
+
+        # Log skipped articles
+        if skipped_articles:
+            print("\n[INFO] Skipped Articles:")
+            for skipped in skipped_articles:
+                print(f"  - URL: {skipped['url']}\n    Reason: {skipped['reason']}")
+
+    finally:
+        driver.quit()  # Ensure the WebDriver is closed
 
     return all_articles
 
