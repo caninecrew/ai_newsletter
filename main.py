@@ -26,18 +26,18 @@ def run_newsletter():
         for i, article in enumerate(raw_articles[:5]):
             print(f"[DEBUG] Article {i+1}: {article.get('title', 'No Title')} - {article.get('source', 'Unknown')}")
     
-    # Filter by date (or skip if flag is set)
+    # Filter by date - using past 24 hours instead of just yesterday
     if SKIP_DATE_FILTER:
         print("[INFO] Skipping date filtering as requested by command line flag")
-        yesterday_articles = raw_articles
+        recent_articles = raw_articles
     else:
-        yesterday_articles = filter_articles_by_date(raw_articles, days=1)
+        recent_articles = filter_articles_by_date(raw_articles, hours=24)  # Using hours parameter
     
     if DEBUG_MODE:
-        print(f"[DEBUG] After date filtering: {len(yesterday_articles)} articles")
+        print(f"[DEBUG] After date filtering: {len(recent_articles)} articles")
     
     # Deduplicate articles to avoid similar content
-    deduplicated_articles = deduplicate_articles(yesterday_articles)
+    deduplicated_articles = deduplicate_articles(recent_articles)
     
     if DEBUG_MODE:
         print(f"[DEBUG] After deduplication: {len(deduplicated_articles)} articles")
@@ -69,12 +69,12 @@ def send_newsletter():
 
     if len(articles) <= 1:
         print(f"[WARN] Only {len(articles)} article(s) found for newsletter. This might produce a sparse newsletter.")
-        # You might want to set a minimum threshold (e.g., retry fetching or exit)
     
     formatted_html = format_articles(articles, html=True)
 
-    # Get yesterday's date for the subject line
-    yesterday = (datetime.now() - timedelta(days=1)).strftime('%A, %B %d, %Y')
+    # Use "Past 24 Hours" instead of yesterday's date
+    current_time = datetime.now()
+    time_range = f"{(current_time - timedelta(hours=24)).strftime('%B %d, %H:%M')} - {current_time.strftime('%B %d, %H:%M, %Y')}"
 
     # Load email configuration from environment variables
     recipient_email = os.getenv("RECIPIENT_EMAIL")
@@ -87,11 +87,12 @@ def send_newsletter():
     if not recipient_email or not sender_email or not smtp_password:
         raise ValueError("Missing required email configuration in .env file.")
 
-    # Create a more engaging subject line with yesterday's date
-    subject = f"📰 Your AI Newsletter Summary for {yesterday} ({len(articles)} articles)"
+    # Create a more engaging subject line with the 24-hour time range
+    subject = f"📰 Your AI Newsletter Summary: Last 24 Hours ({len(articles)} articles)"
     
     if DEBUG_MODE:
         print(f"[DEBUG] About to send email with {len(articles)} articles")
+        print(f"[DEBUG] Time range: {time_range}")
         print("[DEBUG] Email will be sent to:", recipient_email)
         print("[DEBUG] From:", sender_email)
         print("[DEBUG] Subject:", subject)
@@ -116,9 +117,17 @@ def send_newsletter():
             is_html=True
         )
         
-        print(f"✅ Newsletter for {yesterday} sent successfully to {recipient_email} with {len(articles)} articles")
+        print(f"✅ Newsletter for {time_range} sent successfully to {recipient_email} with {len(articles)} articles")
+        
+        # Log the successful send
+        with open("logs.txt", "a") as log_file:
+            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Sent newsletter with {len(articles)} articles to {recipient_email}\n")
     else:
         print("❌ No newsletter sent because no articles were found")
+        
+        # Log the failure
+        with open("logs.txt", "a") as log_file:
+            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Failed to send newsletter: No articles found\n")
 
 if __name__ == "__main__":
     send_newsletter()
