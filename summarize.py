@@ -4,6 +4,16 @@ from newspaper.article import ArticleException
 import nltk
 import requests
 from bs4 import BeautifulSoup
+import os
+from dotenv import load_dotenv
+import openai
+import time
+
+# Load environment variables
+load_dotenv()
+
+# Set up OpenAI API
+openai.api_key = os.environ.get('OPENAI_API_KEY')
 
 # Ensure required NLTK resources are available
 try:
@@ -121,11 +131,66 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
     return all_articles
 
 
+# --- OpenAI Summarization ---
+
+def summarize_with_openai(text, title=None, max_retries=3, retry_delay=1):
+    """
+    Summarize text using OpenAI's API.
+    
+    Args:
+        text (str): The article text to summarize
+        title (str): The article title for context
+        max_retries (int): Maximum number of retries for API calls
+        retry_delay (int): Delay between retries in seconds
+        
+    Returns:
+        str: Summarized text
+    """
+    # Check if OpenAI API key is available
+    if not openai.api_key:
+        print("[WARN] OpenAI API key not set. Skipping AI summarization.")
+        return None
+        
+    # Prepare the text for summarization
+    context = f"Title: {title}\n\nContent: {text}" if title else text
+    # Truncate if too long for API call
+    if len(context) > 15000:
+        context = context[:15000] + "..."
+        
+    prompt = "Summarize the following news article in 3-4 well-structured paragraphs. Maintain factual accuracy, political neutrality, and journalistic tone. Focus on key events, quotes, and implications:"
+    
+    # Try to get a summary with retries for API errors
+    attempts = 0
+    while attempts < max_retries:
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o-mini",  # Use a suitable model
+                messages=[
+                    {"role": "system", "content": "You are a professional news editor tasked with creating concise, informative summaries of news articles."},
+                    {"role": "user", "content": f"{prompt}\n\n{context}"}
+                ],
+                temperature=0.5,
+                max_tokens=500
+            )
+            summary = response.choices[0].message.content.strip()
+            return summary
+            
+        except Exception as e:
+            attempts += 1
+            print(f"[WARN] OpenAI API error (attempt {attempts}/{max_retries}): {e}")
+            if attempts < max_retries:
+                time.sleep(retry_delay)
+            else:
+                print(f"[ERROR] Failed to get OpenAI summary after {max_retries} attempts")
+                return None
+
+
 # --- Summarization Logic ---
 
 def summarize_articles(articles):
     """
     Summarizes the content of each article in the provided list.
+    Uses OpenAI API if available, falls back to traditional methods.
 
     Args:
         articles (list): List of articles, each represented as a dictionary.
@@ -136,36 +201,61 @@ def summarize_articles(articles):
     print(f"[INFO] Summarizing {len(articles)} articles")
     summarized = []
     
+    # Check if OpenAI API key is configured
+    use_openai = bool(openai.api_key)
+    if use_openai:
+        print("[INFO] Using OpenAI for article summarization")
+    else:
+        print("[INFO] OpenAI API key not found - using fallback summarization")
+    
     for i, article in enumerate(articles):
         try:
-            # Don't re-download if we already have content
-            if article.get('content'):
-                # Just truncate the existing content if it's too long
-                if len(article['content']) > 5000:
-                    article['summary'] = article['content'][:5000] + "..."
-                else:
-                    article['summary'] = article['content']
+            title = article.get('title', '')
+            content = article.get('content', '')
+            
+            # Skip if no content
+            if not content:
+                article['summary'] = "No content available to summarize."
                 summarized.append(article)
                 continue
             
-            # Use newspaper library's built-in summarization only if we need to fetch content
-            article_url = article.get('url', '')
-            if article_url:
+            # Try OpenAI summarization first if API key is available
+            if use_openai:
                 try:
+                    ai_summary = summarize_with_openai(content, title)
+                    if ai_summary:
+                        article['summary'] = ai_summary
+                        article['summary_method'] = 'openai'
+                        summarized.append(article)
+                        print(f"[INFO] Used OpenAI to summarize: {title}")
+                        
+                        # Log progress for every article with OpenAI
+                        print(f"[INFO] Summarized {i+1}/{len(articles)} articles using OpenAI")
+                        continue
+                except Exception as e:
+                    print(f"[ERROR] OpenAI summarization failed for {title}: {e}")
+                    # Continue to fallback methods
+            
+            # Fallback 1: If content is too long, use newspaper's built-in summarization
+            if len(content) > 1000:
+                try:
+                    article_url = article.get('url', '')
                     from newspaper import Article as NewspaperArticle
                     article_obj = NewspaperArticle(article_url)
                     article_obj.download()
                     article_obj.parse()
                     article_obj.nlp()
                     article['summary'] = article_obj.summary
-                    # If no content in the article, use the summary as content too
-                    if not article.get('content'):
-                        article['content'] = article_obj.text
+                    article['summary_method'] = 'newspaper'
                 except Exception as e:
-                    print(f"[WARN] Could not summarize {article_url}: {e}")
-                    article['summary'] = article.get('content', 'Summary not available.')
+                    print(f"[WARN] Newspaper summarization failed for {title}: {e}")
+                    # Truncate long content as a last resort
+                    article['summary'] = content[:1000] + "..."
+                    article['summary_method'] = 'truncation'
             else:
-                article['summary'] = article.get('content', 'Summary not available.')
+                # For short articles, just use the content directly
+                article['summary'] = content
+                article['summary_method'] = 'passthrough'
             
             summarized.append(article)
             
@@ -177,9 +267,21 @@ def summarize_articles(articles):
             print(f"[ERROR] Failed to process article {article.get('title', 'Unknown')}: {e}")
             # Still include the article with a default summary
             article['summary'] = article.get('content', 'Summary not available.')
+            article['summary_method'] = 'error'
             summarized.append(article)
     
     print(f"[INFO] Summary complete. Processed {len(summarized)}/{len(articles)} articles successfully")
+    
+    # Print summary of methods used
+    methods = {}
+    for article in summarized:
+        method = article.get('summary_method', 'unknown')
+        methods[method] = methods.get(method, 0) + 1
+    
+    print("[INFO] Summarization methods used:")
+    for method, count in methods.items():
+        print(f"  - {method}: {count} articles")
+        
     return summarized
 
 
@@ -194,5 +296,6 @@ if __name__ == "__main__":
         print(f"Source: {article['source']} ({article['category']})")
         print(f"URL: {article['url']}")
         print(f"Published: {article['published']}")
+        print(f"Method: {article.get('summary_method', 'unknown')}")
         print(f"Content Preview:\n{article['content'][:300]}...\n")
         print(f"Summary:\n{article['summary']}\n")
