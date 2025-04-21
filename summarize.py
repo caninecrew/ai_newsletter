@@ -10,6 +10,13 @@ except LookupError:
     print("[INFO] Downloading NLTK 'punkt' resource...")
     nltk.download('punkt')
 
+# Fallback for potential `punkt_tab` issue
+try:
+    nltk.data.find('tokenizers/punkt_tab/english')
+except LookupError:
+    print("[INFO] Attempting to resolve 'punkt_tab' issue...")
+    nltk.download('punkt')  # Re-download 'punkt' as a fallback
+
 # --- RSS Feed Definitions ---
 
 RSS_FEEDS = {
