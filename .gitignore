@@ -11,4 +11,3 @@ __pycache__/
 *.xlsx
 .env
 *.env
-*.github/
