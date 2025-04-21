@@ -1,5 +1,14 @@
 import feedparser
 from newspaper import Article
+from newspaper.article import ArticleException
+import nltk
+
+# Ensure required NLTK resources are downloaded
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    print("[INFO] Downloading NLTK 'punkt' resource...")
+    nltk.download('punkt')
 
 # --- RSS Feed Definitions ---
 
@@ -62,16 +71,49 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                         'content': article.text
                     })
                     count += 1
-                except Exception as e:
+                except ArticleException as e:
                     print(f"    [WARN] Skipping article: {entry.link}\n    Reason: {e}")
+                except Exception as e:
+                    if "403 Client Error" in str(e):
+                        print(f"    [WARN] Skipping article due to 403 Forbidden: {entry.link}")
+                    else:
+                        print(f"    [WARN] Skipping article: {entry.link}\n    Reason: {e}")
 
     return all_articles
+
+
+# --- Summarization Logic ---
+
+def summarize_articles(articles):
+    """
+    Summarizes the content of each article in the provided list.
+
+    Args:
+        articles (list): List of articles, each represented as a dictionary.
+
+    Returns:
+        list: List of articles with an added 'summary' field.
+    """
+    for article in articles:
+        try:
+            # Use the newspaper library's built-in summarization
+            article_obj = Article(article['url'])
+            article_obj.download()
+            article_obj.parse()
+            article_obj.nlp()
+            article['summary'] = article_obj.summary
+        except ArticleException as e:
+            print(f"[WARN] Could not summarize article: {article['url']}\nReason: {e}")
+            article['summary'] = "Summary not available."
+
+    return articles
 
 
 # --- Test Execution ---
 
 if __name__ == "__main__":
     articles = fetch_articles_from_all_feeds()
+    articles = summarize_articles(articles)
     for i, article in enumerate(articles, 1):
         print(f"\n--- Article {i} ---")
         print(f"Title: {article['title']}")
@@ -79,3 +121,4 @@ if __name__ == "__main__":
         print(f"URL: {article['url']}")
         print(f"Published: {article['published']}")
         print(f"Content Preview:\n{article['content'][:300]}...\n")
+        print(f"Summary:\n{article['summary']}\n")
