@@ -50,9 +50,11 @@ def send_newsletter():
     if not articles or len(articles) == 0:
         print("[ERROR] No articles to include in the newsletter!")
         # If in DEBUG_MODE, try running without the date filter
+        global SKIP_DATE_FILTER
         if DEBUG_MODE and not SKIP_DATE_FILTER:
             print("[INFO] Rerunning with date filter disabled...")
-            global SKIP_DATE_FILTER
+            # Declare global before using it
+            
             SKIP_DATE_FILTER = True
             articles = run_newsletter()
 
