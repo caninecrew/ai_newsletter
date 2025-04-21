@@ -55,6 +55,7 @@ RSS_FEEDS = {
 
 def fetch_articles_from_all_feeds(max_articles_per_source=3):
     all_articles = []
+    skipped_articles = []  # To log skipped articles
 
     for category, feeds in RSS_FEEDS.items():
         print(f"\n[INFO] Fetching articles for category: {category}")
@@ -83,7 +84,8 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                     print(f"    [WARN] Newspaper failed for: {entry.link}\n    Reason: {e}")
                     # Fallback to requests + BeautifulSoup
                     try:
-                        response = requests.get(entry.link, timeout=10)
+                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                        response = requests.get(entry.link, headers=headers, timeout=10)
                         response.raise_for_status()
                         soup = BeautifulSoup(response.text, 'html.parser')
                         content = soup.get_text(separator="\n").strip()
@@ -98,6 +100,16 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                         count += 1
                     except Exception as fallback_error:
                         print(f"    [ERROR] Fallback failed for: {entry.link}\n    Reason: {fallback_error}")
+                        skipped_articles.append({
+                            'url': entry.link,
+                            'reason': str(fallback_error)
+                        })
+
+    # Log skipped articles
+    if skipped_articles:
+        print("\n[INFO] Skipped Articles:")
+        for skipped in skipped_articles:
+            print(f"  - URL: {skipped['url']}\n    Reason: {skipped['reason']}")
 
     return all_articles
 
