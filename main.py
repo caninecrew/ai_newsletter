@@ -53,7 +53,9 @@ def run_newsletter():
     return summaries
 
 def send_newsletter():
-    load_dotenv()
+    # Load environment variables from .env file if available
+    # This won't fail if the .env file doesn't exist (GitHub Actions)
+    load_dotenv(override=True)
 
     # Fetch, filter, deduplicate, and summarize articles
     articles = run_newsletter()
@@ -77,15 +79,14 @@ def send_newsletter():
     time_range = f"{(current_time - timedelta(hours=24)).strftime('%B %d, %H:%M')} - {current_time.strftime('%B %d, %H:%M, %Y')}"
 
     # Load email configuration from environment variables
-    recipient_email = os.getenv("RECIPIENT_EMAIL")
-    sender_email = os.getenv("SMTP_EMAIL")
-    smtp_server = os.getenv("SMTP_SERVER")
-    smtp_port = int(os.getenv("SMTP_PORT"))
-    smtp_password = os.getenv("SMTP_PASS")
-    sender_name = os.getenv("SENDER_NAME", "Newsletter Bot")
+    recipient_email = os.environ.get("RECIPIENT_EMAIL")
+    sender_email = os.environ.get("SMTP_EMAIL")
+    smtp_server = os.environ.get("SMTP_SERVER")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_password = os.environ.get("SMTP_PASS")
 
     if not recipient_email or not sender_email or not smtp_password:
-        raise ValueError("Missing required email configuration in .env file.")
+        raise ValueError("Missing required email configuration in environment variables.")
 
     # Create a more engaging subject line with the 24-hour time range
     subject = f"📰 Your AI Newsletter Summary: Last 24 Hours ({len(articles)} articles)"
