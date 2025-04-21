@@ -100,8 +100,8 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                         count += 1
                     except Exception as fallback_error:
                         print(f"    [ERROR] Fallback failed for: {entry.link}\n    Reason: {fallback_error}")
-                        # Use RSS feed's summary as a last resort
-                        preview_content = entry.summary if 'summary' in entry else "No preview available."
+                        # Use RSS feed's summary as a last resort or provide a link
+                        preview_content = entry.summary if 'summary' in entry else f"Read more: {entry.link}"
                         all_articles.append({
                             'title': entry.title if 'title' in entry else "No Title",
                             'url': entry.link,
