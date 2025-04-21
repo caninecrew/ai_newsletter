@@ -133,19 +133,54 @@ def summarize_articles(articles):
     Returns:
         list: List of articles with an added 'summary' field.
     """
-    for article in articles:
+    print(f"[INFO] Summarizing {len(articles)} articles")
+    summarized = []
+    
+    for i, article in enumerate(articles):
         try:
-            # Use the newspaper library's built-in summarization
-            article_obj = Article(article['url'])
-            article_obj.download()
-            article_obj.parse()
-            article_obj.nlp()
-            article['summary'] = article_obj.summary
-        except ArticleException as e:
-            print(f"[WARN] Could not summarize article: {article['url']}\nReason: {e}")
-            article['summary'] = "Summary not available."
-
-    return articles
+            # Don't re-download if we already have content
+            if article.get('content'):
+                # Just truncate the existing content if it's too long
+                if len(article['content']) > 5000:
+                    article['summary'] = article['content'][:5000] + "..."
+                else:
+                    article['summary'] = article['content']
+                summarized.append(article)
+                continue
+            
+            # Use newspaper library's built-in summarization only if we need to fetch content
+            article_url = article.get('url', '')
+            if article_url:
+                try:
+                    from newspaper import Article as NewspaperArticle
+                    article_obj = NewspaperArticle(article_url)
+                    article_obj.download()
+                    article_obj.parse()
+                    article_obj.nlp()
+                    article['summary'] = article_obj.summary
+                    # If no content in the article, use the summary as content too
+                    if not article.get('content'):
+                        article['content'] = article_obj.text
+                except Exception as e:
+                    print(f"[WARN] Could not summarize {article_url}: {e}")
+                    article['summary'] = article.get('content', 'Summary not available.')
+            else:
+                article['summary'] = article.get('content', 'Summary not available.')
+            
+            summarized.append(article)
+            
+            # Log progress for every 5 articles
+            if (i+1) % 5 == 0:
+                print(f"[INFO] Summarized {i+1}/{len(articles)} articles")
+                
+        except Exception as e:
+            print(f"[ERROR] Failed to process article {article.get('title', 'Unknown')}: {e}")
+            # Still include the article with a default summary
+            article['summary'] = article.get('content', 'Summary not available.')
+            summarized.append(article)
+    
+    print(f"[INFO] Summary complete. Processed {len(summarized)}/{len(articles)} articles successfully")
+    return summarized
 
 
 # --- Test Execution ---

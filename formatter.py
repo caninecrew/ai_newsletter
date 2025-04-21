@@ -401,6 +401,7 @@ def format_articles(articles, html=False):
 def filter_articles_by_date(articles, days=1):
     """
     Filter articles to only include those from the specified number of days back.
+    Now with more flexible date parsing and optional fallback to include more content.
     
     Args:
         articles (list): List of article dictionaries
@@ -411,7 +412,10 @@ def filter_articles_by_date(articles, days=1):
     """
     filtered_articles = []
     target_date = datetime.now() - timedelta(days=days)
+    print(f"[INFO] Filtering for articles from: {target_date.strftime('%Y-%m-%d')}")
+    print(f"[INFO] Starting with {len(articles)} articles")
     
+    # First pass with strict filtering
     for article in articles:
         try:
             # Try different date formats
@@ -419,20 +423,62 @@ def filter_articles_by_date(articles, days=1):
             if not published_str or published_str == 'Unknown Date':
                 # Include articles with unknown dates to avoid losing content
                 filtered_articles.append(article)
+                print(f"[INFO] Including article with unknown date: {article.get('title', 'No Title')}")
                 continue
                 
             # Try parsing the date in different formats
-            for date_format in ['%a, %d %b %Y %H:%M:%S %z', '%a, %d %b %Y %H:%M:%S %Z', '%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%d %H:%M:%S']:
+            date_formats = [
+                '%a, %d %b %Y %H:%M:%S %z',  # RFC 822 format
+                '%a, %d %b %Y %H:%M:%S %Z',
+                '%Y-%m-%dT%H:%M:%S%z',       # ISO format
+                '%Y-%m-%dT%H:%M:%SZ',
+                '%Y-%m-%dT%H:%M:%S.%f%z',
+                '%Y-%m-%d %H:%M:%S',
+                '%a, %d %b %Y %H:%M:%S',
+                '%d %b %Y %H:%M:%S',
+                '%Y/%m/%d',
+                '%m/%d/%Y',
+                '%B %d, %Y',
+                '%d %B %Y',
+                '%A, %B %d, %Y',
+                '%A, %d %B %Y'
+            ]
+            
+            parsed = False
+            for date_format in date_formats:
                 try:
                     published_date = datetime.strptime(published_str, date_format)
+                    parsed = True
                     # If we can parse the date, check if it's from target_date
-                    if published_date.date() == target_date.date():
+                    # Allow a window of ±1 day to account for timezone differences
+                    delta = abs((published_date.date() - target_date.date()).days)
+                    if delta <= 1:  # Relax the constraint to include more articles
                         filtered_articles.append(article)
+                        print(f"[INFO] Including article from {published_date.date()}: {article.get('title', 'No Title')}")
                     break
                 except ValueError:
                     continue
-        except:
+            
+            # If we couldn't parse the date with any format, include the article anyway
+            if not parsed:
+                filtered_articles.append(article)
+                print(f"[INFO] Including article with unparseable date: {article.get('title', 'No Title')}")
+                
+        except Exception as e:
             # If date parsing fails completely, include the article
             filtered_articles.append(article)
+            print(f"[INFO] Including article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
     
+    # If we end up with too few articles, be less strict
+    if len(filtered_articles) < 5 and len(articles) > 5:
+        print(f"[WARN] Only {len(filtered_articles)} articles passed date filtering. Including more recent articles.")
+        # Sort by published date if possible and take most recent
+        try:
+            # This is a simplistic approach - just include more articles
+            return articles[:min(10, len(articles))]
+        except:
+            # If sorting fails, just return what we have plus a few more
+            return filtered_articles + articles[:min(5, len(articles))]
+    
+    print(f"[INFO] Filtered to {len(filtered_articles)} articles")
     return filtered_articles
