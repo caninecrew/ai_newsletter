@@ -11,8 +11,8 @@ def test_send_email():
     # Load credentials from .env
     email        = os.getenv("SMTP_EMAIL")
     password     = os.getenv("SMTP_PASS")
-    smtp_server  = os.getenv("SMTP_SERVER", "smtp.postale.io")
-    smtp_port    = int(os.getenv("SMTP_PORT", "587"))
+    smtp_server  = os.getenv("SMTP_SERVER", "mail.postale.io")  # Updated default host
+    smtp_port    = int(os.getenv("SMTP_PORT", "587"))           # Default to STARTTLS port
     sender_name  = os.getenv("SENDER_NAME", "Newsletter Bot")
 
     # Validate required environment variables
@@ -23,6 +23,7 @@ def test_send_email():
     body    = f"This is a test email sent from {sender_name} using Postale SMTP."
 
     try:
+        # Ensure secure connection using STARTTLS
         send_email(
             subject=subject,
             body=body,
@@ -31,7 +32,9 @@ def test_send_email():
             smtp_server=smtp_server,
             smtp_port=smtp_port,
             login=email,
-            password=password
+            password=password,
+            use_tls=(smtp_port == 587),  # Use STARTTLS for port 587
+            use_ssl=(smtp_port == 465)   # Use SSL for port 465
         )
         print("✅ Test email sent successfully.")
     except Exception as e:
