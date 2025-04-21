@@ -5,6 +5,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 import requests
 from bs4 import BeautifulSoup
@@ -134,12 +135,18 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    service = Service("path/to/chromedriver")  # Update with the path to your ChromeDriver
 
-    driver = None  # Initialize driver to None
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run in headless mode (no browser UI)
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()), 
+        options=chrome_options
+)
+
     try:
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-
         for category, feeds in RSS_FEEDS.items():
             print(f"\n[INFO] Fetching articles for category: {category}")
             for source_name, feed_url in feeds.items():
