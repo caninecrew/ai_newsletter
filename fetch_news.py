@@ -136,6 +136,7 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
     chrome_options.add_argument("--disable-dev-shm-usage")
     service = Service("path/to/chromedriver")  # Update with the path to your ChromeDriver
 
+    driver = None  # Initialize driver to None
     try:
         driver = webdriver.Chrome(service=service, options=chrome_options)
 
@@ -181,7 +182,8 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                 print(f"  - URL: {skipped['url']}\n    Reason: {skipped['reason']}")
 
     finally:
-        driver.quit()  # Ensure the WebDriver is closed
+        if driver is not None:  # Check if driver was initialized
+            driver.quit()  # Ensure the WebDriver is closed
 
     return all_articles
 
