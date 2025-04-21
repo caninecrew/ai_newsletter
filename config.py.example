@@ -1,0 +1,5 @@
+NEWS_API_KEY = "news-api-key-here"
+OPENAI_API_KEY = "opennai-key"
+RECIPIENT_EMAIL = "your@email.com"
+SENDER_EMAIL = "sender@email.com"
+EMAIL_PASSWORD = "token"
