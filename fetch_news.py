@@ -6,6 +6,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
 import time
+import requests
+from bs4 import BeautifulSoup
 
 # --- RSS Feed Definitions ---
 
@@ -42,6 +44,86 @@ RSS_FEEDS = {
 
 # --- Fetching Logic ---
 
+def try_rss_summary(entry):
+    return entry.get('summary', '').strip()
+
+def try_syndicated_version(title):
+    search_query = f"{title} site:news.yahoo.com OR site:msn.com"
+    url = f"https://www.google.com/search?q={requests.utils.quote(search_query)}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = requests.get(url, headers=headers)
+    if res.ok:
+        soup = BeautifulSoup(res.text, "html.parser")
+        links = soup.select("a")
+        for link in links:
+            href = link.get("href", "")
+            if "yahoo.com" in href or "msn.com" in href:
+                return href
+    return None
+
+def try_google_cache(original_url):
+    cache_url = f"http://webcache.googleusercontent.com/search?q=cache:{original_url}"
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(cache_url, headers=headers)
+        if res.ok:
+            soup = BeautifulSoup(res.text, "html.parser")
+            paragraphs = soup.find_all("p")
+            return "\n".join(p.get_text() for p in paragraphs).strip()
+    except:
+        pass
+    return None
+
+def try_archive_dot_org(original_url):
+    archive_lookup = f"https://archive.org/wayback/available?url={original_url}"
+    try:
+        res = requests.get(archive_lookup)
+        snapshot = res.json().get("archived_snapshots", {}).get("closest", {}).get("url")
+        if snapshot:
+            res2 = requests.get(snapshot)
+            soup = BeautifulSoup(res2.text, "html.parser")
+            paragraphs = soup.find_all("p")
+            return "\n".join(p.get_text() for p in paragraphs).strip()
+    except:
+        pass
+    return None
+
+def get_article_fallback_content(entry):
+    title = entry.get("title", "")
+    url = entry.get("link", "")
+
+    print(f"[INFO] Attempting fallback for blocked source: {url}")
+
+    # Step 1: RSS Summary
+    summary = try_rss_summary(entry)
+    if summary:
+        return summary, "summary"
+
+    # Step 2: Syndicated Version
+    syndicated_url = try_syndicated_version(title)
+    if syndicated_url:
+        print(f"[INFO] Found syndicated version: {syndicated_url}")
+        try:
+            res = requests.get(syndicated_url, headers={"User-Agent": "Mozilla/5.0"})
+            soup = BeautifulSoup(res.text, "html.parser")
+            paragraphs = soup.find_all("p")
+            return "\n".join(p.get_text() for p in paragraphs).strip(), "syndicated"
+        except:
+            pass
+
+    # Step 3: Google Cache
+    cached_content = try_google_cache(url)
+    if cached_content:
+        return cached_content, "google-cache"
+
+    # Step 4: Archive.org
+    archived_content = try_archive_dot_org(url)
+    if archived_content:
+        return archived_content, "wayback"
+
+    # Step 5: Give up
+    return "Content not accessible due to site restrictions.", "source-limited"
+
 def fetch_articles_from_all_feeds(max_articles_per_source=3):
     all_articles = []
     skipped_articles = []  # To log skipped articles
@@ -68,40 +150,29 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                     if count >= max_articles_per_source:
                         break
                     try:
-                        article = Article(entry.link)
-                        article.download()
-                        article.parse()
-                        all_articles.append({
-                            'title': article.title,
-                            'url': article.url,
-                            'source': source_name,
-                            'category': category,
-                            'published': entry.published if 'published' in entry else "Unknown",
-                            'content': article.text
-                        })
-                        count += 1
+                        if source_name in ["Fox News", "Washington Times"]:
+                            content, method = get_article_fallback_content(entry)
+                            print(f"[INFO] Used fallback method: {method}")
+                        else:
+                            article = Article(entry.link)
+                            article.download()
+                            article.parse()
+                            content = article.text
+                            method = "full"
                     except Exception as e:
                         print(f"    [WARN] Newspaper failed for: {entry.link}\n    Reason: {e}")
-                        # Fallback to Selenium
-                        try:
-                            driver.get(entry.link)
-                            time.sleep(3)  # Allow time for the page to load
-                            content = driver.find_element(By.TAG_NAME, "body").text
-                            all_articles.append({
-                                'title': entry.title if 'title' in entry else "No Title",
-                                'url': entry.link,
-                                'source': source_name,
-                                'category': category,
-                                'published': entry.published if 'published' in entry else "Unknown",
-                                'content': content[:10000]  # Limit content length
-                            })
-                            count += 1
-                        except WebDriverException as selenium_error:
-                            print(f"    [ERROR] Selenium failed for: {entry.link}\n    Reason: {selenium_error}")
-                            skipped_articles.append({
-                                'url': entry.link,
-                                'reason': str(selenium_error)
-                            })
+                        content, method = get_article_fallback_content(entry)
+
+                    all_articles.append({
+                        'title': entry.title if 'title' in entry else "No Title",
+                        'url': entry.link,
+                        'source': source_name,
+                        'category': category,
+                        'published': entry.published if 'published' in entry else "Unknown",
+                        'content': content,
+                        'fetch_method': method
+                    })
+                    count += 1
 
         # Log skipped articles
         if skipped_articles:
@@ -118,6 +189,7 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
 # --- Test Execution ---
 
 if __name__ == "__main__":
+
     articles = fetch_articles_from_all_feeds()
     for i, article in enumerate(articles, 1):
         print(f"\n--- Article {i} ---")
