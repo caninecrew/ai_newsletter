@@ -1,0 +1,47 @@
+name: Daily AI Newsletter
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Run at 8:00 AM UTC daily
+  workflow_dispatch:      # Allow manual trigger for testing
+
+jobs:
+  send-newsletter:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -c "import nltk; nltk.download('punkt')"
+      
+      - name: Set up Chrome for Selenium
+        uses: browser-actions/setup-chrome@v1
+        
+      - name: Run newsletter script
+        env:
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: |
+          python main.py
+          
+      - name: Archive logs
+        if: always()  # Run even if the newsletter script fails
+        uses: actions/upload-artifact@v3
+        with:
+          name: newsletter-logs
+          path: logs.txt
+          retention-days: 7
