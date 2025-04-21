@@ -1,0 +1,11 @@
+config.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.csv
+*.json
+*.xlsx
