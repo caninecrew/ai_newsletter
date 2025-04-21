@@ -1,6 +1,8 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+import os
 
 def send_email(subject: str, body: str, to_email: str, from_email: str,
                smtp_server: str, smtp_port: int, login: str, password: str,
@@ -35,10 +37,6 @@ def send_email(subject: str, body: str, to_email: str, from_email: str,
     except Exception as e:
         raise RuntimeError(f"Failed to send email: {e}")
     
-from dotenv import load_dotenv
-import os
-from send_email import send_email
-
 def test_send_email():
     """
     Sends a test email to verify the email sending functionality.
