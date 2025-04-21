@@ -2,20 +2,21 @@ import feedparser
 from newspaper import Article
 from newspaper.article import ArticleException
 import nltk
+import requests
+from bs4 import BeautifulSoup
 
-# Ensure required NLTK resources are downloaded
+# Ensure required NLTK resources are available
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     print("[INFO] Downloading NLTK 'punkt' resource...")
     nltk.download('punkt')
 
-# Fallback for potential `punkt_tab` issue
 try:
-    nltk.data.find('tokenizers/punkt_tab/english')
+    nltk.data.find('tokenizers/punkt_tab')
 except LookupError:
-    print("[INFO] Attempting to resolve 'punkt_tab' issue...")
-    nltk.download('punkt')  # Re-download 'punkt' as a fallback
+    print("[INFO] Downloading NLTK 'punkt_tab' resource...")
+    nltk.download('punkt_tab')
 
 # --- RSS Feed Definitions ---
 
@@ -78,13 +79,25 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                         'content': article.text
                     })
                     count += 1
-                except ArticleException as e:
-                    print(f"    [WARN] Skipping article: {entry.link}\n    Reason: {e}")
                 except Exception as e:
-                    if "403 Client Error" in str(e):
-                        print(f"    [WARN] Skipping article due to 403 Forbidden: {entry.link}")
-                    else:
-                        print(f"    [WARN] Skipping article: {entry.link}\n    Reason: {e}")
+                    print(f"    [WARN] Newspaper failed for: {entry.link}\n    Reason: {e}")
+                    # Fallback to requests + BeautifulSoup
+                    try:
+                        response = requests.get(entry.link, timeout=10)
+                        response.raise_for_status()
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        content = soup.get_text(separator="\n").strip()
+                        all_articles.append({
+                            'title': entry.title if 'title' in entry else "No Title",
+                            'url': entry.link,
+                            'source': source_name,
+                            'category': category,
+                            'published': entry.published if 'published' in entry else "Unknown",
+                            'content': content[:10000]  # Limit content length
+                        })
+                        count += 1
+                    except Exception as fallback_error:
+                        print(f"    [ERROR] Fallback failed for: {entry.link}\n    Reason: {fallback_error}")
 
     return all_articles
 
