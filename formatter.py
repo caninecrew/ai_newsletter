@@ -1,6 +1,7 @@
 # This module contains functions to format news articles for email or display purposes.
 from datetime import datetime, timedelta
 import re
+from difflib import SequenceMatcher
 
 # Define user interests/tags for classification
 USER_INTERESTS = [
@@ -36,6 +37,9 @@ def classify_article(article):
     source = article.get('source', '').lower()
     combined_text = f"{title} {content}"
     
+    # Get tags for this article
+    tags = identify_tags(article)
+    
     # Keywords for international major news
     global_keywords = [
         'war', 'conflict', 'pope', 'vatican', 'disaster', 'earthquake', 'tsunami',
@@ -63,17 +67,25 @@ def classify_article(article):
     if any(keyword in combined_text for keyword in domestic_keywords):
         return 'domestic_major'
     
-    # Check for personal interests
-    for interest in USER_INTERESTS:
-        if interest.lower() in combined_text:
-            return 'personal_interest'
+    # For personal interest section, only include if it has at least one relevant tag
+    # This removes the "default" behavior of putting everything into personal interest
+    relevant_tags = [tag for tag in tags if tag in USER_INTERESTS or tag == "General News"]
     
-    # Default to personal interest if no clear classification
-    return 'personal_interest'
+    if relevant_tags and len(relevant_tags) > 0:
+        return 'personal_interest'
+    
+    # If no clear classification based on content, put in appropriate general category
+    # based on source and geographic focus
+    if 'international' in combined_text or 'world' in combined_text or 'global' in combined_text:
+        return 'global_major'
+    
+    # Default to domestic news if we can't classify otherwise
+    return 'domestic_major'
 
 def identify_tags(article):
     """
     Identify relevant tags based on article content and user interests.
+    More aggressive matching to ensure accuracy.
     
     Args:
         article (dict): Article dictionary
@@ -86,18 +98,42 @@ def identify_tags(article):
     combined_text = f"{title} {content}"
     
     matched_tags = []
-    for interest in USER_INTERESTS:
-        if interest.lower() in combined_text:
-            matched_tags.append(interest)
+    
+    # Define interest-to-keyword mapping for better matching
+    interest_keywords = {
+        "Scouting": ["scout", "boy scout", "girl scout", "eagle scout", "cub scout", "scouting"],
+        "Education": ["education", "school", "teacher", "student", "classroom", "learning", "curriculum"],
+        "Policy": ["policy", "regulation", "legislation", "law", "guideline", "rule"],
+        "AI": ["ai", "artificial intelligence", "machine learning", "neural network", "deep learning", "chatgpt", "llm"],
+        "Technology": ["tech", "technology", "software", "hardware", "digital", "computer", "programming"],
+        "Business": ["business", "company", "corporate", "industry", "market", "economy", "startup"],
+        "Civic Affairs": ["civic", "community", "local government", "municipal", "city council", "town hall"],
+        "Tennessee": ["tennessee", "nashville", "memphis", "knoxville", "chattanooga"],
+        "Global Missions": ["mission", "missionary", "global mission", "church mission", "outreach"],
+        "Outdoor": ["outdoor", "nature", "hiking", "camping", "wildlife", "conservation", "environment"],
+        "Backpacking": ["backpack", "hiking", "trail", "trek", "outdoor gear", "wilderness"],
+        "FOIA": ["foia", "freedom of information", "public records", "information request"],
+        "Transparency": ["transparency", "disclosure", "open government", "accountability"],
+        "Government": ["government", "administration", "federal", "state", "local", "official", "agency"]
+    }
+
+    # Check each interest against the text with more specific matching
+    for interest, keywords in interest_keywords.items():
+        for keyword in keywords:
+            if keyword in combined_text:
+                matched_tags.append(interest)
+                break
     
     # Add some default categorization if no specific tags matched
     if not matched_tags:
         if "fox news" in article.get('source', '').lower():
             matched_tags.append("U.S. News")
+        elif any(k in combined_text for k in ["international", "world", "global", "foreign"]):
+            matched_tags.append("International")
         else:
             matched_tags.append("General News")
             
-    return matched_tags
+    return list(set(matched_tags))  # Remove duplicates
 
 def format_article(article, html=False):
     """
@@ -173,6 +209,7 @@ def format_section_summary(section_type, articles):
 def format_articles(articles, html=False):
     """
     Formats a list of articles into a single string for display or email.
+    Suppresses sections that don't have any articles.
 
     Args:
         articles (list): A list of dictionaries, each containing article details.
@@ -340,6 +377,14 @@ def format_articles(articles, html=False):
                     text-align: center;
                     padding: 20px;
                 }}
+                .coverage-note {{
+                    background-color: #fcf8e3;
+                    border: 1px solid #faebcc;
+                    color: #8a6d3b;
+                    padding: 15px;
+                    margin-bottom: 20px;
+                    border-radius: 4px;
+                }}
             </style>
         </head>
         <body>
@@ -349,7 +394,17 @@ def format_articles(articles, html=False):
             </div>
         """
         
-        # Add each section in the specified order
+        # If we have too few articles, add a note about coverage
+        if len(articles) < 3:
+            html_output += """
+            <div class="coverage-note">
+                <p><strong>Note:</strong> Today's news coverage is limited as we're only including articles 
+                published exactly on the target date for accuracy. Some sources may not have provided 
+                timestamps or published relevant content today.</p>
+            </div>
+            """
+        
+        # Add each section in the specified order, but only if it has articles
         section_order = ['global_major', 'domestic_major', 'personal_interest', 'fox_exclusive']
         section_classes = {
             'global_major': 'global-section',
@@ -358,9 +413,28 @@ def format_articles(articles, html=False):
             'fox_exclusive': 'fox-section'
         }
         
+        # Updated section titles with icons
+        section_titles = {
+            'global_major': '🌍 Super Major International News',
+            'domestic_major': '🏛️ Major Domestic Headlines',
+            'personal_interest': '📌 Personalized Interest Stories',
+            'fox_exclusive': '🦊 What Fox News is Reporting'
+        }
+        
+        # Track if any sections were included
+        sections_included = False
+        
         for section_key in section_order:
             section_articles = sections[section_key]
-            section_title = SECTION_TYPES[section_key]
+            
+            # Skip sections with no articles
+            if not section_articles:
+                print(f"[INFO] Skipping empty section: {section_key}")
+                continue
+                
+            # If we get here, we have articles in this section
+            sections_included = True
+            section_title = section_titles[section_key]  # Use updated titles with icons
             section_class = section_classes[section_key]
             
             html_output += f"""
@@ -368,22 +442,24 @@ def format_articles(articles, html=False):
                 <h2 class="section-header">{section_title}</h2>
             """
             
-            if not section_articles:
-                html_output += """
-                <div class="no-articles">
-                    <p>No articles in this category today.</p>
-                </div>
-                """
-            else:
-                # Add section summary
-                html_output += format_section_summary(section_key, section_articles)
-                
-                # Add articles
-                for article in section_articles:
-                    html_output += format_article(article, html=True)
+            # Add section summary
+            html_output += format_section_summary(section_key, section_articles)
+            
+            # Add articles
+            for article in section_articles:
+                html_output += format_article(article, html=True)
             
             html_output += "</div>"
-            
+        
+        # If no sections had articles, show a message
+        if not sections_included:
+            html_output += """
+            <div class="coverage-note">
+                <p><strong>No articles available:</strong> We couldn't find any articles meeting your criteria for today's date.
+                Please check back tomorrow for fresh news coverage.</p>
+            </div>
+            """
+        
         # Add footer
         html_output += """
             <div class="footer">
@@ -400,8 +476,8 @@ def format_articles(articles, html=False):
 
 def filter_articles_by_date(articles, days=1):
     """
-    Filter articles to only include those from the specified number of days back.
-    Now with more flexible date parsing and optional fallback to include more content.
+    Filter articles to only include those published exactly on the target date.
+    Much stricter date filtering to ensure accuracy.
     
     Args:
         articles (list): List of article dictionaries
@@ -412,7 +488,8 @@ def filter_articles_by_date(articles, days=1):
     """
     filtered_articles = []
     target_date = datetime.now() - timedelta(days=days)
-    print(f"[INFO] Filtering for articles from: {target_date.strftime('%Y-%m-%d')}")
+    target_date_str = target_date.strftime('%Y-%m-%d')
+    print(f"[INFO] Filtering for articles from exactly: {target_date_str}")
     print(f"[INFO] Starting with {len(articles)} articles")
     
     # First pass with strict filtering
@@ -421,9 +498,8 @@ def filter_articles_by_date(articles, days=1):
             # Try different date formats
             published_str = article.get('published', '')
             if not published_str or published_str == 'Unknown Date':
-                # Include articles with unknown dates to avoid losing content
-                filtered_articles.append(article)
-                print(f"[INFO] Including article with unknown date: {article.get('title', 'No Title')}")
+                # Skip articles with unknown dates for strict filtering
+                print(f"[INFO] Excluding article with unknown date: {article.get('title', 'No Title')}")
                 continue
                 
             # Try parsing the date in different formats
@@ -449,36 +525,94 @@ def filter_articles_by_date(articles, days=1):
                 try:
                     published_date = datetime.strptime(published_str, date_format)
                     parsed = True
-                    # If we can parse the date, check if it's from target_date
-                    # Allow a window of ±1 day to account for timezone differences
-                    delta = abs((published_date.date() - target_date.date()).days)
-                    if delta <= 1:  # Relax the constraint to include more articles
+                    # Strict check: only include articles from exactly the target date
+                    if published_date.date() == target_date.date():
                         filtered_articles.append(article)
                         print(f"[INFO] Including article from {published_date.date()}: {article.get('title', 'No Title')}")
+                    else:
+                        print(f"[INFO] Excluding article from {published_date.date()}: {article.get('title', 'No Title')}")
                     break
                 except ValueError:
                     continue
             
-            # If we couldn't parse the date with any format, include the article anyway
+            # If we couldn't parse the date with any format, skip the article
             if not parsed:
-                filtered_articles.append(article)
-                print(f"[INFO] Including article with unparseable date: {article.get('title', 'No Title')}")
+                print(f"[INFO] Excluding article with unparseable date: {article.get('title', 'No Title')}")
                 
         except Exception as e:
-            # If date parsing fails completely, include the article
-            filtered_articles.append(article)
-            print(f"[INFO] Including article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
+            # If date parsing fails completely, also skip
+            print(f"[INFO] Excluding article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
     
-    # If we end up with too few articles, be less strict
-    if len(filtered_articles) < 5 and len(articles) > 5:
-        print(f"[WARN] Only {len(filtered_articles)} articles passed date filtering. Including more recent articles.")
-        # Sort by published date if possible and take most recent
-        try:
-            # This is a simplistic approach - just include more articles
-            return articles[:min(10, len(articles))]
-        except:
-            # If sorting fails, just return what we have plus a few more
-            return filtered_articles + articles[:min(5, len(articles))]
+    # If we end up with too few articles, add a fallback mechanism but with a note
+    min_articles = 3  # At least 3 articles to make the newsletter worthwhile
+    if len(filtered_articles) < min_articles and len(articles) > min_articles:
+        print(f"[WARN] Only {len(filtered_articles)} articles passed strict date filtering.")
+        print(f"[INFO] Adding a note to the newsletter about incomplete daily coverage.")
+        
+        # We don't automatically include non-matching articles anymore
+        # Instead we'll add a note to the newsletter later
+        # This maintains date accuracy
     
-    print(f"[INFO] Filtered to {len(filtered_articles)} articles")
+    print(f"[INFO] Filtered to {len(filtered_articles)} articles exactly from {target_date_str}")
     return filtered_articles
+
+def deduplicate_articles(articles, similarity_threshold=0.7):
+    """
+    Remove duplicate or highly similar articles from the list.
+    
+    Args:
+        articles (list): List of article dictionaries
+        similarity_threshold (float): Threshold for considering two articles as duplicates (0.0-1.0)
+        
+    Returns:
+        list: Deduplicated list of articles
+    """
+    if not articles:
+        return []
+        
+    # Initialize with the first article
+    deduplicated = [articles[0]]
+    duplicates_removed = 0
+    
+    # Helper function to compute text similarity ratio
+    def similarity_ratio(text1, text2):
+        return SequenceMatcher(None, str(text1).lower(), str(text2).lower()).ratio()
+    
+    # Process remaining articles
+    for article in articles[1:]:
+        title = article.get('title', '').lower()
+        content_preview = article.get('content', '')[:500].lower()  # Use just beginning of content
+        combined = f"{title} {content_preview}"
+        
+        # Check if this article is similar to any already included article
+        is_duplicate = False
+        for existing in deduplicated:
+            existing_title = existing.get('title', '').lower()
+            existing_preview = existing.get('content', '')[:500].lower()
+            existing_combined = f"{existing_title} {existing_preview}"
+            
+            # Calculate similarity between titles and content
+            title_similarity = similarity_ratio(title, existing_title)
+            combined_similarity = similarity_ratio(combined, existing_combined)
+            
+            # If either title or content is very similar, consider it a duplicate
+            if title_similarity > similarity_threshold or combined_similarity > similarity_threshold:
+                is_duplicate = True
+                duplicates_removed += 1
+                
+                # Choose the article with more content if they're similar
+                if len(article.get('content', '')) > len(existing.get('content', '')):
+                    # Replace the existing article with this one
+                    deduplicated.remove(existing)
+                    deduplicated.append(article)
+                    print(f"[INFO] Replaced duplicate with more detailed version: {article.get('title', 'No Title')}")
+                else:
+                    print(f"[INFO] Removed duplicate article: {article.get('title', 'No Title')}")
+                break
+        
+        # If not a duplicate, include it
+        if not is_duplicate:
+            deduplicated.append(article)
+    
+    print(f"[INFO] Deduplicated {len(articles)} articles to {len(deduplicated)} (removed {duplicates_removed} duplicates)")
+    return deduplicated

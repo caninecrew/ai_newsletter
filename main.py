@@ -1,11 +1,16 @@
 from fetch_news import fetch_articles_from_all_feeds
 from summarize import summarize_articles
-from formatter import format_articles, filter_articles_by_date
+from formatter import format_articles, filter_articles_by_date, deduplicate_articles
 from send_email import send_email
 from dotenv import load_dotenv
 import os
+import warnings
 from datetime import datetime, timedelta
 import sys
+
+# Suppress TensorFlow warnings about XNNPACK delegate
+warnings.filterwarnings('ignore', category=UserWarning, module='tensorflow')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF logs (0=all, 1=INFO, 2=WARNING, 3=ERROR)
 
 # Add debug mode command line flag
 DEBUG_MODE = "--debug" in sys.argv
@@ -31,8 +36,14 @@ def run_newsletter():
     if DEBUG_MODE:
         print(f"[DEBUG] After date filtering: {len(yesterday_articles)} articles")
     
+    # Deduplicate articles to avoid similar content
+    deduplicated_articles = deduplicate_articles(yesterday_articles)
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] After deduplication: {len(deduplicated_articles)} articles")
+    
     # Summarize the articles
-    summaries = summarize_articles(yesterday_articles)
+    summaries = summarize_articles(deduplicated_articles)
     
     if DEBUG_MODE:
         print(f"[DEBUG] After summarization: {len(summaries)} articles")
@@ -44,7 +55,7 @@ def run_newsletter():
 def send_newsletter():
     load_dotenv()
 
-    # Fetch and summarize articles
+    # Fetch, filter, deduplicate, and summarize articles
     articles = run_newsletter()
     
     if not articles or len(articles) == 0:
@@ -53,8 +64,6 @@ def send_newsletter():
         global SKIP_DATE_FILTER
         if DEBUG_MODE and not SKIP_DATE_FILTER:
             print("[INFO] Rerunning with date filter disabled...")
-            # Declare global before using it
-            
             SKIP_DATE_FILTER = True
             articles = run_newsletter()
 
