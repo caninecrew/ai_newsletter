@@ -6,7 +6,8 @@ import os
 
 def send_email(subject: str, body: str, to_email: str, from_email: str,
                smtp_server: str, smtp_port: int, login: str, password: str,
-               use_tls: bool = False, use_ssl: bool = False) -> None:
+               use_tls: bool = False, use_ssl: bool = False, 
+               is_html: bool = False) -> None:
     """
     Sends an email with the given subject and body to the specified recipient.
     Allows exceptions to bubble up for the caller to handle.
@@ -25,11 +26,20 @@ def send_email(subject: str, body: str, to_email: str, from_email: str,
         server.login(login, password)
 
         # Create the email message
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = from_email
         msg['To'] = to_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach plain text and HTML versions if HTML is provided
+        if is_html:
+            # Create a plain text version as fallback
+            plain_text = body.replace('<br>', '\n').replace('<p>', '').replace('</p>', '\n\n')
+            plain_text = ''.join(c for c in plain_text if ord(c) < 128)  # Remove non-ASCII chars
+            msg.attach(MIMEText(plain_text, 'plain'))
+            msg.attach(MIMEText(body, 'html'))
+        else:
+            msg.attach(MIMEText(body, 'plain'))
 
         # Send the email
         server.send_message(msg)
@@ -69,7 +79,8 @@ def test_send_email():
             login=email,
             password=password,
             use_tls=(smtp_port == 587),  # Use STARTTLS for port 587
-            use_ssl=(smtp_port == 465)   # Use SSL for port 465
+            use_ssl=(smtp_port == 465),   # Use SSL for port 465
+            is_html=False
         )
         print("✅ Test email sent successfully.")
     except Exception as e:
