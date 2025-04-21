@@ -15,6 +15,10 @@ def test_send_email():
     smtp_port    = int(os.getenv("SMTP_PORT", "587"))
     sender_name  = os.getenv("SENDER_NAME", "Newsletter Bot")
 
+    # Validate required environment variables
+    if not email or not password:
+        raise ValueError("Missing required environment variables: SMTP_EMAIL or SMTP_PASS")
+
     subject = "✅ Test Email"
     body    = f"This is a test email sent from {sender_name} using Postale SMTP."
 
