@@ -1,6 +1,29 @@
 # Configuration file for AI Newsletter
 # This file contains configurable settings for the newsletter system
 
+# --- News Source Configuration ---
+# Set the primary news source to use: "rss" or "gnews"
+PRIMARY_NEWS_SOURCE = "rss"
+
+# GNews API Configuration
+GNEWS_API_CONFIG = {
+    "api_key": "",  # Your GNews API key
+    "topic_mapping": {
+        "global_major": "world",
+        "domestic_major": ["nation", "politics"],
+        "technology": "technology",
+        "business": "business",
+        "entertainment": "entertainment",
+        "sports": "sports",
+        "science": "science",
+        "health": "health"
+    },
+    "language": "en",  # Language for news articles
+    "country": "us",   # Country for domestic news
+    "max_results": 10, # Maximum number of results per topic
+    "hours": 24       # How many hours back to fetch news
+}
+
 # --- RSS Feed Definitions ---
 # Format: Category -> Source -> URL
 
@@ -15,7 +38,9 @@ RSS_FEEDS = {
         "AP": "https://apnews.com/rss",
         "Reuters": "http://feeds.reuters.com/reuters/domesticNews"
     },
-    "Right": { # limited Right sources that provide RSS feeds for this purpose, therefore only a few work with this system
+    "Right": {
+        "Fox News": "http://feeds.foxnews.com/foxnews/latest",
+        "Daily Wire": "https://www.dailywire.com/feed",
         "Washington Times": "https://www.washingtontimes.com/rss/headlines/news/politics/"
     },
     "International": {
