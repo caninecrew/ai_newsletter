@@ -25,6 +25,20 @@ jobs:
           pip install -r requirements.txt
           python -c "import nltk; nltk.download('punkt')"
       
+      - name: Check for critical files
+        run: |
+          echo "Checking for required files..."
+          ls -la
+          if [ ! -f "main.py" ]; then
+            echo "ERROR: main.py not found!"
+            exit 1
+          fi
+          if [ ! -f "requirements.txt" ]; then
+            echo "ERROR: requirements.txt not found!"
+            exit 1
+          fi
+          echo "All required files found."
+      
       - name: Set up Chrome for Selenium
         uses: browser-actions/setup-chrome@v1
         
@@ -37,7 +51,11 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python main.py
+          echo "Starting newsletter script..."
+          # Create empty logs.txt file if it doesn't exist
+          touch logs.txt
+          # Run with error handling
+          python main.py || { echo "Script failed with exit code $?"; exit 1; }
           
       - name: Archive logs
         if: always()  # Run even if the newsletter script fails
