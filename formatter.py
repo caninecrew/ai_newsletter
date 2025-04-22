@@ -291,7 +291,7 @@ def format_articles(articles, html=False):
                 }}
                 .header {{
                     text-align: center;
-                    margin-bottom: 30px;
+                    margin-bottom: 20px;
                     border-bottom: 2px solid #f0f0f0;
                     padding-bottom: 20px;
                 }}
@@ -302,6 +302,33 @@ def format_articles(articles, html=False):
                 .date {{
                     color: #7f8c8d;
                     font-style: italic;
+                }}
+                .toc {{
+                    background-color: #f9f9f9;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin-bottom: 30px;
+                    border-left: 4px solid #3498db;
+                }}
+                .toc h2 {{
+                    margin-top: 0;
+                    margin-bottom: 15px;
+                    color: #3498db;
+                }}
+                .toc ul {{
+                    padding-left: 20px;
+                    margin-bottom: 5px;
+                }}
+                .toc li {{
+                    margin-bottom: 8px;
+                }}
+                .toc a {{
+                    text-decoration: none;
+                    color: #2980b9;
+                }}
+                .toc a:hover {{
+                    text-decoration: underline;
+                    color: #1abc9c;
                 }}
                 .section {{
                     margin-bottom: 40px;
@@ -421,12 +448,104 @@ def format_articles(articles, html=False):
                     margin-bottom: 20px;
                     border-radius: 4px;
                 }}
+                /* New styles for key takeaways, why this matters, and toggle sections */
+                .key-takeaways {{
+                    background-color: #f5f9ff;
+                    border-left: 4px solid #3498db;
+                    padding: 10px 15px;
+                    margin-bottom: 15px;
+                    border-radius: 4px;
+                }}
+                .key-takeaways h4 {{
+                    margin-top: 0;
+                    margin-bottom: 10px;
+                    color: #2c3e50;
+                }}
+                .takeaway-bullets {{
+                    padding-left: 20px;
+                    margin-top: 5px;
+                    margin-bottom: 10px;
+                }}
+                .takeaway-bullets li {{
+                    margin-bottom: 8px;
+                    line-height: 1.5;
+                }}
+                .read-full {{
+                    text-align: center;
+                    margin-bottom: 5px;
+                    font-size: 14px;
+                }}
+                .summary-toggle {{
+                    color: #3498db;
+                    text-decoration: none;
+                    cursor: pointer;
+                }}
+                .full-summary {{
+                    border-top: 1px solid #eee;
+                    padding-top: 15px;
+                }}
+                .why-matters {{
+                    background-color: #f0fff4;
+                    border-left: 4px solid #2ecc71;
+                    padding: 10px 15px;
+                    margin: 15px 0;
+                    border-radius: 4px;
+                }}
+                .why-matters h4 {{
+                    margin-top: 0;
+                    margin-bottom: 10px;
+                    color: #27ae60;
+                }}
+                .why-matters p {{
+                    margin: 8px 0;
+                }}
+                .article-actions {{
+                    display: flex;
+                    justify-content: space-between;
+                    border-top: 1px solid #eee;
+                    padding-top: 15px;
+                    margin-top: 15px;
+                }}
+                .toggle-link, .read-source-link {{
+                    color: #3498db;
+                    text-decoration: none;
+                    font-size: 14px;
+                }}
+                .toggle-link:hover, .read-source-link:hover {{
+                    text-decoration: underline;
+                }}
             </style>
+            <script>
+                function toggleSummary(id) {
+                    var element = document.getElementById(id + "-full");
+                    if (element.style.display === "none") {
+                        element.style.display = "block";
+                    } else {
+                        element.style.display = "none";
+                    }
+                }
+            </script>
         </head>
         <body>
             <div class="header">
                 <h1>Your Personalized News Summary</h1>
                 <p class="date">News from {yesterday}</p>
+            </div>
+        
+            <div class="toc">
+                <h2>📋 In Today's Newsletter</h2>
+                <ul>
+        """
+        
+        # Only include sections with articles in TOC
+        for section_key in section_order:
+            section_articles = sections[section_key]
+            if section_articles:
+                section_title = section_titles[section_key]
+                html_output += f'<li><a href="#{section_key}-section">{section_title} ({len(section_articles)})</a></li>'
+        
+        html_output += """
+                </ul>
             </div>
         """
         
@@ -474,7 +593,7 @@ def format_articles(articles, html=False):
             section_class = section_classes[section_key]
             
             html_output += f"""
-            <div class="section {section_class}">
+            <div id="{section_key}-section" class="section {section_class}">
                 <h2 class="section-header">{section_title}</h2>
             """
             
