@@ -261,6 +261,25 @@ def format_articles(articles, html=False):
         # Get yesterday's date
         yesterday = (datetime.now() - timedelta(days=1)).strftime('%A, %B %d, %Y')
         
+        # Define the section order (moved up from later in the function to fix the UnboundLocalError)
+        section_order = ['global_major', 'domestic_major', 'personal_interest', 'fox_exclusive']
+        
+        # Define section classes and titles
+        section_classes = {
+            'global_major': 'global-section',
+            'domestic_major': 'domestic-section',
+            'personal_interest': 'personal-section',
+            'fox_exclusive': 'fox-section'
+        }
+        
+        # Updated section titles with icons
+        section_titles = {
+            'global_major': '🌍 Super Major International News',
+            'domestic_major': '🏛️ Major Domestic Headlines',
+            'personal_interest': '📌 Personalized Interest Stories',
+            'fox_exclusive': '🦊 What Fox News is Reporting'
+        }
+        
         # Classify articles into the four required sections
         sections = {
             'global_major': [],
