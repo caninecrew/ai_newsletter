@@ -9,9 +9,10 @@
 ## Email Format Enhancements
 - [ ] Highlight Key Takeaways First (TL;DR Style) with "Read Full Summary" link below
 - [ ] Add "Why This Matters" section to each article
-- [ ] Add personalization tags for filtering: 🔒 Legal, 🏫 Education, 🏥 Healthcare, 📈 Economy, 🧭 Global Affairs, ⚡️ Technology
+- [ ] Add personalization tags for filtering: 🔒 Legal, 🏫 Education, 🏥 Healthcare, 📈 Economy, 🧭 Global Affairs, ⚡️ Technology, etc (include other tags that might be relevant)
 - [ ] Create clickable Table of Contents at the top of the email
 - [ ] Ensure email has clean, professional formatting with consistent styling
+- [ ] Improve formatting of the bullet points
 
 ## Technical Enhancements
 - [X] Implement OpenAI API integration for article summarization
