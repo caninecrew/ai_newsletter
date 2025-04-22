@@ -515,15 +515,15 @@ def format_articles(articles, html=False):
                     text-decoration: underline;
                 }}
             </style>
-            <script>
-                function toggleSummary(id) {
+            <script type="text/javascript">
+                function toggleSummary(id) {{
                     var element = document.getElementById(id + "-full");
-                    if (element.style.display === "none") {
+                    if (element.style.display === "none") {{
                         element.style.display = "block";
-                    } else {
+                    }} else {{
                         element.style.display = "none";
-                    }
-                }
+                    }}
+                }}
             </script>
         </head>
         <body>
