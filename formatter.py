@@ -149,7 +149,8 @@ def format_article(article, html=False):
     title = article.get('title', 'No Title')
     source = article.get('source', 'Unknown Source')
     url = article.get('url', '#')
-    content = article.get('content', 'No Content')
+    # Use summary instead of content, fall back to content if summary doesn't exist
+    content = article.get('summary', article.get('content', 'No Content'))
     published = article.get('published', 'Unknown Date')
     
     # Get article tags based on content
