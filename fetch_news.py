@@ -10,7 +10,8 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from logger_config import setup_logger
-from config import RSS_FEEDS, SYSTEM_SETTINGS
+from config import RSS_FEEDS, SYSTEM_SETTINGS, PRIMARY_NEWS_SOURCE
+from gnews_api import fetch_articles_from_gnews
 
 # Set up logger
 logger = setup_logger()
@@ -103,7 +104,10 @@ def get_article_fallback_content(entry):
     logger.warning(f"All fallback methods failed for {url}")
     return "Content not accessible due to site restrictions.", "source-limited"
 
-def fetch_articles_from_all_feeds(max_articles_per_source=3):
+def fetch_articles_from_rss(max_articles_per_source=3):
+    """
+    Fetch news articles from RSS feeds as defined in config.py
+    """
     all_articles = []
     skipped_articles = []  # To log skipped articles
 
@@ -111,11 +115,6 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Run in headless mode
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode (no browser UI)
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
@@ -176,15 +175,27 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                 logger.debug(f"Skipped URL: {skipped['url']} - Reason: {skipped['reason']}")
 
     except Exception as e:
-        logger.error(f"Error in fetch_articles_from_all_feeds: {str(e)}", exc_info=True)
+        logger.error(f"Error in fetch_articles_from_rss: {str(e)}", exc_info=True)
     finally:
         if driver is not None:  # Check if driver was initialized
             driver.quit()  # Ensure the WebDriver is closed
             logger.debug("WebDriver closed")
 
-    logger.info(f"Article fetching completed. Retrieved {len(all_articles)} articles.")
+    logger.info(f"RSS article fetching completed. Retrieved {len(all_articles)} articles.")
     return all_articles
 
+def fetch_articles_from_all_feeds(max_articles_per_source=3):
+    """
+    Main function to fetch articles based on the configured news source
+    """
+    logger.info(f"Fetching news using configured source: {PRIMARY_NEWS_SOURCE}")
+    
+    if PRIMARY_NEWS_SOURCE.lower() == "gnews":
+        # Use GNews API
+        return fetch_articles_from_gnews()
+    else:
+        # Default to RSS feeds
+        return fetch_articles_from_rss(max_articles_per_source)
 
 # --- Test Execution ---
 
