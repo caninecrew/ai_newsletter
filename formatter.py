@@ -570,30 +570,6 @@ def format_articles(articles, html=False):
         # Updated section titles with icons
         section_titles = {
             'global_major': '🌍 Super Major International News',
-        """
-        
-        # If we have too few articles, add a note about coverage
-        if len(articles) < 3:
-            html_output += """
-            <div class="coverage-note">
-                <p><strong>Note:</strong> Today's news coverage is limited as we're only including articles 
-                published exactly on the target date for accuracy. Some sources may not have provided 
-                timestamps or published relevant content today.</p>
-            </div>
-            """
-        
-        # Add each section in the specified order, but only if it has articles
-        section_order = ['global_major', 'domestic_major', 'personal_interest', 'fox_exclusive']
-        section_classes = {
-            'global_major': 'global-section',
-            'domestic_major': 'domestic-section',
-            'personal_interest': 'personal-section',
-            'fox_exclusive': 'fox-section'
-        }
-        
-        # Updated section titles with icons
-        section_titles = {
-            'global_major': '🌍 Super Major International News',
             'domestic_major': '🏛️ Major Domestic Headlines',
             'personal_interest': '📌 Personalized Interest Stories',
             'fox_exclusive': '🦊 What Fox News is Reporting'

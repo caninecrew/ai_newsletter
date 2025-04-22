@@ -3,6 +3,7 @@ from summarize import summarize_articles
 from formatter import format_articles, filter_articles_by_date, deduplicate_articles
 from send_email import send_email
 from logger_config import setup_logger
+from config import EMAIL_SETTINGS, SYSTEM_SETTINGS
 from dotenv import load_dotenv
 import os
 import warnings
