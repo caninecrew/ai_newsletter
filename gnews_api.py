@@ -19,14 +19,16 @@ def fetch_articles_from_gnews():
         list: A list of article dictionaries with standardized format for processing
     """
     all_articles = []
-    api_key = GNEWS_API_CONFIG["api_key"]
-
-    # Check if API key is available
+    
+    # Always try to get API key from environment variables first
+    api_key = os.environ.get("GNEWS_API_KEY")
+    
+    # If not in environment, try the config as fallback (though it should be empty)
     if not api_key:
-        api_key = os.environ.get("GNEWS_API_KEY")
+        api_key = GNEWS_API_CONFIG.get("api_key", "")
         
     if not api_key:
-        logger.error("GNews API key not found. Please set it in config.py or as GNEWS_API_KEY in environment variables.")
+        logger.error("GNews API key not found. Please set it as GNEWS_API_KEY in your .env file.")
         return []
     
     # Calculate the time window for articles

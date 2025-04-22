@@ -6,8 +6,9 @@
 PRIMARY_NEWS_SOURCE = "rss"
 
 # GNews API Configuration
+# Note: API key should be stored in .env file as GNEWS_API_KEY, not here
 GNEWS_API_CONFIG = {
-    "api_key": "",  # Your GNews API key
+    "api_key": "",  # API key should come from .env file, not stored here
     "topic_mapping": {
         "global_major": "world",
         "domestic_major": ["nation", "politics"],
