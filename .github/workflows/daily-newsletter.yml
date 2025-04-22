@@ -59,7 +59,7 @@ jobs:
           
       - name: Archive logs
         if: always()  # Run even if the newsletter script fails
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: newsletter-logs
           path: logs.txt
