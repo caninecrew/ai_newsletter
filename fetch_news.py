@@ -35,6 +35,11 @@ RSS_FEEDS = {
         "France24": "https://www.france24.com/en/rss",
         "DW": "https://rss.dw.com/rdf/rss-en-all"
     },
+    "Tennessee": {
+        "WKRN News 2 Nashville": "https://wkrn.com/feed",
+        "Tennessee Tribune": "https://tntribune.com/category/community/local/nashville/feed/",
+        "Tennessee Star": "https://tennesseestar.com/feed/"
+    },
     "Personalized": {
         "Scouting": "https://blog.scoutingmagazine.org/feed/",
         "NPR Education": "https://feeds.npr.org/1013/rss.xml",
