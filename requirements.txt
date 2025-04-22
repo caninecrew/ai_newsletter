@@ -8,3 +8,4 @@ webdriver-manager>=3.5.2
 nltk>=3.6.2
 lxml_html_clean>=0.1.0
 openai>=0.27.0
+gnews>=0.2.7
