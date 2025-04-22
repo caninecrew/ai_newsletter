@@ -15,9 +15,7 @@ RSS_FEEDS = {
         "AP": "https://apnews.com/rss",
         "Reuters": "http://feeds.reuters.com/reuters/domesticNews"
     },
-    "Right": {
-        "Fox News": "http://feeds.foxnews.com/foxnews/latest",
-        "Daily Wire": "https://www.dailywire.com/feed",
+    "Right": { # limited Right sources that provide RSS feeds for this purpose, therefore only a few work with this system
         "Washington Times": "https://www.washingtontimes.com/rss/headlines/news/politics/"
     },
     "International": {
