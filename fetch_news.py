@@ -9,6 +9,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import requests
 from bs4 import BeautifulSoup
+from logger_config import setup_logger
+
+# Set up logger
+logger = setup_logger()
 
 # --- RSS Feed Definitions ---
 
@@ -76,8 +80,8 @@ def try_google_cache(original_url):
             soup = BeautifulSoup(res.text, "html.parser")
             paragraphs = soup.find_all("p")
             return "\n".join(p.get_text() for p in paragraphs).strip()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Google cache retrieval failed for {original_url}: {str(e)}")
     return None
 
 def try_archive_dot_org(original_url):
@@ -90,44 +94,50 @@ def try_archive_dot_org(original_url):
             soup = BeautifulSoup(res2.text, "html.parser")
             paragraphs = soup.find_all("p")
             return "\n".join(p.get_text() for p in paragraphs).strip()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Archive.org retrieval failed for {original_url}: {str(e)}")
     return None
 
 def get_article_fallback_content(entry):
     title = entry.get("title", "")
     url = entry.get("link", "")
 
-    print(f"[INFO] Attempting fallback for blocked source: {url}")
+    logger.info(f"Attempting fallback for blocked source: {url}")
 
     # Step 1: RSS Summary
     summary = try_rss_summary(entry)
     if summary:
+        logger.debug(f"Successfully retrieved RSS summary for {url}")
         return summary, "summary"
 
     # Step 2: Syndicated Version
     syndicated_url = try_syndicated_version(title)
     if syndicated_url:
-        print(f"[INFO] Found syndicated version: {syndicated_url}")
+        logger.info(f"Found syndicated version: {syndicated_url}")
         try:
             res = requests.get(syndicated_url, headers={"User-Agent": "Mozilla/5.0"})
             soup = BeautifulSoup(res.text, "html.parser")
             paragraphs = soup.find_all("p")
             return "\n".join(p.get_text() for p in paragraphs).strip(), "syndicated"
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to retrieve syndicated content: {str(e)}")
 
     # Step 3: Google Cache
+    logger.debug(f"Trying Google cache for {url}")
     cached_content = try_google_cache(url)
     if cached_content:
+        logger.debug(f"Successfully retrieved Google cache for {url}")
         return cached_content, "google-cache"
 
     # Step 4: Archive.org
+    logger.debug(f"Trying Archive.org for {url}")
     archived_content = try_archive_dot_org(url)
     if archived_content:
+        logger.debug(f"Successfully retrieved Archive.org content for {url}")
         return archived_content, "wayback"
 
     # Step 5: Give up
+    logger.warning(f"All fallback methods failed for {url}")
     return "Content not accessible due to site restrictions.", "source-limited"
 
 def fetch_articles_from_all_feeds(max_articles_per_source=3):
@@ -146,69 +156,80 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), 
-        options=chrome_options
-)
-
+    driver = None
     try:
+        logger.info("Setting up Chrome WebDriver")
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()), 
+            options=chrome_options
+        )
+
         for category, feeds in RSS_FEEDS.items():
-            print(f"\n[INFO] Fetching articles for category: {category}")
+            logger.info(f"Fetching articles for category: {category}")
             for source_name, feed_url in feeds.items():
-                print(f"  • From: {source_name}")
-                feed = feedparser.parse(feed_url)
-                count = 0
-
-                for entry in feed.entries:
-                    if count >= max_articles_per_source:
-                        break
-                    try:
-                        if source_name in ["Fox News", "Washington Times"]:
+                logger.info(f"Processing feed: {source_name}")
+                try:
+                    feed = feedparser.parse(feed_url)
+                    if not feed.entries:
+                        logger.warning(f"No entries found in feed: {source_name} ({feed_url})")
+                        continue
+                        
+                    count = 0
+                    for entry in feed.entries:
+                        if count >= max_articles_per_source:
+                            break
+                        try:
+                            if source_name in ["Fox News", "Washington Times"]:
+                                content, method = get_article_fallback_content(entry)
+                                logger.debug(f"Used fallback method {method} for {source_name}: {entry.get('link', 'No URL')}")
+                            else:
+                                article = Article(entry.link)
+                                article.download()
+                                article.parse()
+                                content = article.text
+                                method = "full"
+                                logger.debug(f"Successfully parsed article from {source_name}: {entry.get('title', 'No Title')}")
+                        except Exception as e:
+                            logger.warning(f"Newspaper failed for: {entry.get('link', 'No URL')} - Reason: {str(e)}")
                             content, method = get_article_fallback_content(entry)
-                            print(f"[INFO] Used fallback method: {method}")
-                        else:
-                            article = Article(entry.link)
-                            article.download()
-                            article.parse()
-                            content = article.text
-                            method = "full"
-                    except Exception as e:
-                        print(f"    [WARN] Newspaper failed for: {entry.link}\n    Reason: {e}")
-                        content, method = get_article_fallback_content(entry)
 
-                    all_articles.append({
-                        'title': entry.title if 'title' in entry else "No Title",
-                        'url': entry.link,
-                        'source': source_name,
-                        'category': category,
-                        'published': entry.published if 'published' in entry else "Unknown",
-                        'content': content,
-                        'fetch_method': method
-                    })
-                    count += 1
+                        all_articles.append({
+                            'title': entry.title if 'title' in entry else "No Title",
+                            'url': entry.link,
+                            'source': source_name,
+                            'category': category,
+                            'published': entry.published if 'published' in entry else "Unknown",
+                            'content': content,
+                            'fetch_method': method
+                        })
+                        count += 1
+                except Exception as e:
+                    logger.error(f"Error processing feed {source_name}: {str(e)}")
 
         # Log skipped articles
         if skipped_articles:
-            print("\n[INFO] Skipped Articles:")
+            logger.info(f"Skipped {len(skipped_articles)} articles")
             for skipped in skipped_articles:
-                print(f"  - URL: {skipped['url']}\n    Reason: {skipped['reason']}")
+                logger.debug(f"Skipped URL: {skipped['url']} - Reason: {skipped['reason']}")
 
+    except Exception as e:
+        logger.error(f"Error in fetch_articles_from_all_feeds: {str(e)}", exc_info=True)
     finally:
         if driver is not None:  # Check if driver was initialized
             driver.quit()  # Ensure the WebDriver is closed
+            logger.debug("WebDriver closed")
 
+    logger.info(f"Article fetching completed. Retrieved {len(all_articles)} articles.")
     return all_articles
 
 
 # --- Test Execution ---
 
 if __name__ == "__main__":
-
+    logger.info("Running fetch_news.py directly for testing")
     articles = fetch_articles_from_all_feeds()
     for i, article in enumerate(articles, 1):
-        print(f"\n--- Article {i} ---")
-        print(f"Title: {article['title']}")
-        print(f"Source: {article['source']} ({article['category']})")
-        print(f"URL: {article['url']}")
-        print(f"Published: {article['published']}")
-        print(f"Content Preview:\n{article['content'][:300]}...\n")
+        logger.info(f"Article {i}: {article['title']} - {article['source']} ({article['category']})")
+        logger.debug(f"URL: {article['url']}")
+        logger.debug(f"Published: {article['published']}")
+        logger.debug(f"Content Preview: {article['content'][:150]}...")

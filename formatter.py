@@ -2,6 +2,10 @@
 from datetime import datetime, timedelta
 import re
 from difflib import SequenceMatcher
+from logger_config import setup_logger
+
+# Set up logger
+logger = setup_logger()
 
 # Define personalization tags with emojis
 PERSONALIZATION_TAGS = {
@@ -603,7 +607,7 @@ def format_articles(articles, html=False):
             
             # Skip sections with no articles
             if not section_articles:
-                print(f"[INFO] Skipping empty section: {section_key}")
+                logger.info(f"Skipping empty section: {section_key}")
                 continue
                 
             # If we get here, we have articles in this section
@@ -677,8 +681,8 @@ def filter_articles_by_date(articles, days=None, hours=None):
     target_date_str = target_date.strftime('%Y-%m-%d %H:%M')
     today_date = datetime.now()
     
-    print(f"[INFO] Filtering for articles from: {target_date_str} onwards (past {window_text})")
-    print(f"[INFO] Starting with {len(articles)} articles")
+    logger.info(f"Filtering for articles from: {target_date_str} onwards (past {window_text})")
+    logger.info(f"Starting with {len(articles)} articles")
     
     # Filter articles within the time window
     filtered_articles = []
@@ -717,22 +721,22 @@ def filter_articles_by_date(articles, days=None, hours=None):
                     # Include article if it's within the time window (newer than target_date)
                     if published_date >= target_date:
                         filtered_articles.append(article)
-                        print(f"[INFO] Including article from {published_date}: {article.get('title', 'No Title')}")
+                        logger.info(f"Including article from {published_date}: {article.get('title', 'No Title')}")
                     else:
-                        print(f"[INFO] Excluding article from {published_date}: {article.get('title', 'No Title')}")
+                        logger.info(f"Excluding article from {published_date}: {article.get('title', 'No Title')}")
                     break
                 except ValueError:
                     continue
             
             if not parsed:
-                print(f"[INFO] Excluding article with unparseable date: {article.get('title', 'No Title')}")
+                logger.info(f"Excluding article with unparseable date: {article.get('title', 'No Title')}")
                 
         except Exception as e:
-            print(f"[INFO] Excluding article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
+            logger.info(f"Excluding article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
     
     # If we don't have enough articles from time window, include articles with unknown dates
     if len(filtered_articles) < 3:
-        print(f"[INFO] Not enough articles from past {window_text}. Including some articles with unknown dates.")
+        logger.info(f"Not enough articles from past {window_text}. Including some articles with unknown dates.")
         unknown_date_articles = []
         
         # Add up to 5 articles with unknown dates
@@ -740,7 +744,7 @@ def filter_articles_by_date(articles, days=None, hours=None):
             published_str = article.get('published', '')
             if not published_str or published_str == 'Unknown Date':
                 unknown_date_articles.append(article)
-                print(f"[INFO] Including article with unknown date: {article.get('title', 'No Title')}")
+                logger.info(f"Including article with unknown date: {article.get('title', 'No Title')}")
                 if len(unknown_date_articles) >= 5:
                     break
         
@@ -748,7 +752,7 @@ def filter_articles_by_date(articles, days=None, hours=None):
     
     # If we still don't have enough articles, include the most recent ones regardless of date
     if len(filtered_articles) < 3 and len(articles) > 3:
-        print(f"[INFO] Still not enough articles. Including recent available articles.")
+        logger.info(f"Still not enough articles. Including recent available articles.")
         
         # Try to sort articles by date if possible
         dated_articles = []
@@ -777,14 +781,14 @@ def filter_articles_by_date(articles, days=None, hours=None):
             needed = max(0, 5 - len(filtered_articles))  # Get enough to have at least 5 articles
             for _, article in dated_articles[:needed]:
                 filtered_articles.append(article)
-                print(f"[INFO] Including recent article: {article.get('title', 'No Title')}")
+                logger.info(f"Including recent article: {article.get('title', 'No Title')}")
     
     # If we still have no articles, include some without date checking (last resort)
     if not filtered_articles and articles:
-        print(f"[WARN] No dated articles found. Including up to 5 articles without date checking.")
+        logger.warning(f"No dated articles found. Including up to 5 articles without date checking.")
         filtered_articles = articles[:5]  # Include up to 5 articles
     
-    print(f"[INFO] Final article count: {len(filtered_articles)} articles")
+    logger.info(f"Final article count: {len(filtered_articles)} articles")
     return filtered_articles
 
 def deduplicate_articles(articles, similarity_threshold=0.7):
@@ -836,16 +840,16 @@ def deduplicate_articles(articles, similarity_threshold=0.7):
                     # Replace the existing article with this one
                     deduplicated.remove(existing)
                     deduplicated.append(article)
-                    print(f"[INFO] Replaced duplicate with more detailed version: {article.get('title', 'No Title')}")
+                    logger.info(f"Replaced duplicate with more detailed version: {article.get('title', 'No Title')}")
                 else:
-                    print(f"[INFO] Removed duplicate article: {article.get('title', 'No Title')}")
+                    logger.info(f"Removed duplicate article: {article.get('title', 'No Title')}")
                 break
         
         # If not a duplicate, include it
         if not is_duplicate:
             deduplicated.append(article)
     
-    print(f"[INFO] Deduplicated {len(articles)} articles to {len(deduplicated)} (removed {duplicates_removed} duplicates)")
+    logger.info(f"Deduplicated {len(articles)} articles to {len(deduplicated)} (removed {duplicates_removed} duplicates)")
     return deduplicated
 
 def get_key_takeaways(content):
