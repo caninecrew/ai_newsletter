@@ -3,6 +3,24 @@ from datetime import datetime, timedelta
 import re
 from difflib import SequenceMatcher
 
+# Define personalization tags with emojis
+PERSONALIZATION_TAGS = {
+    "Legal": "🔒",
+    "Education": "🏫",
+    "Healthcare": "🏥",
+    "Economy": "📈",
+    "Global Affairs": "🧭",
+    "Technology": "⚡️",
+    "Politics": "🏛️",
+    "Science": "🔬",
+    "Environment": "🌱",
+    "Sports": "⚽",
+    "Entertainment": "🎬",
+    "Business": "💼",
+    "Finance": "💰",
+    "Social Issues": "👥"
+}
+
 # Define user interests/tags for classification
 USER_INTERESTS = [
     "Scouting", "Education", "Policy", "AI", "Technology", "Business", 
@@ -153,11 +171,22 @@ def format_article(article, html=False):
     content = article.get('summary', article.get('content', 'No Content'))
     published = article.get('published', 'Unknown Date')
     
-    # Get article tags based on content
+    # Get article tags based on content and format with emojis
     tags = identify_tags(article)
-    tags_html = "".join([f'<span class="tag">{tag}</span>' for tag in tags])
     
     if html:
+        # Generate personalization tags with emojis
+        tags_html = get_personalization_tags_html(article)
+        
+        # Generate key takeaways
+        key_takeaways = get_key_takeaways(content)
+        
+        # Generate "Why This Matters" section
+        why_matters = get_why_this_matters(article)
+        
+        # Create a unique ID for the full summary toggle functionality
+        article_id = f"article-{hash(title) & 0xFFFFFFFF}"
+        
         return f"""
         <div class="article">
             <h2 class="article-title"><a href="{url}" target="_blank">{title}</a></h2>
@@ -166,17 +195,23 @@ def format_article(article, html=False):
                 <span class="published">{published}</span>
                 <div class="tags">{tags_html}</div>
             </div>
-            <div class="article-content">
+            
+            {key_takeaways}
+            
+            <div id="{article_id}-full" class="article-content full-summary" style="display:none;">
                 <p>{content}</p>
+                {why_matters}
             </div>
-            <div class="read-more">
-                <a href="{url}" target="_blank">Read full article &rarr;</a>
+            
+            <div class="article-actions">
+                <a href="javascript:void(0)" onclick="toggleSummary('{article_id}')" class="toggle-link">Toggle full summary</a>
+                <a href="{url}" target="_blank" class="read-source-link">Read full article &rarr;</a>
             </div>
         </div>
         """
     else:
         tags_text = ", ".join(tags)
-        return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {published}\n\n{content}\n\nRead more: {url}\n\n"
+        return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {published}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
 
 def format_section_summary(section_type, articles):
     """
@@ -674,3 +709,152 @@ def deduplicate_articles(articles, similarity_threshold=0.7):
     
     print(f"[INFO] Deduplicated {len(articles)} articles to {len(deduplicated)} (removed {duplicates_removed} duplicates)")
     return deduplicated
+
+def get_key_takeaways(content):
+    """
+    Extract key takeaways from the article content in a TL;DR style.
+    This uses a simple extraction approach based on the first few sentences.
+    
+    Args:
+        content (str): The article content or summary
+        
+    Returns:
+        str: HTML formatted key takeaways
+    """
+    if not content:
+        return ""
+    
+    # Split content into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', content)
+    
+    # Get first 2-3 sentences for key takeaways, depending on length
+    num_sentences = min(3, len(sentences))
+    if len(sentences[0]) > 100:  # If first sentence is very long
+        num_sentences = min(2, len(sentences))
+    
+    takeaways = sentences[:num_sentences]
+    
+    # Format as bullet points
+    bullet_points = "".join([f"<li>{sentence.strip()}</li>" for sentence in takeaways])
+    
+    return f"""
+    <div class="key-takeaways">
+        <h4>🔑 Key Takeaways:</h4>
+        <ul class="takeaway-bullets">
+            {bullet_points}
+        </ul>
+        <p class="read-full"><a href="#full-summary" class="summary-toggle">Read Full Summary ▼</a></p>
+    </div>
+    """
+
+def get_why_this_matters(article):
+    """
+    Generate a "Why This Matters" section for the article based on its content and tags.
+    
+    Args:
+        article (dict): The article dictionary with content, tags, etc.
+        
+    Returns:
+        str: HTML formatted explanation of why this article matters
+    """
+    title = article.get('title', '').lower()
+    content = article.get('content', '').lower()
+    tags = identify_tags(article)
+    combined_text = f"{title} {content}"
+    
+    # Map impact explanations to keywords
+    impact_map = {
+        "economy": "This could impact markets, businesses, and potentially your financial outlook.",
+        "election": "This may influence upcoming elections and political landscape shifts.",
+        "climate": "This highlights ongoing environmental challenges that affect global sustainability.",
+        "health": "This development could affect public health policies or medical practices.",
+        "technology": "This represents a shift in technology that might change how we interact with digital tools.",
+        "policy": "This policy change may have direct effects on regulations or governance.",
+        "law": "This legal development could set precedents affecting rights and responsibilities.",
+        "education": "This could impact educational institutions, students, or learning approaches.",
+        "global": "This international development may have broader geopolitical implications.",
+        "local": "This local issue might directly affect your community or region."
+    }
+    
+    # Check for matches in the text
+    matches = []
+    for keyword, explanation in impact_map.items():
+        if keyword in combined_text:
+            matches.append(explanation)
+    
+    # Add tag-based explanations
+    tag_impact = {
+        "Legal": "This legal development may set precedents that influence future cases or regulations.",
+        "Education": "This could impact students, educators, or learning institutions in your community.",
+        "Healthcare": "This health-related news could affect medical practices or patient care standards.",
+        "Economy": "This economic trend may influence markets, jobs, or your personal finances.",
+        "Global Affairs": "This international development could reshape diplomatic relations or global trade.",
+        "Technology": "This tech advancement might change how people interact with devices or services.",
+        "Politics": "This political shift could impact governance or upcoming electoral outcomes.",
+        "Environment": "This environmental news may affect sustainability efforts or climate policies."
+    }
+    
+    for tag in tags:
+        if tag in tag_impact:
+            matches.append(tag_impact[tag])
+    
+    # If we don't have matches, provide generic explanation based on section
+    if not matches:
+        section = classify_article(article)
+        if section == 'global_major':
+            matches.append("This international development could have widespread implications for global politics or economics.")
+        elif section == 'domestic_major':
+            matches.append("This domestic issue may affect national policies or public opinion.")
+        else:
+            matches.append("This story relates to topics you've shown interest in and may have relevance to your professional or personal life.")
+    
+    # Take up to 2 unique explanations
+    unique_matches = list(set(matches))[:2]
+    explanation_html = "".join([f"<p>{explanation}</p>" for explanation in unique_matches])
+    
+    return f"""
+    <div class="why-matters">
+        <h4>💡 Why This Matters:</h4>
+        {explanation_html}
+    </div>
+    """
+
+def get_personalization_tags_html(article):
+    """
+    Generate HTML for personalization tags with emojis.
+    
+    Args:
+        article (dict): The article dictionary
+        
+    Returns:
+        str: HTML formatted tags with emojis
+    """
+    tags = identify_tags(article)
+    html_tags = []
+    
+    # Map common tags to the personalization tags with emojis
+    for tag in tags:
+        # Direct matches
+        if tag in PERSONALIZATION_TAGS:
+            emoji = PERSONALIZATION_TAGS[tag]
+            html_tags.append(f'<span class="tag">{emoji} {tag}</span>')
+        # Related matches
+        elif "Legal" in tag or "law" in tag.lower() or "regulation" in tag.lower():
+            html_tags.append(f'<span class="tag">🔒 Legal</span>')
+        elif "Education" in tag or "school" in tag.lower() or "learning" in tag.lower():
+            html_tags.append(f'<span class="tag">🏫 Education</span>')
+        elif "Health" in tag or "medical" in tag.lower() or "hospital" in tag.lower():
+            html_tags.append(f'<span class="tag">🏥 Healthcare</span>')
+        elif "Economy" in tag or "market" in tag.lower() or "financial" in tag.lower():
+            html_tags.append(f'<span class="tag">📈 Economy</span>')
+        elif "Global" in tag or "international" in tag.lower() or "world" in tag.lower():
+            html_tags.append(f'<span class="tag">🧭 Global Affairs</span>')
+        elif "Tech" in tag or "software" in tag.lower() or "digital" in tag.lower():
+            html_tags.append(f'<span class="tag">⚡️ Technology</span>')
+        elif "Government" in tag or "policy" in tag.lower() or "politics" in tag.lower():
+            html_tags.append(f'<span class="tag">🏛️ Politics</span>')
+        else:
+            # Generic tag without emoji
+            html_tags.append(f'<span class="tag">{tag}</span>')
+    
+    return "".join(html_tags)
