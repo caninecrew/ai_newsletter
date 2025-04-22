@@ -5,6 +5,7 @@
 - [X] Implement LLM summarization with OpenAI API
 - [X] Send formatted email to recipients
 - [X] Set up automated daily delivery (GitHub Actions)
+- [X] Add configuration file instead of hardcoding RSS feeds
 
 ## Email Format Enhancements
 - [ ] Highlight Key Takeaways First (TL;DR Style) with "Read Full Summary" link below
@@ -16,9 +17,32 @@
 
 ## Technical Enhancements
 - [X] Implement OpenAI API integration for article summarization
+- [X] Add configurable news sources (RSS vs GNews API)
+- [X] Store API keys securely in environment variables
 - [ ] Add error logging and monitoring for GitHub Actions workflow
 - [ ] Implement user preference settings for personalization tags
 - [ ] Create fallback mechanisms if primary news sources are unavailable
+- [ ] Implement caching to reduce API calls and improve performance
+- [ ] Add usage statistics tracking for API calls
+- [ ] Add unit tests for key components
+
+## News Sources
+- [X] Implement GNews API integration as alternative to RSS feeds
+- [ ] Add NewsAPI or other alternative news sources
+- [ ] Improve source categorization and diversity
+- [ ] Create a better balance of political perspectives
+
+## GitHub Actions
+- [ ] Update GitHub Actions workflow to support both RSS and GNews API
+- [ ] Add proper error notifications (email/Slack) on workflow failures
+- [ ] Implement scheduled runs at different times to improve coverage
+- [ ] Optimize workflow to reduce execution time
+
+## Documentation
+- [ ] Create detailed README with setup instructions
+- [ ] Document available configuration options
+- [ ] Add usage examples and screenshots
+- [ ] Document the architecture and design decisions
 
 ## Project Demonstration (Due Date: TBD)
 - [ ] Prepare 5-8 minute demonstration script covering:
@@ -34,5 +58,4 @@
 - [ ] Test across different news categories and sources
 - [ ] Validate email formatting on different email clients
 - [ ] Time the complete process to ensure reasonable performance
-
-- Add configuration file instead of hardcoding what RSS feeds will be used
+- [ ] Create test scripts for CI/CD pipeline
