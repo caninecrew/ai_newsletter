@@ -33,3 +33,4 @@
 - [ ] Test across different news categories and sources
 - [ ] Validate email formatting on different email clients
 - [ ] Time the complete process to ensure reasonable performance
+
