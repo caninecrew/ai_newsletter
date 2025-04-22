@@ -35,5 +35,4 @@
 - [ ] Validate email formatting on different email clients
 - [ ] Time the complete process to ensure reasonable performance
 
-- Add configuration file instead of hardcoding RSS feeds
-- Add logging instead of print statements
+- Add configuration file instead of hardcoding what RSS feeds will be used

@@ -10,47 +10,10 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from logger_config import setup_logger
+from config import RSS_FEEDS, SYSTEM_SETTINGS
 
 # Set up logger
 logger = setup_logger()
-
-# --- RSS Feed Definitions ---
-
-RSS_FEEDS = {
-    "Left": {
-        "CNN": "http://rss.cnn.com/rss/cnn_topstories.rss",
-        "NYT": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-        "MSNBC": "https://www.msnbc.com/feeds/latest"
-    },
-    "Center": {
-        "NPR": "https://feeds.npr.org/1001/rss.xml",
-        "AP": "https://apnews.com/rss",
-        "Reuters": "http://feeds.reuters.com/reuters/domesticNews"
-    },
-    "Right": {
-        "Fox News": "http://feeds.foxnews.com/foxnews/latest",
-        "Daily Wire": "https://www.dailywire.com/feed",
-        "Washington Times": "https://www.washingtontimes.com/rss/headlines/news/politics/"
-    },
-    "International": {
-        "BBC": "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "Reuters": "http://feeds.reuters.com/reuters/worldNews",
-        "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
-        "France24": "https://www.france24.com/en/rss",
-        "DW": "https://rss.dw.com/rdf/rss-en-all"
-    },
-    "Tennessee": {
-        "WKRN News 2 Nashville": "https://wkrn.com/feed",
-        "Tennessee Tribune": "https://tntribune.com/category/community/local/nashville/feed/",
-        "Tennessee Star": "https://tennesseestar.com/feed/"
-    },
-    "Personalized": {
-        "Scouting": "https://blog.scoutingmagazine.org/feed/",
-        "NPR Education": "https://feeds.npr.org/1013/rss.xml",
-        "BBC Tech": "http://feeds.bbci.co.uk/news/technology/rss.xml"
-    }
-}
-
 
 # --- Fetching Logic ---
 

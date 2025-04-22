@@ -3,34 +3,10 @@ from datetime import datetime, timedelta
 import re
 from difflib import SequenceMatcher
 from logger_config import setup_logger
+from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 
 # Set up logger
 logger = setup_logger()
-
-# Define personalization tags with emojis
-PERSONALIZATION_TAGS = {
-    "Legal": "🔒",
-    "Education": "🏫",
-    "Healthcare": "🏥",
-    "Economy": "📈",
-    "Global Affairs": "🧭",
-    "Technology": "⚡️",
-    "Politics": "🏛️",
-    "Science": "🔬",
-    "Environment": "🌱",
-    "Sports": "⚽",
-    "Entertainment": "🎬",
-    "Business": "💼",
-    "Finance": "💰",
-    "Social Issues": "👥"
-}
-
-# Define user interests/tags for classification
-USER_INTERESTS = [
-    "Scouting", "Education", "Policy", "AI", "Technology", "Business", 
-    "Civic Affairs", "Tennessee", "Global Missions", "Outdoor", "Backpacking",
-    "FOIA", "Transparency", "Government"
-]
 
 # Define news section categories
 SECTION_TYPES = {
@@ -570,6 +546,30 @@ def format_articles(articles, html=False):
         html_output += """
                 </ul>
             </div>
+        """
+        
+        # If we have too few articles, add a note about coverage
+        if len(articles) < 3:
+            html_output += """
+            <div class="coverage-note">
+                <p><strong>Note:</strong> Today's news coverage is limited as we're only including articles 
+                published exactly on the target date for accuracy. Some sources may not have provided 
+                timestamps or published relevant content today.</p>
+            </div>
+            """
+        
+        # Add each section in the specified order, but only if it has articles
+        section_order = ['global_major', 'domestic_major', 'personal_interest', 'fox_exclusive']
+        section_classes = {
+            'global_major': 'global-section',
+            'domestic_major': 'domestic-section',
+            'personal_interest': 'personal-section',
+            'fox_exclusive': 'fox-section'
+        }
+        
+        # Updated section titles with icons
+        section_titles = {
+            'global_major': '🌍 Super Major International News',
         """
         
         # If we have too few articles, add a note about coverage

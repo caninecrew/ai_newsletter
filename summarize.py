@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import openai
 import time
 from logger_config import setup_logger
+from config import RSS_FEEDS, SYSTEM_SETTINGS
 
 # Set up logger
 logger = setup_logger()
