@@ -568,6 +568,13 @@ def fetch_news_articles(rss_feeds, fetch_content=True):
 def fetch_articles_from_all_feeds(max_articles_per_source=3):
     """
     Main function to fetch articles based on the configured news source
+    
+    Args:
+        max_articles_per_source (int): Maximum number of articles to fetch per source
+        
+    Returns:
+        list: List of article dictionaries (first element of tuple)
+              or just the articles if using GNews
     """
     logger.info(f"Fetching news using configured source: {PRIMARY_NEWS_SOURCE}")
     
@@ -576,7 +583,28 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
         return fetch_articles_from_gnews()
     else:
         # Default to RSS feeds
-        return fetch_news_articles(RSS_FEEDS)
+        # Convert nested RSS_FEEDS structure to flat dictionary for fetch_news_articles
+        flat_feeds = {}
+        
+        for category, sources in RSS_FEEDS.items():
+            logger.info(f"Fetching RSS feed: {category} ({sources})")
+            try:
+                # If sources is a dictionary, iterate through its items
+                if isinstance(sources, dict):
+                    for source_name, feed_url in sources.items():
+                        # Create a key combining category and source name
+                        flat_key = f"{source_name} ({category})"
+                        flat_feeds[flat_key] = feed_url
+                # If sources is a string (direct URL), use category as source name
+                elif isinstance(sources, str):
+                    flat_feeds[category] = sources
+                else:
+                    logger.error(f"Unexpected format for category {category}: {type(sources)}")
+            except Exception as e:
+                logger.error(f"Error processing source {category}: {e}")
+        
+        # Now call fetch_news_articles with the flattened dictionary
+        return fetch_news_articles(flat_feeds)
 
 # --- Test Execution ---
 
