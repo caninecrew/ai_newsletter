@@ -324,14 +324,9 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
         feed = feedparser.parse(response.content, response_headers=response.headers)
         parsing_time = time.time() - start_time
         
-        # If feedparser fails to parse the content, try parsing the URL directly
-        if not feed.entries and not feed.get('status'):
-            feed = feedparser.parse(feed_url)
-        
-        if parsing_time > 5:  # Log slow feeds
+        if parsing_time > 5:
             logger.warning(f"Slow RSS feed parsing: {source_name} took {parsing_time:.2f}s")
         
-        # Check both status codes since some feeds might return 301/302 but still have content
         if not feed.entries and feed.get('status') not in [200, 301, 302]:
             logger.warning(f"Failed to fetch RSS feed {source_name}: Status {feed.get('status', 'unknown')}")
             failed_urls.add(feed_url)
@@ -343,17 +338,15 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             FETCH_METRICS['empty_sources'].append(source_name)
             return []
         
-        articles = []
-        
-        # Process all entries to extract dates first
-        entries_with_dates = []
+        # Score and filter entries before processing
+        scored_entries = []
         for entry in feed.entries:
             try:
-                # Skip if we don't have essential fields
+                # Skip if missing essential fields
                 if not entry.get('title') or not entry.get('link'):
                     continue
-                
-                # Skip if URL was previously processed globally (across all feeds)
+                    
+                # Skip if URL was previously processed
                 if entry.get('link') in unique_article_urls:
                     FETCH_METRICS['duplicate_articles'] += 1
                     continue
@@ -362,26 +355,49 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                 published = entry.get('published', '')
                 published_date = parse_date(published, entry.get('link'))
                 
-                entries_with_dates.append((entry, published_date))
+                # Calculate article importance score
+                score = 0
+                title = entry.get('title', '').lower()
+                description = entry.get('description', '').lower()
+                
+                # Boost score for articles matching user interests
+                for interest in USER_INTERESTS:
+                    if interest.lower() in title or interest.lower() in description:
+                        score += 2
+                
+                # Boost score for breaking news indicators
+                breaking_terms = ['breaking', 'urgent', 'just in', 'developing']
+                if any(term in title.lower() for term in breaking_terms):
+                    score += 3
+                
+                # Boost score for important keywords
+                important_terms = ['announcement', 'official', 'update', 'report', 'investigation']
+                if any(term in title.lower() for term in important_terms):
+                    score += 1
+                
+                # Add entry with its score
+                scored_entries.append((entry, published_date, score))
                 
             except Exception as e:
                 logger.error(f"Error processing RSS entry from {source_name}: {e}")
         
-        # Sort entries by date (newest first) and take only the top N
-        entries_with_dates.sort(key=lambda x: x[1], reverse=True)
-        limited_entries = entries_with_dates[:max_articles]
+        # Sort by score (primary) and date (secondary)
+        scored_entries.sort(key=lambda x: (x[2], x[1]), reverse=True)
         
-        # Now process the limited entries
-        for entry, published_date in limited_entries:
+        # Take only the top N highest-scoring entries
+        limited_entries = scored_entries[:max_articles]
+        
+        articles = []
+        for entry, published_date, _ in limited_entries:
             try:
                 title = entry.get('title', '')
                 link = entry.get('link', '')
                 
-                # Mark URL as processed globally and locally
+                # Mark URL as processed
                 attempted_urls.add(link)
                 unique_article_urls.add(link)
                 
-                # Get description/summary if available
+                # Get description/summary
                 description = entry.get('description', entry.get('summary', ''))
                 if description:
                     soup = BeautifulSoup(description, 'html.parser')
@@ -403,7 +419,8 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                     'published': published_date,
                     'description': description,
                     'content': content,
-                    'source': source_name
+                    'source': source_name,
+                    'importance_score': _  # Include the score for later use
                 })
                 
             except Exception as e:
@@ -414,7 +431,6 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             FETCH_METRICS['successful_sources'] += 1
             FETCH_METRICS['total_articles'] += len(articles)
             
-            # Update source statistics
             if source_name not in FETCH_METRICS['source_statistics']:
                 FETCH_METRICS['source_statistics'][source_name] = {
                     'articles': len(articles),
