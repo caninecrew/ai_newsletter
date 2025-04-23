@@ -20,7 +20,7 @@ import logging
 import concurrent.futures
 from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
 from urllib.parse import urlparse
-from config import RSS_FEEDS, SYSTEM_SETTINGS, PRIMARY_NEWS_SOURCE
+from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS
 from gnews_api import fetch_articles_from_gnews
 from collections import defaultdict
 
@@ -748,6 +748,24 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
             logger.warning(f"Error closing WebDriver: {e}")
     
     return all_articles, stats
+
+def combine_feed_sources():
+    """Combine all feed sources based on system settings."""
+    combined_feeds = {}
+    
+    # Always include PRIMARY_NEWS_FEEDS
+    combined_feeds.update(PRIMARY_NEWS_FEEDS)
+    
+    # Include SECONDARY_FEEDS
+    for category, feeds in SECONDARY_FEEDS.items():
+        combined_feeds.update(feeds)
+    
+    # Include SUPPLEMENTAL_FEEDS if enabled
+    if SYSTEM_SETTINGS.get("use_supplemental_feeds", False):
+        for category, feeds in SUPPLEMENTAL_FEEDS.items():
+            combined_feeds.update(feeds)
+            
+    return combined_feeds
 
 def fetch_articles_from_all_feeds(max_articles_per_source=5):
     """
