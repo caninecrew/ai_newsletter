@@ -12,6 +12,11 @@ from bs4 import BeautifulSoup
 from logger_config import setup_logger
 from config import RSS_FEEDS, SYSTEM_SETTINGS, PRIMARY_NEWS_SOURCE
 from gnews_api import fetch_articles_from_gnews
+import datetime
+from dateutil import parser as date_parser
+from dateutil.parser._parser import ParserError
+import pytz
+from collections import defaultdict
 
 # Set up logger
 logger = setup_logger()
@@ -104,69 +109,185 @@ def get_article_fallback_content(entry):
     logger.warning(f"All fallback methods failed for {url}")
     return "Content not accessible due to site restrictions.", "source-limited"
 
+def parse_date(date_str):
+    """
+    Parse dates with robust error handling for different formats
+    and handle timezone awareness issues
+    """
+    if not date_str or date_str == "Unknown":
+        logger.debug("Empty date string received, using current time")
+        return datetime.datetime.now(pytz.UTC)
+    
+    try:
+        # Try parsing with dateutil
+        parsed_date = date_parser.parse(date_str)
+        
+        # Make datetime timezone aware if it's naive
+        if parsed_date.tzinfo is None:
+            parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+            
+        return parsed_date
+        
+    except (ParserError, ValueError) as e:
+        logger.warning(f"Date parsing error: {e} for date string: {date_str}")
+        # Try various date formats before giving up
+        formats_to_try = [
+            "%a, %d %b %Y %H:%M:%S %z",  # RFC 2822 format
+            "%Y-%m-%dT%H:%M:%S%z",        # ISO 8601 format
+            "%Y-%m-%dT%H:%M:%SZ",         # ISO 8601 UTC format
+            "%Y-%m-%d %H:%M:%S",          # Simple datetime format
+            "%Y-%m-%d",                   # Simple date format
+            "%d %b %Y %H:%M:%S",          # Day first format
+            "%d %B %Y",                   # Day month year format
+            "%B %d, %Y"                   # Month day, year format
+        ]
+        
+        for fmt in formats_to_try:
+            try:
+                parsed_date = datetime.datetime.strptime(date_str, fmt)
+                logger.debug(f"Successfully parsed date using format: {fmt}")
+                
+                # Make datetime timezone aware if it's naive
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+                    
+                return parsed_date
+            except ValueError:
+                pass
+        
+        # If all else fails, log the issue with the specific date string
+        logger.error(f"Failed to parse date with all formats: '{date_str}'")
+        return datetime.datetime.now(pytz.UTC)
+    except OverflowError as e:
+        # Handle extreme dates (year 0001, 9999, etc.)
+        logger.error(f"Date overflow error: {e} for date string: '{date_str}'")
+        return datetime.datetime.now(pytz.UTC)
+    except Exception as e:
+        # Catch any other unexpected errors
+        logger.error(f"Unexpected date parsing error: {type(e).__name__}: {e} for '{date_str}'")
+        return datetime.datetime.now(pytz.UTC)
+
 def fetch_articles_from_rss(max_articles_per_source=3):
     """
     Fetch news articles from RSS feeds as defined in config.py
     """
     all_articles = []
-    skipped_articles = []  # To log skipped articles
+    skipped_articles = []
+    processed_urls = set()  # Track URLs to avoid duplicates
+    
+    # Statistics collection
+    stats = {
+        "total_feeds": 0,
+        "empty_feeds": 0,
+        "successful_fetches": 0,
+        "failed_fetches": 0,
+        "articles_by_category": defaultdict(int),
+        "articles_by_source": defaultdict(int),
+    }
 
     # Configure Selenium WebDriver
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
     driver = None
     try:
-        logger.info("Setting up Chrome WebDriver")
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), 
-            options=chrome_options
-        )
+        # Only initialize the WebDriver if we're going to use it
+        if SYSTEM_SETTINGS.get("session_reuse", True):
+            logger.info("Setting up Chrome WebDriver (reusing session)")
+            driver = webdriver.Chrome(
+                service=Service(ChromeDriverManager().install()), 
+                options=chrome_options
+            )
 
         for category, feeds in RSS_FEEDS.items():
             logger.info(f"Fetching articles for category: {category}")
+            
+            # Category statistics
+            category_stats = {
+                "total_feeds": len(feeds),
+                "empty_feeds": 0,
+                "articles_fetched": 0,
+            }
+            
             for source_name, feed_url in feeds.items():
+                stats["total_feeds"] += 1
                 logger.info(f"Processing feed: {source_name}")
                 try:
                     feed = feedparser.parse(feed_url)
                     if not feed.entries:
                         logger.warning(f"No entries found in feed: {source_name} ({feed_url})")
+                        stats["empty_feeds"] += 1
+                        category_stats["empty_feeds"] += 1
                         continue
                         
                     count = 0
                     for entry in feed.entries:
                         if count >= max_articles_per_source:
                             break
+                            
+                        # Skip already processed URLs
+                        url = entry.get('link', '')
+                        if not url or url in processed_urls:
+                            logger.debug(f"Skipping duplicate URL: {url}")
+                            continue
+                            
+                        processed_urls.add(url)  # Mark URL as processed
+                        
                         try:
-                            if source_name in ["Fox News", "Washington Times"]:
-                                content, method = get_article_fallback_content(entry)
-                                logger.debug(f"Used fallback method {method} for {source_name}: {entry.get('link', 'No URL')}")
-                            else:
-                                article = Article(entry.link)
-                                article.download()
-                                article.parse()
-                                content = article.text
-                                method = "full"
-                                logger.debug(f"Successfully parsed article from {source_name}: {entry.get('title', 'No Title')}")
+                            content = None
+                            method = None
+                            
+                            # Use newspaper3k to extract article content
+                            article = Article(url)
+                            article.download()
+                            article.parse()
+                            content = article.text
+                            method = "full"
+                            stats["successful_fetches"] += 1
+                            logger.debug(f"Successfully parsed article from {source_name}: {entry.get('title', 'No Title')}")
+                            
                         except Exception as e:
-                            logger.warning(f"Newspaper failed for: {entry.get('link', 'No URL')} - Reason: {str(e)}")
+                            stats["failed_fetches"] += 1
+                            logger.warning(f"Newspaper failed for: {url} - Reason: {str(e)}")
                             content, method = get_article_fallback_content(entry)
 
-                        all_articles.append({
-                            'title': entry.title if 'title' in entry else "No Title",
-                            'url': entry.link,
-                            'source': source_name,
-                            'category': category,
-                            'published': entry.published if 'published' in entry else "Unknown",
-                            'content': content,
-                            'fetch_method': method
-                        })
-                        count += 1
+                        # Get and parse publication date with improved error handling
+                        pub_date_str = entry.get('published', 'Unknown')
+                        try:
+                            parsed_date = parse_date(pub_date_str)
+                            pub_date_str = parsed_date.isoformat()
+                        except Exception as e:
+                            logger.warning(f"Date parsing failed for {url}: {str(e)}")
+                            pub_date_str = datetime.datetime.now(pytz.UTC).isoformat()
+
+                        # Only add if we got content
+                        if content:
+                            all_articles.append({
+                                'title': entry.get('title', "No Title"),
+                                'url': url,
+                                'source': source_name,
+                                'category': category,
+                                'published': pub_date_str,
+                                'content': content,
+                                'fetch_method': method
+                            })
+                            count += 1
+                            stats["articles_by_category"][category] += 1
+                            stats["articles_by_source"][source_name] += 1
+                            category_stats["articles_fetched"] += 1
+                        else:
+                            skipped_articles.append({
+                                'url': url,
+                                'reason': 'No content retrieved'
+                            })
+                            
                 except Exception as e:
                     logger.error(f"Error processing feed {source_name}: {str(e)}")
+            
+            logger.info(f"Category {category}: {category_stats['articles_fetched']} articles fetched, {category_stats['empty_feeds']} empty feeds")
 
         # Log skipped articles
         if skipped_articles:
@@ -174,11 +295,30 @@ def fetch_articles_from_rss(max_articles_per_source=3):
             for skipped in skipped_articles:
                 logger.debug(f"Skipped URL: {skipped['url']} - Reason: {skipped['reason']}")
 
+        # Log comprehensive statistics
+        logger.info("=" * 50)
+        logger.info("ARTICLE FETCHING STATISTICS")
+        logger.info("=" * 50)
+        logger.info(f"Total feeds processed: {stats['total_feeds']}")
+        logger.info(f"Empty feeds: {stats['empty_feeds']}")
+        logger.info(f"Successful fetches: {stats['successful_fetches']}")
+        logger.info(f"Failed fetches: {stats['failed_fetches']}")
+        logger.info(f"Total articles collected: {len(all_articles)}")
+        logger.info("-" * 50)
+        logger.info("Articles by category:")
+        for cat, count in stats["articles_by_category"].items():
+            logger.info(f"  {cat}: {count}")
+        logger.info("-" * 50)
+        logger.info("Top sources:")
+        for source, count in sorted(stats["articles_by_source"].items(), key=lambda x: x[1], reverse=True)[:10]:
+            logger.info(f"  {source}: {count}")
+        logger.info("=" * 50)
+
     except Exception as e:
         logger.error(f"Error in fetch_articles_from_rss: {str(e)}", exc_info=True)
     finally:
-        if driver is not None:  # Check if driver was initialized
-            driver.quit()  # Ensure the WebDriver is closed
+        if driver is not None:
+            driver.quit()
             logger.debug("WebDriver closed")
 
     logger.info(f"RSS article fetching completed. Retrieved {len(all_articles)} articles.")
