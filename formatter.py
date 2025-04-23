@@ -650,7 +650,22 @@ def filter_articles_by_date(articles, days=1, hours=None):
     skipped_count = 0
     parsing_errors = 0
     
-    for article in articles:
+    # First ensure we're working with flat list of articles
+    flat_articles = []
+    for item in articles:
+        # Handle case where an article might be a list itself (nested structure)
+        if isinstance(item, list):
+            flat_articles.extend(item)
+        else:
+            flat_articles.append(item)
+    
+    for article in flat_articles:
+        # Skip if article is not a dictionary
+        if not isinstance(article, dict):
+            logger.warning(f"Skipping non-dictionary article: {type(article)}")
+            skipped_count += 1
+            continue
+            
         try:
             # Handle various date formats
             date_str = article.get('published', '')
@@ -718,10 +733,11 @@ def filter_articles_by_date(articles, days=1, hours=None):
                 skipped_count += 1
                 
         except Exception as e:
-            logger.warning(f"Date filtering error for article '{article.get('title', 'No title')}': {str(e)}")
+            logger.warning(f"Date filtering error for article '{article.get('title', 'No title') if isinstance(article, dict) else str(article)}': {str(e)}")
             # Include articles with date errors rather than silently dropping them
-            filtered.append(article)
-            parsing_errors += 1
+            if isinstance(article, dict):
+                filtered.append(article)
+                parsing_errors += 1
     
     logger.info(f"Date filtering: {len(filtered)} articles kept, {skipped_count} skipped, {parsing_errors} with parsing errors")
     return filtered
