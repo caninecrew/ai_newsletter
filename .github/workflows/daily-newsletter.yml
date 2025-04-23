@@ -55,11 +55,13 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
-          NEWS_SOURCE: ${{ secrets.NEWS_SOURCE || 'rss' }}  # Default to RSS if not specified
+          NEWS_SOURCE: ${{ secrets.NEWS_SOURCE }}
         run: |
           echo "Starting newsletter script with news source: $NEWS_SOURCE"
           # Create empty logs.txt file if it doesn't exist
           touch logs.txt
+          # Set default news source if not provided
+          NEWS_SOURCE=${NEWS_SOURCE:-rss}
           # Update config.py with the specified news source
           sed -i "s/PRIMARY_NEWS_SOURCE = \".*\"/PRIMARY_NEWS_SOURCE = \"$NEWS_SOURCE\"/" config.py
           # Run with error handling
