@@ -21,6 +21,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF logs (0=all, 1=INFO, 2=W
 DEBUG_MODE = "--debug" in sys.argv
 SKIP_DATE_FILTER = "--skip-date-filter" in sys.argv
 
+# Removed categories and replaced them with topics-based classification
+# Topics will now be used for classification instead of predefined categories.
+
 def run_newsletter():
     # Fetch raw articles
     raw_articles = fetch_articles_from_all_feeds()
