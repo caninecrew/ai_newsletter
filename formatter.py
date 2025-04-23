@@ -726,93 +726,147 @@ def filter_articles_by_date(articles, days=1, hours=None):
     logger.info(f"Date filtering: {len(filtered)} articles kept, {skipped_count} skipped, {parsing_errors} with parsing errors")
     return filtered
 
-def deduplicate_articles(articles, similarity_threshold=0.6):
+def is_duplicate(article1, article2, title_threshold=0.8, content_threshold=0.6):
     """
-    Remove duplicate or very similar articles from the list
+    Advanced duplicate detection using both title and content similarity
+    with weighted comparison for better accuracy.
     
     Args:
-        articles: List of article dictionaries
-        similarity_threshold: Float between 0-1, higher means more similarity required to consider as duplicate
+        article1, article2: Article dictionaries to compare
+        title_threshold: Similarity threshold for titles (0.0-1.0)
+        content_threshold: Similarity threshold for content (0.0-1.0)
         
     Returns:
-        List of deduplicated articles
+        bool: True if articles are likely duplicates, False otherwise
+    """
+    # Clean and normalize text for comparison
+    def normalize_text(text):
+        if not text:
+            return ""
+        # Convert to lowercase, remove extra spaces
+        return re.sub(r'\s+', ' ', text.lower().strip())
+    
+    # Extract and normalize title and content
+    title1 = normalize_text(article1.get('title', ''))
+    title2 = normalize_text(article2.get('title', ''))
+    
+    # If either title is empty, we can't reliably compare
+    if not title1 or not title2:
+        return False
+    
+    # Short-circuit: exact title match is definitely duplicate
+    if title1 == title2:
+        return True
+    
+    # Calculate title similarity
+    title_similarity = SequenceMatcher(None, title1, title2).ratio()
+    
+    # If titles are very similar, consider it a duplicate immediately
+    if title_similarity > title_threshold:
+        return True
+    
+    # If titles are somewhat similar, check content as well
+    if title_similarity > title_threshold * 0.75:
+        # Get content snippets (first part of content is usually most distinctive)
+        content1 = normalize_text(article1.get('content', ''))[:500]
+        content2 = normalize_text(article2.get('content', ''))[:500]
+        
+        # If no content available, rely only on title comparison
+        if not content1 or not content2:
+            return title_similarity > title_threshold * 0.9
+        
+        # Check content similarity
+        content_similarity = SequenceMatcher(None, content1, content2).ratio()
+        
+        # Weight title and content for final decision
+        combined_similarity = (title_similarity * 0.7) + (content_similarity * 0.3)
+        return combined_similarity > (title_threshold * 0.8)
+    
+    return False
+
+def deduplicate_articles(articles):
+    """
+    Remove duplicate articles from the list with improved algorithm.
+    Prioritizes keeping articles from preferred sources when duplicates are found.
+    
+    Args:
+        articles (list): List of article dictionaries
+        
+    Returns:
+        list: Deduplicated list of articles
     """
     if not articles:
         return []
     
+    # Define source preferences (higher is better)
+    source_preference = {
+        "Associated Press": 10,
+        "Reuters": 9,
+        "NPR": 8,
+        "PBS": 8,
+        "BBC News": 8,
+        "The Wall Street Journal": 7,
+        "The New York Times": 7,
+        "The Washington Post": 7,
+        "Bloomberg": 7,
+        "CNS News": 6,
+        "National Review": 6
+    }
+    
+    # Default preference for unlisted sources
+    default_preference = 5
+    
+    # Sort articles by published date (newest first) and source preference
+    sorted_articles = sorted(
+        articles, 
+        key=lambda a: (
+            source_preference.get(a.get('source', ''), default_preference),
+            a.get('published', '0')  # Default to '0' if no date
+        ),
+        reverse=True
+    )
+    
     unique_articles = []
     duplicate_count = 0
-    url_memory = set()  # Track URLs we've already seen
-    title_memory = {}   # Map normalized titles to articles
+    duplicate_groups = []
     
-    for article in articles:
-        # Skip articles with duplicate URLs
-        url = article.get('url', '')
-        if url in url_memory:
-            duplicate_count += 1
-            logger.debug(f"Skipping duplicate URL: {url}")
-            continue
+    # Track duplicate groups for reporting
+    current_duplicates = []
+    
+    for article in sorted_articles:
+        is_dup = False
         
-        if url:
-            url_memory.add(url)
+        for existing in unique_articles:
+            if is_duplicate(article, existing):
+                is_dup = True
+                duplicate_count += 1
+                current_duplicates.append(article.get('title', 'No title'))
+                break
         
-        # Clean and normalize the title for comparison
-        title = article.get('title', '').lower()
-        # Remove common prefixes that some feeds add
-        title = re.sub(r'^(breaking|exclusive|watch|video|update):\s*', '', title, flags=re.IGNORECASE)
-        # Remove special characters and extra whitespace
-        title = re.sub(r'[^\w\s]', '', title)
-        title = re.sub(r'\s+', ' ', title).strip()
-        
-        # Check for highly similar titles using various methods
-        is_duplicate = False
-        
-        # Direct normalized title match
-        if title in title_memory:
-            logger.debug(f"Found exact title match: {title}")
-            duplicate_count += 1
-            is_duplicate = True
-        else:
-            # Use sequence matcher for fuzzy matching
-            for known_title, known_article in title_memory.items():
-                # Skip short titles or obvious non-matches to save processing time
-                if abs(len(title) - len(known_title)) > 15:
-                    continue
-                    
-                # Calculate string similarity
-                similarity = SequenceMatcher(None, title, known_title).ratio()
-                
-                # Check if article content is from the same original source
-                same_origin = False
-                if article.get('source') == known_article.get('source'):
-                    same_origin = True
-                
-                # If very similar or moderately similar with same origin
-                if similarity > similarity_threshold or (similarity > 0.5 and same_origin):
-                    logger.debug(f"Found similar title ({similarity:.2f}): '{title}' vs '{known_title}'")
-                    duplicate_count += 1
-                    is_duplicate = True
-                    break
-                    
-                # Also check content similarity for borderline cases
-                if 0.45 < similarity < similarity_threshold:
-                    # Get first 200 chars of content for quicker comparison
-                    content1 = article.get('content', '')[:200].lower()
-                    content2 = known_article.get('content', '')[:200].lower()
-                    
-                    if content1 and content2:
-                        content_similarity = SequenceMatcher(None, content1, content2).ratio()
-                        if content_similarity > 0.7:  # High content similarity
-                            logger.debug(f"Similar content ({content_similarity:.2f}) for borderline title match")
-                            duplicate_count += 1
-                            is_duplicate = True
-                            break
-        
-        if not is_duplicate:
+        if not is_dup:
+            # If we were tracking duplicates, finish the group
+            if current_duplicates:
+                duplicate_groups.append(current_duplicates)
+                current_duplicates = []
+            
             unique_articles.append(article)
-            title_memory[title] = article
     
-    logger.info(f"Deduplication: {len(unique_articles)} unique articles, {duplicate_count} duplicates removed")
+    # Add the last group if it exists
+    if current_duplicates:
+        duplicate_groups.append(current_duplicates)
+    
+    # Log deduplication results
+    logger.info(f"Deduplication removed {duplicate_count} duplicate articles")
+    logger.info(f"Original count: {len(articles)}, Deduplicated count: {len(unique_articles)}")
+    
+    # Log duplicate groups (limited to first 5 for brevity)
+    if duplicate_groups:
+        logger.debug(f"Found {len(duplicate_groups)} duplicate groups:")
+        for i, group in enumerate(duplicate_groups[:5], 1):
+            logger.debug(f"Group {i}: {', '.join(group)}")
+        if len(duplicate_groups) > 5:
+            logger.debug(f"... and {len(duplicate_groups) - 5} more groups")
+    
     return unique_articles
 
 def get_key_takeaways(content):
