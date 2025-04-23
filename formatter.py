@@ -8,77 +8,87 @@ from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 # Set up logger
 logger = setup_logger()
 
-# Define news section categories
-SECTION_TYPES = {
-    'global_major': 'Super Major International News',
-    'domestic_major': 'Major Domestic Headlines',
-    'personal_interest': 'Personalized Interest Stories',
-    'fox_exclusive': 'Fox News Exclusive Reporting'
+# Updated categories based on RSS feed structure
+SECTION_CATEGORIES = {
+    'US_NEWS': 'U.S. Headlines',
+    'WORLD_NEWS': 'World News',
+    'POLITICS': 'Politics',
+    'TECHNOLOGY': 'Technology',
+    'BUSINESS': 'Business & Economy',
+    'LEFT_LEANING': 'Left-Leaning Sources',
+    'CENTER': 'Center-Aligned Sources',
+    'RIGHT_LEANING': 'Right-Leaning Sources',
+    'PERSONALIZED': 'Personalized Stories',
+    'LOCAL': 'Local News'
 }
 
-def classify_article(article):
+def categorize_article(article):
     """
-    Classify an article into one of the four sections:
-    1. Super major international news
-    2. Major domestic headlines (across political spectrum)
-    3. Personal interest stories based on user tags
-    4. Fox News exclusive stories
+    Categorize an article based on its source, content, and metadata.
     
     Args:
         article (dict): Article dictionary with title, content, source, etc.
         
     Returns:
-        str: Section classification
+        str: Category key from SECTION_CATEGORIES
     """
     title = article.get('title', '').lower()
     content = article.get('content', '').lower()
     source = article.get('source', '').lower()
     combined_text = f"{title} {content}"
     
-    # Get tags for this article
-    tags = identify_tags(article)
+    # Extract the category from the source if available (e.g., "CNN (Left)" -> "Left")
+    source_category = None
+    if '(' in source and ')' in source:
+        category_match = re.search(r'\(([^)]+)\)', source)
+        if category_match:
+            source_category = category_match.group(1)
     
-    # Keywords for international major news
-    global_keywords = [
-        'war', 'conflict', 'pope', 'vatican', 'disaster', 'earthquake', 'tsunami',
-        'pandemic', 'global crisis', 'united nations', 'nato', 'international',
-        'world', 'global', 'peace', 'treaty', 'catastrophe', 'genocide'
-    ]
+    # First, categorize based on source category from RSS feed structure
+    if source_category:
+        if source_category.lower() == 'left':
+            return 'LEFT_LEANING'
+        elif source_category.lower() == 'center':
+            return 'CENTER'
+        elif source_category.lower() == 'right':
+            return 'RIGHT_LEANING'
+        elif source_category.lower() == 'international':
+            return 'WORLD_NEWS'
+        elif source_category.lower() == 'tennessee':
+            return 'LOCAL'
+        elif source_category.lower() == 'technology':
+            return 'TECHNOLOGY'
+        elif source_category.lower() == 'personalized':
+            return 'PERSONALIZED'
     
-    # Keywords for domestic major news
-    domestic_keywords = [
-        'president', 'congress', 'senate', 'supreme court', 'election',
-        'federal', 'national', 'u.s.', 'united states', 'america', 'american',
-        'government shutdown', 'legislation', 'law', 'policy', 'inflation',
-        'economy', 'healthcare', 'scandal', 'bill', 'national security'
-    ]
+    # Next, categorize based on known sources
+    if any(s in source.lower() for s in ['cnn', 'msnbc', 'nyt', 'new york times', 'washington post']):
+        return 'LEFT_LEANING'
+    elif any(s in source.lower() for s in ['fox', 'national review', 'newsmax', 'washington examiner']):
+        return 'RIGHT_LEANING'
+    elif any(s in source.lower() for s in ['npr', 'reuters', 'ap', 'associated press', 'pbs', 'abc', 'cbs']):
+        return 'CENTER'
+    elif any(s in source.lower() for s in ['bbc', 'al jazeera', 'france24', 'dw', 'guardian world']):
+        return 'WORLD_NEWS'
+    elif any(s in source.lower() for s in ['techcrunch', 'wired', 'ars technica', 'technology review']):
+        return 'TECHNOLOGY'
+    elif any(s in source.lower() for s in ['tennessean', 'nashville', 'tennessee']):
+        return 'LOCAL'
+    elif any(s in source.lower() for s in ['scouting', 'scout life', 'education']):
+        return 'PERSONALIZED'
     
-    # Check for Fox News exclusive
-    if 'fox news' in source and not any(outlet in source for outlet in ['cnn', 'msnbc', 'nbc', 'abc', 'cbs', 'npr', 'washington post', 'new york times']):
-        return 'fox_exclusive'
+    # Then, categorize based on content keywords
+    if any(kw in combined_text for kw in ['international', 'global', 'worldwide', 'foreign', 'abroad']):
+        return 'WORLD_NEWS'
+    elif any(kw in combined_text for kw in ['president', 'congress', 'senate', 'governor', 'election', 'campaign', 'government']):
+        return 'POLITICS'
+    elif any(kw in combined_text for kw in ['tech', 'technology', 'software', 'app', 'digital', 'ai', 'artificial intelligence']):
+        return 'TECHNOLOGY'
+    elif any(kw in combined_text for kw in ['business', 'economy', 'market', 'stock', 'company', 'entrepreneur', 'ceo']):
+        return 'BUSINESS'
     
-    # Check for global major news
-    if any(keyword in combined_text for keyword in global_keywords):
-        return 'global_major'
-    
-    # Check for domestic major news
-    if any(keyword in combined_text for keyword in domestic_keywords):
-        return 'domestic_major'
-    
-    # For personal interest section, only include if it has at least one relevant tag
-    # This removes the "default" behavior of putting everything into personal interest
-    relevant_tags = [tag for tag in tags if tag in USER_INTERESTS or tag == "General News"]
-    
-    if relevant_tags and len(relevant_tags) > 0:
-        return 'personal_interest'
-    
-    # If no clear classification based on content, put in appropriate general category
-    # based on source and geographic focus
-    if 'international' in combined_text or 'world' in combined_text or 'global' in combined_text:
-        return 'global_major'
-    
-    # Default to domestic news if we can't classify otherwise
-    return 'domestic_major'
+    # Default to U.S. News if nothing else matches
+    return 'US_NEWS'
 
 def identify_tags(article):
     """
@@ -124,10 +134,17 @@ def identify_tags(article):
     
     # Add some default categorization if no specific tags matched
     if not matched_tags:
-        if "fox news" in article.get('source', '').lower():
+        source = article.get('source', '').lower()
+        if "fox news" in source:
             matched_tags.append("U.S. News")
         elif any(k in combined_text for k in ["international", "world", "global", "foreign"]):
             matched_tags.append("International")
+        elif any(k in combined_text for k in ["technology", "tech", "digital", "software"]):
+            matched_tags.append("Technology")
+        elif any(k in combined_text for k in ["business", "economy", "market", "stock"]):
+            matched_tags.append("Business")
+        elif any(k in combined_text for k in ["politics", "president", "congress", "election"]):
+            matched_tags.append("Politics")
         else:
             matched_tags.append("General News")
             
@@ -146,7 +163,7 @@ def format_article(article, html=False):
     """
     title = article.get('title', 'No Title')
     source = article.get('source', 'Unknown Source')
-    url = article.get('url', '#')
+    url = article.get('link', article.get('url', '#'))
     # Use summary instead of content, fall back to content if summary doesn't exist
     content = article.get('summary', article.get('content', 'No Content'))
     published = article.get('published', 'Unknown Date')
@@ -162,7 +179,7 @@ def format_article(article, html=False):
         key_takeaways = get_key_takeaways(content)
         
         # Generate "Why This Matters" section
-        why_matters = get_why_this_matters(article)
+        why_matters = get_why_this_matters(article) if EMAIL_SETTINGS.get("show_why_this_matters", True) else ""
         
         # Create a unique ID for the full summary toggle functionality
         article_id = f"article-{hash(title) & 0xFFFFFFFF}"
@@ -193,39 +210,81 @@ def format_article(article, html=False):
         tags_text = ", ".join(tags)
         return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {published}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
 
-def format_section_summary(section_type, articles):
+def limit_articles_by_source(articles, max_per_source=3):
     """
-    Create a summary for a section based on its contents.
+    Limit the number of articles from each source to prevent one source dominating.
     
     Args:
-        section_type (str): Type of section
-        articles (list): Articles in this section
+        articles (list): List of article dictionaries
+        max_per_source (int): Maximum articles allowed per source
         
     Returns:
-        str: HTML summary for the section
+        list: Limited list of articles
     """
     if not articles:
-        return ""
+        return []
+    
+    # Group articles by source
+    source_groups = {}
+    for article in articles:
+        source = article.get('source', 'Unknown')
+        if source not in source_groups:
+            source_groups[source] = []
+        source_groups[source].append(article)
+    
+    # Sort each group by date (newest first)
+    for source, group in source_groups.items():
+        source_groups[source] = sorted(group, key=lambda a: a.get('published', '0'), reverse=True)
+    
+    # Take only the top N from each source
+    limited_articles = []
+    for source, group in source_groups.items():
+        limited_articles.extend(group[:max_per_source])
+    
+    # Re-sort all articles by date
+    limited_articles = sorted(limited_articles, key=lambda a: a.get('published', '0'), reverse=True)
+    
+    logger.info(f"Limited articles from {len(source_groups)} sources: kept {len(limited_articles)} out of {len(articles)}")
+    
+    return limited_articles
+
+def format_section_header(category):
+    """
+    Create a section header with appropriate emoji based on category
+    
+    Args:
+        category (str): Category key from SECTION_CATEGORIES
         
-    if section_type == 'global_major':
-        return "<p class='section-summary'>Major international events and global developments that may impact world affairs.</p>"
-    elif section_type == 'domestic_major':
-        return "<p class='section-summary'>Key U.S. headlines appearing across multiple news outlets that could affect you or your community.</p>"
-    elif section_type == 'personal_interest':
-        interests = set()
-        for article in articles:
-            interests.update(identify_tags(article))
-        interest_text = ", ".join(interests)
-        return f"<p class='section-summary'>News stories related to your interests: {interest_text}.</p>"
-    elif section_type == 'fox_exclusive':
-        return "<p class='section-summary'>Stories reported by Fox News that aren't widely covered by other major outlets.</p>"
+    Returns:
+        tuple: (emoji, title)
+    """
+    if category == 'US_NEWS':
+        return '🇺🇸', 'U.S. Headlines'
+    elif category == 'WORLD_NEWS':
+        return '🌎', 'World News'
+    elif category == 'POLITICS':
+        return '🏛️', 'Politics'
+    elif category == 'TECHNOLOGY':
+        return '💻', 'Technology'
+    elif category == 'BUSINESS':
+        return '📊', 'Business & Economy'
+    elif category == 'LEFT_LEANING':
+        return '📰', 'Center-Left Sources'
+    elif category == 'CENTER':
+        return '📰', 'Center Sources'
+    elif category == 'RIGHT_LEANING':
+        return '📰', 'Center-Right Sources'
+    elif category == 'PERSONALIZED':
+        return '📌', 'Personalized For You'
+    elif category == 'LOCAL':
+        return '🏙️', 'Local News'
     else:
-        return ""
+        return '📰', 'Other News'
 
 def format_articles(articles, html=False):
     """
     Formats a list of articles into a single string for display or email.
-    Suppresses sections that don't have any articles.
+    Organizes articles by category with clear section headings.
 
     Args:
         articles (list): A list of dictionaries, each containing article details.
@@ -236,41 +295,25 @@ def format_articles(articles, html=False):
     """
     if not articles:
         return "No articles to display." if not html else "<p>No articles to display.</p>"
-        
+    
+    # Limit articles per source to maintain balance
+    max_articles_per_source = EMAIL_SETTINGS.get("max_articles_per_source", 3)
+    articles = limit_articles_by_source(articles, max_per_source=max_articles_per_source)
+    
     if html:
-        # Get yesterday's date
-        yesterday = (datetime.now() - timedelta(days=1)).strftime('%A, %B %d, %Y')
+        # Set the time range (24 hours)
+        time_range = f"{(datetime.now() - timedelta(hours=24)).strftime('%B %d')} - {datetime.now().strftime('%B %d, %Y')}"
         
-        # Define the section order (moved up from later in the function to fix the UnboundLocalError)
-        section_order = ['global_major', 'domestic_major', 'personal_interest', 'fox_exclusive']
-        
-        # Define section classes and titles
-        section_classes = {
-            'global_major': 'global-section',
-            'domestic_major': 'domestic-section',
-            'personal_interest': 'personal-section',
-            'fox_exclusive': 'fox-section'
-        }
-        
-        # Updated section titles with icons
-        section_titles = {
-            'global_major': '🌍 Super Major International News',
-            'domestic_major': '🏛️ Major Domestic Headlines',
-            'personal_interest': '📌 Personalized Interest Stories',
-            'fox_exclusive': '🦊 What Fox News is Reporting'
-        }
-        
-        # Classify articles into the four required sections
-        sections = {
-            'global_major': [],
-            'domestic_major': [],
-            'personal_interest': [],
-            'fox_exclusive': []
-        }
-        
+        # Categorize articles
+        categories = {}
         for article in articles:
-            section = classify_article(article)
-            sections[section].append(article)
+            category = categorize_article(article)
+            if category not in categories:
+                categories[category] = []
+            categories[category].append(article)
+        
+        # Define the section order
+        section_order = ['US_NEWS', 'POLITICS', 'WORLD_NEWS', 'BUSINESS', 'TECHNOLOGY', 'LOCAL', 'PERSONALIZED', 'LEFT_LEANING', 'CENTER', 'RIGHT_LEANING']
         
         # Create HTML output with CSS styles
         html_output = f"""
@@ -278,7 +321,7 @@ def format_articles(articles, html=False):
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Daily News Summary</title>
+            <title>Your Daily News Summary</title>
             <style>
                 body {{
                     font-family: Arial, Helvetica, sans-serif;
@@ -332,39 +375,21 @@ def format_articles(articles, html=False):
                 .section {{
                     margin-bottom: 40px;
                     border-radius: 8px;
-                    padding: 15px;
+                    padding: 20px;
                     background-color: #ffffff;
                     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
                 }}
                 .section-header {{
-                    padding: 10px 15px;
-                    margin: -15px -15px 15px -15px;
-                    border-top-left-radius: 8px;
-                    border-top-right-radius: 8px;
-                    font-weight: bold;
-                }}
-                .global-section .section-header {{
-                    background-color: #e74c3c;
-                    color: white;
-                }}
-                .domestic-section .section-header {{
-                    background-color: #3498db;
-                    color: white;
-                }}
-                .personal-section .section-header {{
-                    background-color: #2ecc71;
-                    color: white;
-                }}
-                .fox-section .section-header {{
-                    background-color: #f39c12;
-                    color: white;
-                }}
-                .section-summary {{
-                    font-style: italic;
-                    color: #555;
-                    border-bottom: 1px solid #eee;
+                    margin-top: 0;
+                    margin-bottom: 20px;
                     padding-bottom: 10px;
-                    margin-bottom: 15px;
+                    border-bottom: 2px solid #e8e8e8;
+                    color: #2c3e50;
+                }}
+                .section-description {{
+                    font-style: italic;
+                    color: #7f8c8d;
+                    margin-bottom: 20px;
                 }}
                 .article {{
                     border-bottom: 1px solid #f0f0f0;
@@ -424,6 +449,8 @@ def format_articles(articles, html=False):
                 }}
                 .tags {{
                     margin-top: 8px;
+                    display: flex;
+                    flex-wrap: wrap;
                 }}
                 .footer {{
                     margin-top: 40px;
@@ -433,21 +460,6 @@ def format_articles(articles, html=False):
                     border-top: 1px solid #f0f0f0;
                     padding-top: 20px;
                 }}
-                .no-articles {{
-                    font-style: italic;
-                    color: #7f8c8d;
-                    text-align: center;
-                    padding: 20px;
-                }}
-                .coverage-note {{
-                    background-color: #fcf8e3;
-                    border: 1px solid #faebcc;
-                    color: #8a6d3b;
-                    padding: 15px;
-                    margin-bottom: 20px;
-                    border-radius: 4px;
-                }}
-                /* New styles for key takeaways, why this matters, and toggle sections */
                 .key-takeaways {{
                     background-color: #f5f9ff;
                     border-left: 4px solid #3498db;
@@ -468,16 +480,6 @@ def format_articles(articles, html=False):
                 .takeaway-bullets li {{
                     margin-bottom: 8px;
                     line-height: 1.5;
-                }}
-                .read-full {{
-                    text-align: center;
-                    margin-bottom: 5px;
-                    font-size: 14px;
-                }}
-                .summary-toggle {{
-                    color: #3498db;
-                    text-decoration: none;
-                    cursor: pointer;
                 }}
                 .full-summary {{
                     border-top: 1px solid #eee;
@@ -527,8 +529,8 @@ def format_articles(articles, html=False):
         </head>
         <body>
             <div class="header">
-                <h1>Your Personalized News Summary</h1>
-                <p class="date">News from {yesterday}</p>
+                <h1>Your Daily News Summary</h1>
+                <p class="date">News from {time_range}</p>
             </div>
         
             <div class="toc">
@@ -537,78 +539,40 @@ def format_articles(articles, html=False):
         """
         
         # Only include sections with articles in TOC
+        sections_with_articles = 0
         for section_key in section_order:
-            section_articles = sections[section_key]
-            if section_articles:
-                section_title = section_titles[section_key]
-                html_output += f'<li><a href="#{section_key}-section">{section_title} ({len(section_articles)})</a></li>'
+            if section_key in categories and categories[section_key]:
+                emoji, title = format_section_header(section_key)
+                article_count = len(categories[section_key])
+                html_output += f'<li><a href="#{section_key}-section">{emoji} {title} ({article_count})</a></li>'
+                sections_with_articles += 1
         
         html_output += """
                 </ul>
             </div>
         """
         
-        # If we have too few articles, add a note about coverage
-        if len(articles) < 3:
-            html_output += """
-            <div class="coverage-note">
-                <p><strong>Note:</strong> Today's news coverage is limited as we're only including articles 
-                published exactly on the target date for accuracy. Some sources may not have provided 
-                timestamps or published relevant content today.</p>
-            </div>
-            """
-        
         # Add each section in the specified order, but only if it has articles
-        section_order = ['global_major', 'domestic_major', 'personal_interest', 'fox_exclusive']
-        section_classes = {
-            'global_major': 'global-section',
-            'domestic_major': 'domestic-section',
-            'personal_interest': 'personal-section',
-            'fox_exclusive': 'fox-section'
-        }
-        
-        # Updated section titles with icons
-        section_titles = {
-            'global_major': '🌍 Super Major International News',
-            'domestic_major': '🏛️ Major Domestic Headlines',
-            'personal_interest': '📌 Personalized Interest Stories',
-            'fox_exclusive': '🦊 What Fox News is Reporting'
-        }
-        
-        # Track if any sections were included
-        sections_included = False
-        
         for section_key in section_order:
-            section_articles = sections[section_key]
-            
-            # Skip sections with no articles
-            if not section_articles:
-                logger.info(f"Skipping empty section: {section_key}")
-                continue
+            if section_key in categories and categories[section_key]:
+                emoji, title = format_section_header(section_key)
                 
-            # If we get here, we have articles in this section
-            sections_included = True
-            section_title = section_titles[section_key]  # Use updated titles with icons
-            section_class = section_classes[section_key]
-            
-            html_output += f"""
-            <div id="{section_key}-section" class="section {section_class}">
-                <h2 class="section-header">{section_title}</h2>
-            """
-            
-            # Add section summary
-            html_output += format_section_summary(section_key, section_articles)
-            
-            # Add articles
-            for article in section_articles:
-                html_output += format_article(article, html=True)
-            
-            html_output += "</div>"
+                html_output += f"""
+                <div id="{section_key}-section" class="section">
+                    <h2 class="section-header">{emoji} {title}</h2>
+                    <p class="section-description">{get_section_description(section_key)}</p>
+                """
+                
+                # Add articles
+                for article in categories[section_key]:
+                    html_output += format_article(article, html=True)
+                
+                html_output += "</div>"
         
         # If no sections had articles, show a message
-        if not sections_included:
+        if sections_with_articles == 0:
             html_output += """
-            <div class="coverage-note">
+            <div class="section">
                 <p><strong>No articles available:</strong> We couldn't find any articles meeting your criteria for today's date.
                 Please check back tomorrow for fresh news coverage.</p>
             </div>
@@ -617,7 +581,7 @@ def format_articles(articles, html=False):
         # Add footer
         html_output += """
             <div class="footer">
-                <p>This newsletter was automatically generated for your interests.</p>
+                <p>This newsletter was automatically generated based on your interests.</p>
                 <p>To unsubscribe, please reply with "unsubscribe" in the subject line.</p>
             </div>
         </body>
@@ -626,7 +590,52 @@ def format_articles(articles, html=False):
         
         return html_output
     else:
-        return "\n---\n".join(format_article(article) for article in articles)
+        # Plain text format - simpler implementation
+        categorized = {}
+        for article in articles:
+            category = categorize_article(article)
+            if category not in categorized:
+                categorized[category] = []
+            categorized[category].append(article)
+        
+        output = "YOUR DAILY NEWS SUMMARY\n\n"
+        
+        for section_key in section_order:
+            if section_key in categorized and categorized[section_key]:
+                _, title = format_section_header(section_key)
+                output += f"==== {title} ====\n\n"
+                
+                for article in categorized[section_key]:
+                    output += format_article(article, html=False) + "\n---\n"
+                
+                output += "\n"
+        
+        return output
+
+def get_section_description(section_key):
+    """
+    Generate a description for each section
+    
+    Args:
+        section_key (str): Category key
+        
+    Returns:
+        str: Section description
+    """
+    descriptions = {
+        'US_NEWS': 'Top domestic news stories from across the United States.',
+        'WORLD_NEWS': 'Major international events and global developments.',
+        'POLITICS': 'The latest political news, policy updates, and government affairs.',
+        'TECHNOLOGY': 'Breaking tech news, digital trends, and innovation.',
+        'BUSINESS': 'Business headlines, economic updates, and market news.',
+        'LEFT_LEANING': 'News from sources that tend to have a center-left perspective.',
+        'CENTER': 'News from sources that aim for balanced, centrist coverage.',
+        'RIGHT_LEANING': 'News from sources that tend to have a center-right perspective.',
+        'PERSONALIZED': 'Stories selected based on your personal interests and preferences.',
+        'LOCAL': 'News from your local area that may directly affect your community.'
+    }
+    
+    return descriptions.get(section_key, '')
 
 def filter_articles_by_date(articles, days=1, hours=None):
     """
@@ -975,10 +984,10 @@ def get_why_this_matters(article):
     
     # If we don't have matches, provide generic explanation based on section
     if not matches:
-        section = classify_article(article)
-        if section == 'global_major':
+        section = categorize_article(article)
+        if section == 'WORLD_NEWS':
             matches.append("This international development could have widespread implications for global politics or economics.")
-        elif section == 'domestic_major':
+        elif section == 'US_NEWS':
             matches.append("This domestic issue may affect national policies or public opinion.")
         else:
             matches.append("This story relates to topics you've shown interest in and may have relevance to your professional or personal life.")
