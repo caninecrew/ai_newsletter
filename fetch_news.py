@@ -28,6 +28,25 @@ import urllib3
 import os
 import stat
 
+# Define a pool of realistic user agents
+USER_AGENTS = [
+    # Windows Chrome
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    # Windows Firefox
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    # Windows Edge
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    # Mac Chrome
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    # Mac Safari
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
+    # Mobile Chrome (Android)
+    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    # Mobile Safari (iOS)
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
+]
+
 # Get the logger
 logger = setup_logger()
 
@@ -137,9 +156,16 @@ def should_skip_source(url):
             return True
     return False
 
-def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
+def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50, retries=3, delay=5):
     """
-    Get or create a WebDriver instance with proper SSL configuration
+    Get or create a WebDriver instance with anti-detection measures and retry logic
+    
+    Args:
+        force_new (bool): Force creation of a new instance
+        max_age_minutes (int): Maximum age of driver instance in minutes
+        max_requests (int): Maximum requests before recycling driver
+        retries (int): Number of retries for WebDriver creation
+        delay (int): Delay between retries in seconds
     """
     global _driver, _driver_creation_time, _driver_request_count
     
@@ -158,30 +184,85 @@ def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
             except Exception as e:
                 logger.warning(f"Error closing existing WebDriver: {e}")
         
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--ignore-certificate-errors")  # Required for Google News
-        options.add_argument("--disable-gpu")
-        options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
-        
-        # SSL configuration
-        options.add_argument(f"--ssl-version=tls1.2")
-        options.add_argument(f"--ssl-key-log-file={os.path.expanduser('~')}/.ssl-key.log")
-        
-        try:
-            service = Service()
-            # Only set creation_flags on Windows
-            if os.name == 'nt':  # Windows check
-                service.creation_flags = 0x08000000  # No console window
-            _driver = webdriver.Chrome(service=service, options=options)
-            _driver_creation_time = current_time
-            _driver_request_count = 0
-        except Exception as e:
-            logger.error(f"Failed to create WebDriver: {e}")
-            _driver = None
-            raise
+        for attempt in range(retries):
+            try:
+                # Configure ChromeOptions with anti-detection measures
+                options = Options()
+                
+                # Random user agent
+                user_agent = random.choice(USER_AGENTS)
+                options.add_argument(f'--user-agent={user_agent}')
+                
+                # Basic configuration
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument("--ignore-certificate-errors")
+                options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
+                
+                # Anti-detection measures
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                options.add_experimental_option('useAutomationExtension', False)
+                
+                # Additional anti-bot measures
+                options.add_argument("--disable-infobars")
+                options.add_argument("--disable-browser-side-navigation")
+                options.add_argument('--disable-features=IsolateOrigins,site-per-process')
+                
+                # Performance optimizations
+                options.add_argument("--disable-gpu")
+                options.add_argument("--disable-extensions")
+                options.add_argument("--disable-dev-tools")
+                options.add_argument('--ignore-ssl-errors=yes')
+                options.add_argument("--disable-web-security")
+                options.add_argument("--disable-logging")
+                options.add_argument("--disable-translate")
+                options.add_argument("--disable-notifications")
+                
+                # Random window size to appear more natural
+                window_sizes = [(1920, 1080), (1366, 768), (1536, 864), (1440, 900), (1280, 720)]
+                width, height = random.choice(window_sizes)
+                options.add_argument(f"--window-size={width},{height}")
+                
+                # Headless mode (can be disabled for testing)
+                if SYSTEM_SETTINGS.get("use_headless_browser", True):
+                    options.add_argument("--headless=new")  # Using new headless mode
+                
+                # Create service with proper configuration
+                service = Service()
+                if os.name == 'nt':  # Windows check
+                    service.creation_flags = 0x08000000  # No console window
+                
+                # Create and configure the driver
+                _driver = webdriver.Chrome(service=service, options=options)
+                
+                # Additional anti-detection JavaScript
+                _driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                    "userAgent": user_agent,
+                    "platform": "Windows",  # or random choice of platform
+                    "acceptLanguage": "en-US,en;q=0.9"
+                })
+                
+                # Execute stealth JS
+                _driver.execute_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """)
+                
+                _driver_creation_time = current_time
+                _driver_request_count = 0
+                logger.info("Successfully created new WebDriver instance")
+                return _driver
+                
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1}/{retries} to create WebDriver failed: {e}")
+                if attempt < retries - 1:
+                    time.sleep(delay * (attempt + 1))  # Exponential backoff
+                else:
+                    logger.error("All attempts to create WebDriver failed")
+                    _driver = None
+                    raise
     
     if _driver is not None:
         _driver_request_count += 1
