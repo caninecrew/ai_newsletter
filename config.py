@@ -28,7 +28,8 @@ FEED_SETTINGS = {
         "education": True,
         "youth_leadership": True,
         "outdoor": True,
-        "kenya": True
+        "kenya": True,
+        "nazarene": True
     },
     "aggregators": {
         "yahoo": False,                  # Additional aggregators (disabled by default)
@@ -81,7 +82,9 @@ if FEED_SETTINGS["interests"]["outdoor"]:
     PRIMARY_NEWS_FEEDS["Google News Outdoor/Camping"] = "https://news.google.com/news/rss/search?q=camping+OR+hiking+OR+backpacking+OR+%22outdoor+adventure%22"
 if FEED_SETTINGS["interests"]["kenya"]:
     PRIMARY_NEWS_FEEDS["Google News Kenya"] = "https://news.google.com/news/rss/search?q=kenya+missions+OR+%22humanitarian+aid%22"
-
+if FEED_SETTINGS["interests"]["nazarene"]:
+    PRIMARY_NEWS_FEEDS["Google News Nazarene"] = "https://news.google.com/news/rss/search?q=Nazarene+OR+%22Church+of+the+Nazarene%22+OR+%22Nazarene+Compassionate+Ministries%22"
+    
 # Additional aggregators
 if FEED_SETTINGS["aggregators"]["yahoo"]:
     PRIMARY_NEWS_FEEDS["Yahoo News"] = "https://www.yahoo.com/news/rss"  # Updated Yahoo News URL
