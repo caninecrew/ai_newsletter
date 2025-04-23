@@ -3,12 +3,13 @@ from summarize import summarize_articles
 from formatter import format_articles, filter_articles_by_date, deduplicate_articles
 from send_email import send_email
 from logger_config import setup_logger
-from config import EMAIL_SETTINGS, SYSTEM_SETTINGS
+from config import EMAIL_SETTINGS, SYSTEM_SETTINGS, FEED_SETTINGS
 from dotenv import load_dotenv
 import os
 import warnings
 from datetime import datetime, timedelta
 import sys
+import argparse
 
 # Set up logger
 logger = setup_logger()
@@ -17,14 +18,84 @@ logger = setup_logger()
 warnings.filterwarnings('ignore', category=UserWarning, module='tensorflow')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF logs (0=all, 1=INFO, 2=WARNING, 3=ERROR)
 
-# Add debug mode command line flag
-DEBUG_MODE = "--debug" in sys.argv
-SKIP_DATE_FILTER = "--skip-date-filter" in sys.argv
-
-# Removed categories and replaced them with topics-based classification
-# Topics will now be used for classification instead of predefined categories.
+def parse_feed_args():
+    parser = argparse.ArgumentParser(description='AI Newsletter Generator')
+    
+    # Debug mode and date filter flags
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--skip-date-filter', action='store_true', help='Skip date filtering of articles')
+    
+    # Feed category enable/disable flags
+    parser.add_argument('--disable-headlines', action='store_true', help='Disable all headline feeds')
+    parser.add_argument('--disable-location', action='store_true', help='Disable all location feeds')
+    parser.add_argument('--disable-interests', action='store_true', help='Disable all interest feeds')
+    parser.add_argument('--disable-aggregators', action='store_true', help='Disable all aggregator feeds')
+    
+    # Individual headline topic flags
+    parser.add_argument('--enable-science', action='store_true', help='Enable science news feed')
+    parser.add_argument('--enable-health', action='store_true', help='Enable health news feed')
+    
+    # Individual location flags
+    parser.add_argument('--enable-knoxville', action='store_true', help='Enable Knoxville news feed')
+    parser.add_argument('--enable-memphis', action='store_true', help='Enable Memphis news feed')
+    
+    # Individual aggregator flags
+    parser.add_argument('--enable-yahoo', action='store_true', help='Enable Yahoo News feed')
+    parser.add_argument('--enable-msn', action='store_true', help='Enable MSN News feed')
+    
+    args = parser.parse_args()
+    
+    # Apply command line settings to FEED_SETTINGS
+    if args.disable_headlines:
+        for key in FEED_SETTINGS["headlines"]:
+            FEED_SETTINGS["headlines"][key] = False
+    if args.disable_location:
+        for key in FEED_SETTINGS["location"]:
+            FEED_SETTINGS["location"][key] = False
+    if args.disable_interests:
+        for key in FEED_SETTINGS["interests"]:
+            FEED_SETTINGS["interests"][key] = False
+    if args.disable_aggregators:
+        for key in FEED_SETTINGS["aggregators"]:
+            FEED_SETTINGS["aggregators"][key] = False
+            
+    # Enable specific feeds if requested
+    if args.enable_science:
+        FEED_SETTINGS["headlines"]["science"] = True
+    if args.enable_health:
+        FEED_SETTINGS["headlines"]["health"] = True
+    if args.enable_knoxville:
+        FEED_SETTINGS["location"]["knoxville"] = True
+    if args.enable_memphis:
+        FEED_SETTINGS["location"]["memphis"] = True
+    if args.enable_yahoo:
+        FEED_SETTINGS["aggregators"]["yahoo"] = True
+    if args.enable_msn:
+        FEED_SETTINGS["aggregators"]["msn"] = True
+    
+    return args
 
 def run_newsletter():
+    # Parse command line arguments
+    args = parse_feed_args()
+    
+    # Set debug mode from args
+    global DEBUG_MODE
+    DEBUG_MODE = args.debug
+    global SKIP_DATE_FILTER
+    SKIP_DATE_FILTER = args.skip_date_filter
+    
+    if DEBUG_MODE:
+        logger.info("Debug mode enabled")
+        logger.info("Active feed categories:")
+        for category, settings in FEED_SETTINGS.items():
+            enabled = any(settings.values())
+            logger.info(f"  {category}: {'Enabled' if enabled else 'Disabled'}")
+            if enabled:
+                for feed, status in settings.items():
+                    if status:
+                        logger.info(f"    - {feed}")
+
     # Fetch raw articles
     fetch_result = fetch_articles_from_all_feeds()
     
