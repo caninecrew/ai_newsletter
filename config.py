@@ -4,38 +4,89 @@
 # --- News Source Configuration ---
 # Using Google News RSS feeds as primary source for reliable aggregated content
 
+# --- Feed Configuration Settings ---
+# Control which feeds are enabled/disabled
+FEED_SETTINGS = {
+    "headlines": {
+        "top_stories": True,              # Type 1: Top headlines
+        "us_news": True,                  # Type 2: Headlines by topic
+        "politics": True,
+        "technology": True,
+        "business": True,
+        "world": True,
+        "science": False,                 # Disabled by default
+        "health": False                   # Disabled by default
+    },
+    "location": {
+        "tennessee": True,               # Type 3: Location headlines
+        "nashville": True,
+        "knoxville": False,              # Disabled by default
+        "memphis": False                 # Disabled by default
+    },
+    "interests": {
+        "scouting": True,                # Type 4: News by search criteria
+        "education": True,
+        "youth_leadership": True,
+        "outdoor": True,
+        "kenya": True
+    },
+    "aggregators": {
+        "yahoo": False,                  # Additional aggregators (disabled by default)
+        "msn": False
+    }
+}
+
 # --- PRIMARY NEWS FEEDS ---
 # Primary RSS feed sources using all four types of Google News RSS feeds
-PRIMARY_NEWS_FEEDS = {
-    # Type 1: Top headlines
-    "Google News Top Stories": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
-    
-    # Type 2: Headlines by topic
-    "Google News US": "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-US&gl=US&ceid=US:en",
-    "Google News Politics": "https://news.google.com/rss/headlines/section/topic/POLITICS?hl=en-US&gl=US&ceid=US:en", 
-    "Google News Technology": "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
-    "Google News Business": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
-    "Google News World": "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
-    "Google News Science": "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-US&gl=US&ceid=US:en",
-    "Google News Health": "https://news.google.com/rss/headlines/section/topic/HEALTH?hl=en-US&gl=US&ceid=US:en",
-    
-    # Type 3: Location headlines
-    "Google News Tennessee": "https://news.google.com/rss/headlines/section/geo/Tennessee?hl=en-US&gl=US&ceid=US:en",
-    "Google News Nashville": "https://news.google.com/rss/headlines/section/geo/Nashville?hl=en-US&gl=US&ceid=US:en",
-    "Google News Knoxville": "https://news.google.com/rss/headlines/section/geo/Knoxville?hl=en-US&gl=US&ceid=US:en",
-    "Google News Memphis": "https://news.google.com/rss/headlines/section/geo/Memphis?hl=en-US&gl=US&ceid=US:en",
-    
-    # Type 4: News by search criteria - personalized to user interests
-    "Google News Scouting": "https://news.google.com/rss/search?q=scouting+OR+%22boy+scouts%22+OR+%22scout+troop%22&hl=en-US&gl=US&ceid=US:en",
-    "Google News Education": "https://news.google.com/rss/search?q=(education+OR+learning+OR+teaching)+Tennessee&hl=en-US&gl=US&ceid=US:en",
-    "Google News Youth Leadership": "https://news.google.com/rss/search?q=%22youth+leadership%22+OR+%22student+leadership%22&hl=en-US&gl=US&ceid=US:en",
-    "Google News Outdoor/Camping": "https://news.google.com/rss/search?q=camping+OR+hiking+OR+backpacking+OR+%22outdoor+adventure%22&hl=en-US&gl=US&ceid=US:en",
-    "Google News Kenya": "https://news.google.com/rss/search?q=kenya+missions+OR+%22humanitarian+aid%22&hl=en-US&gl=US&ceid=US:en",
-    
-    # Additional aggregators
-    "Yahoo News": "https://news.yahoo.com/rss",
-    "MSN News US": "http://rss.msn.com/en-us/news/us"
-}
+PRIMARY_NEWS_FEEDS = {}
+
+# Type 1: Top headlines
+if FEED_SETTINGS["headlines"]["top_stories"]:
+    PRIMARY_NEWS_FEEDS["Google News Top Stories"] = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+
+# Type 2: Headlines by topic
+if FEED_SETTINGS["headlines"]["us_news"]:
+    PRIMARY_NEWS_FEEDS["Google News US"] = "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["headlines"]["politics"]:
+    PRIMARY_NEWS_FEEDS["Google News Politics"] = "https://news.google.com/rss/headlines/section/topic/POLITICS?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["headlines"]["technology"]:
+    PRIMARY_NEWS_FEEDS["Google News Technology"] = "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["headlines"]["business"]:
+    PRIMARY_NEWS_FEEDS["Google News Business"] = "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["headlines"]["world"]:
+    PRIMARY_NEWS_FEEDS["Google News World"] = "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["headlines"]["science"]:
+    PRIMARY_NEWS_FEEDS["Google News Science"] = "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["headlines"]["health"]:
+    PRIMARY_NEWS_FEEDS["Google News Health"] = "https://news.google.com/rss/headlines/section/topic/HEALTH?hl=en-US&gl=US&ceid=US:en"
+
+# Type 3: Location headlines
+if FEED_SETTINGS["location"]["tennessee"]:
+    PRIMARY_NEWS_FEEDS["Google News Tennessee"] = "https://news.google.com/rss/headlines/section/geo/Tennessee?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["location"]["nashville"]:
+    PRIMARY_NEWS_FEEDS["Google News Nashville"] = "https://news.google.com/rss/headlines/section/geo/Nashville?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["location"]["knoxville"]:
+    PRIMARY_NEWS_FEEDS["Google News Knoxville"] = "https://news.google.com/rss/headlines/section/geo/Knoxville?hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["location"]["memphis"]:
+    PRIMARY_NEWS_FEEDS["Google News Memphis"] = "https://news.google.com/rss/headlines/section/geo/Memphis?hl=en-US&gl=US&ceid=US:en"
+
+# Type 4: News by search criteria - personalized to user interests
+if FEED_SETTINGS["interests"]["scouting"]:
+    PRIMARY_NEWS_FEEDS["Google News Scouting"] = "https://news.google.com/rss/search?q=scouting+OR+%22boy+scouts%22+OR+%22scout+troop%22&hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["interests"]["education"]:
+    PRIMARY_NEWS_FEEDS["Google News Education"] = "https://news.google.com/rss/search?q=(education+OR+learning+OR+teaching)+Tennessee&hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["interests"]["youth_leadership"]:
+    PRIMARY_NEWS_FEEDS["Google News Youth Leadership"] = "https://news.google.com/rss/search?q=%22youth+leadership%22+OR+%22student+leadership%22&hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["interests"]["outdoor"]:
+    PRIMARY_NEWS_FEEDS["Google News Outdoor/Camping"] = "https://news.google.com/rss/search?q=camping+OR+hiking+OR+backpacking+OR+%22outdoor+adventure%22&hl=en-US&gl=US&ceid=US:en"
+if FEED_SETTINGS["interests"]["kenya"]:
+    PRIMARY_NEWS_FEEDS["Google News Kenya"] = "https://news.google.com/rss/search?q=kenya+missions+OR+%22humanitarian+aid%22&hl=en-US&gl=US&ceid=US:en"
+
+# Additional aggregators
+if FEED_SETTINGS["aggregators"]["yahoo"]:
+    PRIMARY_NEWS_FEEDS["Yahoo News"] = "https://news.yahoo.com/rss"
+if FEED_SETTINGS["aggregators"]["msn"]:
+    PRIMARY_NEWS_FEEDS["MSN News US"] = "http://rss.msn.com/en-us/news/us"
 
 # --- SECONDARY NEWS FEEDS ---
 # Secondary feeds for local content and specialized interests
