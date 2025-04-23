@@ -22,9 +22,44 @@ from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
 from urllib.parse import urlparse
 from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS
 from collections import defaultdict
+import certifi
+import ssl
+import urllib3
 
 # Get the logger
 logger = setup_logger()
+
+# Configure SSL context with system certificates
+def get_ssl_context():
+    """
+    Create a properly configured SSL context using system certificates
+    """
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    ssl_context.verify_mode = ssl.CERT_REQUIRED
+    ssl_context.check_hostname = True
+    return ssl_context
+
+# Configure requests session with proper SSL verification
+def get_requests_session():
+    """
+    Create a requests session with proper SSL configuration
+    """
+    session = requests.Session()
+    session.verify = certifi.where()
+    # Configure adapter with modern SSL configuration
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=100,
+        pool_maxsize=100,
+        max_retries=3,
+        pool_block=False
+    )
+    session.mount('https://', adapter)
+    return session
+
+# Configure feedparser to use proper SSL context
+feedparser.PREFERRED_XML_PARSERS.append('html.parser')
+ssl_context = get_ssl_context()
+feedparser._SOCKET_DEFAULT_KWARGS['ssl_context'] = ssl_context
 
 # Global URL tracking to prevent duplicate attempts
 attempted_urls = set()
@@ -291,18 +326,19 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
     attempted_urls.add(feed_url)
     
     try:
-        # First try to fetch the feed with requests to handle redirects properly
+        # Create a session with proper SSL verification
+        session = get_requests_session()
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, */*'
         }
         
         start_time = time.time()
-        response = requests.get(feed_url, headers=headers, allow_redirects=True, timeout=10)
+        response = session.get(feed_url, headers=headers, allow_redirects=True, timeout=10)
         response.raise_for_status()
         
-        # Parse the feed content
-        feed = feedparser.parse(response.content)
+        # Parse the feed content with proper SSL context
+        feed = feedparser.parse(response.content, response_headers=response.headers)
         parsing_time = time.time() - start_time
         
         # If feedparser fails to parse the content, try parsing the URL directly
