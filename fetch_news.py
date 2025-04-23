@@ -271,7 +271,7 @@ def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50, retries=
 
 def parse_date(date_str, url=None):
     """
-    Parse a date string into a datetime object with improved timezone handling.
+    Parse a date string into a datetime object with improved timezone and fallback handling.
     
     Args:
         date_str (str): The date string to parse
@@ -282,7 +282,7 @@ def parse_date(date_str, url=None):
     """
     if not date_str:
         logger.warning(f"Empty date string received{' for ' + url if url else ''}")
-        return datetime.datetime.now(pytz.UTC)
+        return datetime.now(DEFAULT_TZ)
     
     original_date_str = date_str
     
@@ -290,30 +290,31 @@ def parse_date(date_str, url=None):
         # Common preprocessing for problematic date formats
         date_str = date_str.strip()
         
-        # Handle "X time ago" format
+        # Handle "X time ago" format with more variations
         time_ago_match = re.search(r'(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago', date_str, re.IGNORECASE)
         if time_ago_match:
             value = int(time_ago_match.group(1))
             unit = time_ago_match.group(2).lower()
             
-            now = datetime.datetime.now(pytz.UTC)
+            now = datetime.now(DEFAULT_TZ)
+            
             if unit == 'minute':
-                return now - datetime.timedelta(minutes=value)
+                return now - timedelta(minutes=value)
             elif unit == 'hour':
-                return now - datetime.timedelta(hours=value)
+                return now - timedelta(hours=value)
             elif unit == 'day':
-                return now - datetime.timedelta(days=value)
+                return now - timedelta(days=value)
             elif unit == 'week':
-                return now - datetime.timedelta(weeks=value)
+                return now - timedelta(weeks=value)
             elif unit == 'month':
-                return now - datetime.timedelta(days=value*30)  # Approximation
+                return now - timedelta(days=value*30)  # Approximation
             elif unit == 'year':
-                return now - datetime.timedelta(days=value*365)  # Approximation
+                return now - timedelta(days=value*365)  # Approximation
         
-        # Remove timezone name in parentheses like "(ET)" or "(PST)"
-        date_str = re.sub(r'\([A-Z]{2,5}\)', '', date_str)
+        # Remove timezone abbreviations in parentheses
+        date_str = re.sub(r'\s*\([A-Z]{1,5}\)\s*', ' ', date_str)
         
-        # Replace common text month representations
+        # Replace month abbreviations with full names
         month_mappings = {
             'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
             'Apr': 'April', 'Jun': 'June', 'Jul': 'July',
@@ -321,45 +322,86 @@ def parse_date(date_str, url=None):
             'Nov': 'November', 'Dec': 'December'
         }
         for abbr, full in month_mappings.items():
-            date_str = date_str.replace(f' {abbr} ', f' {full} ')
+            date_str = re.sub(fr'\b{abbr}\b', full, date_str)
+        
+        # Try to extract date from HTML meta tags if URL is provided
+        if url and not time_ago_match:
+            try:
+                response = secure_session.get(url, timeout=5)
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Check common meta tag formats
+                meta_tags = [
+                    ('meta[property="article:published_time"]', 'content'),
+                    ('meta[property="og:article:published_time"]', 'content'),
+                    ('meta[name="date"]', 'content'),
+                    ('meta[name="pubdate"]', 'content'),
+                    ('time[datetime]', 'datetime'),
+                    ('time[pubdate]', 'datetime')
+                ]
+                
+                for selector, attr in meta_tags:
+                    element = soup.select_one(selector)
+                    if element and element.get(attr):
+                        try:
+                            parsed_date = dateutil.parser.parse(element[attr])
+                            return normalize_datetime(parsed_date)
+                        except:
+                            continue
+                            
+            except Exception as e:
+                logger.debug(f"Failed to extract date from HTML: {str(e)}")
         
         # Try parsing with dateutil
         parsed_date = dateutil.parser.parse(date_str)
         
-        # Always ensure timezone info
-        if parsed_date.tzinfo is None:
-            parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
-        else:
-            # Standardize on UTC
-            parsed_date = parsed_date.astimezone(pytz.UTC)
-            
-        return parsed_date
+        # Normalize timezone
+        return normalize_datetime(parsed_date)
         
     except Exception as e:
         logger.warning(f"Failed to parse date '{original_date_str}'{' for ' + url if url else ''}: {e}")
         
-        # Try alternate formats
+        # Try alternate date formats
         date_formats = [
             '%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y',
             '%b %d, %Y', '%B %d, %Y', '%d %b %Y', '%d %B %Y',
-            '%m-%d-%Y', '%m/%d/%Y'
+            '%m-%d-%Y', '%m/%d/%Y', '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%d %H:%M:%S'
         ]
         
         for fmt in date_formats:
             try:
-                parsed_date = datetime.datetime.strptime(date_str, fmt)
-                # Always add timezone info to prevent naive/aware mismatches
-                parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
-                logger.debug(f"Successfully parsed date with format {fmt}")
-                return parsed_date
+                parsed_date = datetime.strptime(date_str, fmt)
+                # Normalize timezone
+                return normalize_datetime(parsed_date)
             except ValueError:
                 continue
         
-        # If all parsing attempts fail, use current time but with a specific tag
+        # If all parsing attempts fail, use current time
         logger.error(f"Could not parse date '{original_date_str}' in any format{' for ' + url if url else ''}")
-        # Return current time but flag it in the log
-        current_time = datetime.datetime.now(pytz.UTC)
-        return current_time
+        return datetime.now(DEFAULT_TZ)
+
+def normalize_datetime(dt):
+    """
+    Normalize a datetime object to the configured timezone
+    
+    Args:
+        dt: datetime object to normalize, can be naive or timezone-aware
+        
+    Returns:
+        datetime: Timezone-aware datetime in the configured timezone
+    """
+    if dt is None:
+        return datetime.now(DEFAULT_TZ)
+    
+    # If naive, assume UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    # Convert to configured timezone
+    if SYSTEM_SETTINGS.get('use_central_timezone', True):
+        return dt.astimezone(DEFAULT_TZ)
+    return dt.astimezone(timezone.utc)
 
 def fetch_rss_feed(feed_url, source_name, max_articles=5):
     """
