@@ -49,19 +49,19 @@ RSS_FEEDS = {
         "PBS World": "https://www.pbs.org/newshour/feeds/rss/podcasts/world",
         "PBS Politics": "https://www.pbs.org/newshour/feeds/rss/politics",
         "ABC US": "https://abcnews.go.com/abcnews/usheadlines",
-        "CBS Top Stories": "https://www.cbsnews.com/latest/rss/main"
+        "CBS Top Stories": "https://www.cbsnews.com/latest/rss/main",
+        "USA Today": "http://rssfeeds.usatoday.com/UsatodaycomNation-TopStories"
     },
     "Right": {
-        "Fox News": "http://feeds.foxnews.com/foxnews/latest",
-        "Fox News Latest": "https://moxie.foxnews.com/google-publisher/latest.xml",
-        "Daily Wire": "https://www.dailywire.com/feed",
-        "Washington Times": "https://www.washingtontimes.com/rss/headlines/news/politics/",
-        "Politico Congress": "http://rss.politico.com/congress.xml",
-        "Politico Politics": "https://rss.politico.com/politics-news.xml"
+        "Wall Street Journal": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+        "National Review": "https://www.nationalreview.com/feed/",
+        "The Hill": "https://thehill.com/rss/syndicator/19110",
+        "Washington Examiner": "https://www.washingtonexaminer.com/tag/news.xml",
+        "Newsmax": "https://www.newsmax.com/rss/Headline/0"
     },
     "International": {
         "BBC": "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "Reuters": "http://feeds.reuters.com/reuters/worldNews",
+        "Reuters World": "http://feeds.reuters.com/reuters/worldNews",
         "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
         "France24": "https://www.france24.com/en/rss",
         "DW": "https://rss.dw.com/rdf/rss-en-all",
@@ -69,9 +69,9 @@ RSS_FEEDS = {
         "State Department Press Briefings": "https://www.state.gov/rss-feed/department-press-briefings/feed/"
     },
     "Tennessee": {
-        "WKRN News 2 Nashville": "https://wkrn.com/feed",
+        "Tennessean": "https://rssfeeds.tennessean.com/nashville/home",
         "Tennessee Tribune": "https://tntribune.com/category/community/local/nashville/feed/",
-        "Tennessee Star": "https://tennesseestar.com/feed/"
+        "News Channel 5 Nashville": "https://www.newschannel5.com/news/local-news/feed"
     },
     "Personalized": {
         "Scouting": "https://blog.scoutingmagazine.org/feed/",
