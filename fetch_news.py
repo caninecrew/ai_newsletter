@@ -555,9 +555,84 @@ def create_google_news_session():
     })
     return session
 
+def resolve_redirect_url(url, max_retries=2, base_delay=1):
+    """
+    Resolve the final URL after any redirects, with specific handling for Google News redirects.
+    
+    Args:
+        url (str): The URL to resolve
+        max_retries (int): Maximum number of retry attempts
+        base_delay (int): Base delay between retries in seconds
+        
+    Returns:
+        str: The final URL after redirects, or original URL if resolution fails
+    """
+    if not url or not isinstance(url, str):
+        return url
+        
+    # Skip if not a redirect URL
+    if 'news.google.com' not in url and '/articles/' not in url:
+        return url
+    
+    for attempt in range(max_retries):
+        try:
+            # Get a WebDriver instance
+            driver = get_webdriver(force_new=True)
+            if not driver:
+                logger.error("Failed to create WebDriver for redirect resolution")
+                return url
+            
+            try:
+                # Set shorter timeout for redirects
+                driver.set_page_load_timeout(10)
+                
+                # Load the page
+                driver.get(url)
+                
+                # Wait for redirect with dynamic timeout
+                timeout = random.uniform(1.5, 3)
+                try:
+                    # Wait for URL to change or page to stabilize
+                    WebDriverWait(driver, timeout).until(
+                        lambda d: d.current_url != url or
+                        d.execute_script("return document.readyState") == "complete"
+                    )
+                    # Small additional wait for any final redirects
+                    time.sleep(0.5)
+                except TimeoutException:
+                    pass  # URL might not change if there's no redirect
+                
+                final_url = driver.current_url
+                
+                # Only return if we got a different, valid URL
+                if final_url and final_url != url and not 'news.google.com' in final_url:
+                    logger.debug(f"Successfully resolved redirect: {url} -> {final_url}")
+                    return final_url
+                    
+            finally:
+                try:
+                    driver.quit()
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.warning(f"Redirect resolution failed (attempt {attempt + 1}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(base_delay * (2 ** attempt))
+    
+    return url
+
 def fetch_google_news_article(article, max_retries=3):
     """Special handling for Google News articles with retries"""
     url = article['link']
+    
+    # Resolve any Google News redirects first
+    resolved_url = resolve_redirect_url(url)
+    if resolved_url != url:
+        article['original_link'] = url
+        article['link'] = resolved_url
+        url = resolved_url
+    
     session = create_google_news_session()
     
     for attempt in range(max_retries):
@@ -623,8 +698,13 @@ def fetch_article_content(article, max_retries=2):
     """Fetch article content with special handling for Google News"""
     url = article['link']
     
-    # Check if this is a Google News article
+    # Check if this is a Google News article and resolve redirect if needed
     if 'news.google.com' in url or article.get('source', '').startswith('Google News'):
+        resolved_url = resolve_redirect_url(url)
+        if resolved_url != url:
+            article['original_link'] = url
+            article['link'] = resolved_url
+            url = resolved_url
         return fetch_google_news_article(article)
     
     # Rest of the existing function for non-Google News articles
