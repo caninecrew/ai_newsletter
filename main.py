@@ -1,3 +1,8 @@
+import os
+import sys
+import warnings
+import argparse
+from datetime import datetime, timedelta
 from fetch_news import fetch_articles_from_all_feeds
 from summarize import summarize_articles
 from formatter import format_articles, filter_articles_by_date, deduplicate_articles
@@ -5,239 +10,137 @@ from send_email import send_email
 from logger_config import setup_logger
 from config import EMAIL_SETTINGS, SYSTEM_SETTINGS, FEED_SETTINGS
 from dotenv import load_dotenv
-import os
-import warnings
-from datetime import datetime, timedelta
-import sys
-import argparse
 
 # Set up logger
 logger = setup_logger()
 
-# Suppress TensorFlow warnings about XNNPACK delegate
+# Suppress TensorFlow warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='tensorflow')
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF logs (0=all, 1=INFO, 2=WARNING, 3=ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def parse_feed_args():
+    """Parse command line arguments for feed configuration"""
     parser = argparse.ArgumentParser(description='AI Newsletter Generator')
     
-    # Debug mode and date filter flags
+    # Debug and filtering options
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--skip-date-filter', action='store_true', help='Skip date filtering of articles')
     
-    # Feed category enable/disable flags
-    parser.add_argument('--disable-headlines', action='store_true', help='Disable all headline feeds')
-    parser.add_argument('--disable-location', action='store_true', help='Disable all location feeds')
-    parser.add_argument('--disable-interests', action='store_true', help='Disable all interest feeds')
-    parser.add_argument('--disable-aggregators', action='store_true', help='Disable all aggregator feeds')
+    # Feed category flags
+    parser.add_argument('--disable-headlines', action='store_true', help='Disable headline feeds')
+    parser.add_argument('--disable-location', action='store_true', help='Disable location feeds')
+    parser.add_argument('--disable-interests', action='store_true', help='Disable interest feeds')
+    parser.add_argument('--disable-aggregators', action='store_true', help='Disable aggregator feeds')
     
-    # Individual headline topic flags
-    parser.add_argument('--enable-science', action='store_true', help='Enable science news feed')
-    parser.add_argument('--enable-health', action='store_true', help='Enable health news feed')
-    
-    # Individual location flags
-    parser.add_argument('--enable-knoxville', action='store_true', help='Enable Knoxville news feed')
-    parser.add_argument('--enable-memphis', action='store_true', help='Enable Memphis news feed')
-    
-    # Individual aggregator flags
-    parser.add_argument('--enable-yahoo', action='store_true', help='Enable Yahoo News feed')
-    parser.add_argument('--enable-msn', action='store_true', help='Enable MSN News feed')
-    
-    args = parser.parse_args()
-    
-    # Apply command line settings to FEED_SETTINGS
-    if args.disable_headlines:
-        for key in FEED_SETTINGS["headlines"]:
-            FEED_SETTINGS["headlines"][key] = False
-    if args.disable_location:
-        for key in FEED_SETTINGS["location"]:
-            FEED_SETTINGS["location"][key] = False
-    if args.disable_interests:
-        for key in FEED_SETTINGS["interests"]:
-            FEED_SETTINGS["interests"][key] = False
-    if args.disable_aggregators:
-        for key in FEED_SETTINGS["aggregators"]:
-            FEED_SETTINGS["aggregators"][key] = False
-            
-    # Enable specific feeds if requested
-    if args.enable_science:
-        FEED_SETTINGS["headlines"]["science"] = True
-    if args.enable_health:
-        FEED_SETTINGS["headlines"]["health"] = True
-    if args.enable_knoxville:
-        FEED_SETTINGS["location"]["knoxville"] = True
-    if args.enable_memphis:
-        FEED_SETTINGS["location"]["memphis"] = True
-    if args.enable_yahoo:
-        FEED_SETTINGS["aggregators"]["yahoo"] = True
-    if args.enable_msn:
-        FEED_SETTINGS["aggregators"]["msn"] = True
-    
-    return args
+    return parser.parse_args()
 
-def run_newsletter():
-    # Parse command line arguments
-    args = parse_feed_args()
-    
-    # Set debug mode from args
-    global DEBUG_MODE
-    DEBUG_MODE = args.debug
-    global SKIP_DATE_FILTER
-    SKIP_DATE_FILTER = args.skip_date_filter
-    
-    if DEBUG_MODE:
-        logger.info("Debug mode enabled")
-        logger.info("Active feed categories:")
-        for category, settings in FEED_SETTINGS.items():
-            enabled = any(settings.values())
-            logger.info(f"  {category}: {'Enabled' if enabled else 'Disabled'}")
-            if enabled:
-                for feed, status in settings.items():
-                    if status:
-                        logger.info(f"    - {feed}")
-
-    # Fetch raw articles
-    fetch_result = fetch_articles_from_all_feeds()
-    
-    # Handle both return types (tuple or direct list)
-    if isinstance(fetch_result, tuple) and len(fetch_result) >= 1:
-        raw_articles = fetch_result[0]  # Get articles from the tuple
-    else:
-        raw_articles = fetch_result  # Direct list of articles
-    
-    if DEBUG_MODE:
-        logger.debug(f"Fetched {len(raw_articles)} raw articles")
-        # Log titles of first 5 articles
-        for i, article in enumerate(raw_articles[:5]):
-            logger.debug(f"Article {i+1}: {article.get('title', 'No Title')} - {article.get('source', 'Unknown')}")
-    
-    # Filter by date - using past 24 hours instead of just yesterday
-    if SKIP_DATE_FILTER:
-        logger.info("Skipping date filtering as requested by command line flag")
-        recent_articles = raw_articles
-    else:
-        recent_articles = filter_articles_by_date(raw_articles, hours=24)  # Using hours parameter
-    
-    if DEBUG_MODE:
-        logger.debug(f"After date filtering: {len(recent_articles)} articles")
-    
-    # Deduplicate articles to avoid similar content
-    deduplicated_articles = deduplicate_articles(recent_articles)
-    
-    if DEBUG_MODE:
-        logger.debug(f"After deduplication: {len(deduplicated_articles)} articles")
-    
-    # Determine maximum articles to include in the newsletter
-    max_articles = EMAIL_SETTINGS.get("max_articles_total", 15)
-    
-    # Select only the top N articles based on configuration
-    # This reduces the number of articles sent to the LLM for summarization
-    articles_to_summarize = deduplicated_articles[:max_articles]
-    
-    if DEBUG_MODE:
-        logger.debug(f"Selected {len(articles_to_summarize)} articles for summarization out of {len(deduplicated_articles)} total")
-    
-    # Only summarize articles that will be included in the email
-    summaries = summarize_articles(articles_to_summarize) if articles_to_summarize else []
-    
-    if DEBUG_MODE:
-        logger.debug(f"After summarization: {len(summaries)} articles")
-        for i, article in enumerate(summaries[:5]):
-            logger.debug(f"Summary {i+1}: {article.get('title', 'No Title')} - {article.get('source', 'Unknown')}")
-    
-    return summaries
-
-def send_newsletter():
-    # Load environment variables from .env file if available
-    # This won't fail if the .env file doesn't exist (GitHub Actions)
-    load_dotenv(override=True)
-
-    # Fetch, filter, deduplicate, and summarize articles
-    articles = run_newsletter()
-    
-    if not articles or len(articles) == 0:
-        logger.error("No articles to include in the newsletter!")
-        # If in DEBUG_MODE, try running without the date filter
-        global SKIP_DATE_FILTER
-        if DEBUG_MODE and not SKIP_DATE_FILTER:
-            logger.info("Rerunning with date filter disabled...")
-            SKIP_DATE_FILTER = True
-            articles = run_newsletter()
-
-    if len(articles) <= 1:
-        logger.warning(f"Only {len(articles)} article(s) found for newsletter. This might produce a sparse newsletter.")
-    
-    formatted_html = format_articles(articles, html=True)
-
-    # Use "Past 24 Hours" instead of yesterday's date
-    current_time = datetime.now()
-    time_range = f"{(current_time - timedelta(hours=24)).strftime('%B %d, %H:%M')} - {current_time.strftime('%B %d, %H:%M, %Y')}"
-
-    # Load email configuration from environment variables
-    recipient_email = os.environ.get("RECIPIENT_EMAIL")
-    sender_email = os.environ.get("SMTP_EMAIL")
-    smtp_server = os.environ.get("SMTP_SERVER")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_password = os.environ.get("SMTP_PASS")
-
-    if not recipient_email or not sender_email or not smtp_password:
-        logger.error("Missing required email configuration in environment variables.")
-        raise ValueError("Missing required email configuration in environment variables.")
-
-    # Create a more engaging subject line with the 24-hour time range
-    subject = f"📰 Your AI Newsletter Summary: Last 24 Hours ({len(articles)} articles)"
-    
-    if DEBUG_MODE:
-        logger.debug(f"About to send email with {len(articles)} articles")
-        logger.debug(f"Time range: {time_range}")
-        logger.debug(f"Email will be sent to: {recipient_email}")
-        logger.debug(f"From: {sender_email}")
-        logger.debug(f"Subject: {subject}")
-        # Optional: Save HTML to a file for inspection
-        with open("newsletter_debug.html", "w", encoding="utf-8") as f:
-            f.write(formatted_html)
-        logger.debug("Email content saved to newsletter_debug.html")
-    
-    # Send HTML email (skip if no articles)
-    if articles:
-        try:
-            send_email(
-                subject=subject,
-                body=formatted_html,
-                to_email=recipient_email,
-                from_email=sender_email,
-                smtp_server=smtp_server,
-                smtp_port=smtp_port,
-                login=sender_email,
-                password=smtp_password,
-                use_tls=(smtp_port == 587),
-                use_ssl=(smtp_port == 465),
-                is_html=True
-            )
-            
-            logger.info(f"Newsletter for {time_range} sent successfully to {recipient_email} with {len(articles)} articles")
-            
-            # Log the successful send
-            with open("logs.txt", "a") as log_file:
-                log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Sent newsletter with {len(articles)} articles to {recipient_email}\n")
-        except Exception as e:
-            logger.error(f"Failed to send newsletter: {str(e)}")
-            # Log the failure to the logs.txt for consistency with existing logging
-            with open("logs.txt", "a") as log_file:
-                log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Failed to send newsletter: {str(e)}\n")
-            raise  # Re-raise the exception for proper error handling upstream
-    else:
-        logger.error("No newsletter sent because no articles were found")
+def run_newsletter(args):
+    """Run the newsletter generation process"""
+    try:
+        # Fetch articles
+        logger.info("Starting article fetch process")
+        articles = fetch_articles_from_all_feeds()
         
-        # Log the failure
-        with open("logs.txt", "a") as log_file:
-            log_file.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Failed to send newsletter: No articles found\n")
+        if not articles:
+            logger.error("No articles fetched")
+            return False
+            
+        logger.info(f"Fetched {len(articles)} articles initially")
+        
+        # Filter by date unless skipped
+        if not args.skip_date_filter:
+            cutoff_date = datetime.now() - timedelta(hours=24)
+            articles = filter_articles_by_date(articles, cutoff_date)
+            logger.info(f"Date filtering: {len(articles)} articles kept")
+        
+        # Remove duplicates
+        articles = deduplicate_articles(articles)
+        logger.info(f"After deduplication: {len(articles)} articles")
+        
+        if not articles:
+            logger.error("No articles remaining after filtering")
+            return False
+        
+        # Summarize articles
+        logger.info("Summarizing articles")
+        articles = summarize_articles(articles)
+        
+        # Format newsletter
+        logger.info("Formatting newsletter")
+        formatted_content = format_articles(articles)
+        
+        return formatted_content
+        
+    except Exception as e:
+        logger.error(f"Error in newsletter generation: {e}", exc_info=True)
+        return False
+
+def send_newsletter(content):
+    """Send the newsletter"""
+    try:
+        if not content:
+            logger.error("No content to send")
+            return False
+            
+        # Prepare email parameters
+        now = datetime.now()
+        yesterday = now - timedelta(days=1)
+        subject = f"Newsletter for {yesterday.strftime('%B %d')} - {now.strftime('%B %d')}, {now.year}"
+        
+        # Send email
+        logger.info(f"Preparing to send email to {EMAIL_SETTINGS['recipients']}")
+        success = send_email(
+            subject=subject,
+            body=content,
+            recipients=EMAIL_SETTINGS['recipients'],
+            smtp_settings=EMAIL_SETTINGS['smtp']
+        )
+        
+        if success:
+            logger.info(f"Newsletter sent successfully to {len(EMAIL_SETTINGS['recipients'])} recipients")
+            return True
+        else:
+            logger.error("Failed to send newsletter")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending newsletter: {e}", exc_info=True)
+        return False
+
+def main():
+    """Main entry point"""
+    try:
+        # Load environment variables
+        load_dotenv()
+        
+        # Parse arguments
+        args = parse_feed_args()
+        
+        # Enable debug logging if requested
+        if args.debug:
+            import logging
+            logger.setLevel(logging.DEBUG)
+        
+        # Log start of process
+        logger.info("Starting newsletter generation process")
+        
+        # Generate newsletter content
+        content = run_newsletter(args)
+        
+        if not content:
+            logger.error("Newsletter generation failed")
+            sys.exit(1)
+        
+        # Send newsletter
+        if not send_newsletter(content):
+            logger.error("Newsletter sending failed")
+            sys.exit(1)
+            
+        logger.info("Newsletter process completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Critical error in main process: {e}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    try:
-        logger.info("Starting newsletter generation process")
-        send_newsletter()
-        logger.info("Newsletter process completed successfully")
-    except Exception as e:
-        logger.critical(f"Newsletter process failed with error: {str(e)}", exc_info=True)
-        sys.exit(1)
+    main()
