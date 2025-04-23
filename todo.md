@@ -26,11 +26,53 @@
 - [ ] Add usage statistics tracking for API calls
 - [ ] Add unit tests for key components
 
-## News Sources
+## News Sources Configuration
 - [X] Implement GNews API integration as alternative to RSS feeds
 - [ ] Add NewsAPI or other alternative news sources
 - [ ] Improve source categorization and diversity
 - [ ] Create a better balance of political perspectives
+- [ ] Switch to Google News RSS feeds as primary source:
+  - [ ] Remove "PRIMARY_NEWS_SOURCE" setting and GNews API options
+  - [ ] Create new PRIMARY_NEWS_FEEDS configuration with Google News RSS feeds
+  - [ ] Delete or comment out unused GNEWS_API_CONFIG section
+- [ ] Refactor feed organization:
+  - [ ] Consolidate "News Aggregators" into PRIMARY_NEWS_FEEDS
+  - [ ] Move local (Tennessee) and personalized (Scouting) feeds to SECONDARY_FEEDS
+  - [ ] Update feed processing logic to prioritize PRIMARY_NEWS_FEEDS
+- [ ] Enhance international news filtering:
+  - [ ] Use INCLUDE_INTERNATIONAL_KEYWORDS to filter international stories
+  - [ ] Only include international news that matches user interest keywords
+
+## Date Handling & Content Processing
+- [ ] Handle missing or blank dates:
+  - [ ] Extract date from article content using regex patterns
+  - [ ] Check for metadata tags like <meta property="article:published_time">
+  - [ ] Use feed retrieval timestamp as fallback with "Date estimated" note
+  - [ ] Standardize all dates to America/Chicago timezone (Central Time)
+- [ ] Improve article deduplication:
+  - [ ] Compare URLs across all feeds to prevent duplicates
+  - [ ] Implement fuzzy matching on article titles (using difflib or Levenshtein)
+  - [ ] Track fetched URLs in a cache to prevent duplicate processing
+
+## Performance Improvements
+- [ ] Optimize feed fetching:
+  - [ ] Replace slow WebDriver initialization with asynchronous requests (aiohttp)
+  - [ ] Implement retry logic for failed fetches using alternative sources
+  - [ ] Use newspaper3k or Hugging Face for article extraction and summarization
+- [ ] Implement feed health monitoring:
+  - [ ] Check feed health at startup
+  - [ ] Log issues for feeds that fail or return no articles
+  - [ ] Switch to backup feeds when primary sources fail
+
+## Email Content Balance
+- [ ] Implement balanced content distribution:
+  - [ ] Limit articles per political category (Left, Center, Right, International)
+  - [ ] Create daily summary statistics (e.g., "12 articles today | 4 Left, 4 Center, 3 Right, 1 International")
+  - [ ] Add keyword alerts for personal interests (e.g., Scouting, BSA, camping)
+- [ ] Improve error handling and logging:
+  - [ ] Report empty feeds after filtering
+  - [ ] Log feed statistics and performance metrics
+  - [ ] Include source variety analysis in logs (articles per feed, percent contribution)
 
 ## GitHub Actions
 - [ ] Update GitHub Actions workflow to support both RSS and GNews API
