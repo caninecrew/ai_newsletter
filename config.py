@@ -5,17 +5,36 @@
 # Using Google News RSS feeds as primary source for reliable aggregated content
 
 # --- PRIMARY NEWS FEEDS ---
-# Primary RSS feed sources - Google News aggregators that provide broad coverage
+# Primary RSS feed sources using all four types of Google News RSS feeds
 PRIMARY_NEWS_FEEDS = {
-    "Google News Top Stories": "https://news.google.com/rss",
-    "Google News US": "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRHdvSkwyMHZNRGxqTjNjd0VnSmxiaWdBUAE",
-    "Google News World": "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB",
-    "Google News Technology": "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB",
-    "Google News Business": "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB",
-    "Google News Politics": "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGs0ZDNJU0FtVnVLQUFQAQ",
+    # Type 1: Top headlines
+    "Google News Top Stories": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
+    
+    # Type 2: Headlines by topic
+    "Google News US": "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-US&gl=US&ceid=US:en",
+    "Google News Politics": "https://news.google.com/rss/headlines/section/topic/POLITICS?hl=en-US&gl=US&ceid=US:en", 
+    "Google News Technology": "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
+    "Google News Business": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
+    "Google News World": "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
+    "Google News Science": "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-US&gl=US&ceid=US:en",
+    "Google News Health": "https://news.google.com/rss/headlines/section/topic/HEALTH?hl=en-US&gl=US&ceid=US:en",
+    
+    # Type 3: Location headlines
+    "Google News Tennessee": "https://news.google.com/rss/headlines/section/geo/Tennessee?hl=en-US&gl=US&ceid=US:en",
+    "Google News Nashville": "https://news.google.com/rss/headlines/section/geo/Nashville?hl=en-US&gl=US&ceid=US:en",
+    "Google News Knoxville": "https://news.google.com/rss/headlines/section/geo/Knoxville?hl=en-US&gl=US&ceid=US:en",
+    "Google News Memphis": "https://news.google.com/rss/headlines/section/geo/Memphis?hl=en-US&gl=US&ceid=US:en",
+    
+    # Type 4: News by search criteria - personalized to user interests
+    "Google News Scouting": "https://news.google.com/rss/search?q=scouting+OR+%22boy+scouts%22+OR+%22scout+troop%22&hl=en-US&gl=US&ceid=US:en",
+    "Google News Education": "https://news.google.com/rss/search?q=(education+OR+learning+OR+teaching)+Tennessee&hl=en-US&gl=US&ceid=US:en",
+    "Google News Youth Leadership": "https://news.google.com/rss/search?q=%22youth+leadership%22+OR+%22student+leadership%22&hl=en-US&gl=US&ceid=US:en",
+    "Google News Outdoor/Camping": "https://news.google.com/rss/search?q=camping+OR+hiking+OR+backpacking+OR+%22outdoor+adventure%22&hl=en-US&gl=US&ceid=US:en",
+    "Google News Kenya": "https://news.google.com/rss/search?q=kenya+missions+OR+%22humanitarian+aid%22&hl=en-US&gl=US&ceid=US:en",
+    
+    # Additional aggregators
     "Yahoo News": "https://news.yahoo.com/rss",
-    "MSN News US": "http://rss.msn.com/en-us/news/us",
-    "MSN News World": "http://rss.msn.com/en-us/news/world"
+    "MSN News US": "http://rss.msn.com/en-us/news/us"
 }
 
 # --- SECONDARY NEWS FEEDS ---
@@ -207,5 +226,6 @@ SYSTEM_SETTINGS = {
     "cache_expiry_hours": 24,              # How long to keep articles in cache
     "use_central_timezone": True,          # Whether to convert all dates to Central Time
     "default_timezone": "America/Chicago", # Default timezone for date standardization
-    "prioritize_primary_feeds": True       # Whether to prioritize PRIMARY_NEWS_FEEDS over others
+    "prioritize_primary_feeds": True,      # Whether to prioritize PRIMARY_NEWS_FEEDS over others
+    "use_supplemental_feeds": False        # Whether to use SUPPLEMENTAL_FEEDS when primary feeds are empty
 }
