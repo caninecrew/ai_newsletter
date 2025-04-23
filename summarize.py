@@ -8,8 +8,12 @@ import os
 from dotenv import load_dotenv
 import openai
 import time
+from datetime import datetime
 from logger_config import setup_logger
-from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS, USER_INTERESTS
+from config import (
+    PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, 
+    SYSTEM_SETTINGS, USER_INTERESTS, EMAIL_SETTINGS
+)
 import certifi
 import ssl
 import urllib3
@@ -218,99 +222,86 @@ def summarize_with_openai(text, title=None, max_retries=3, retry_delay=1):
 
 def summarize_articles(articles):
     """
-    Summarizes the content of each article in the provided list.
-    Uses OpenAI API if available, falls back to traditional methods.
+    Summarize articles with OpenAI, focusing on the most important ones.
 
     Args:
-        articles (list): List of articles, each represented as a dictionary.
-
+        articles: List of article dictionaries
+        
     Returns:
-        list: List of articles with an added 'summary' field.
+        List of articles with added summaries
     """
-    logger.info(f"Summarizing {len(articles)} articles")
+    if not articles:
+        return []
+
+    logger.info(f"Starting summarization of {len(articles)} articles")
+    
+    # Sort articles by importance score and recency
+    sorted_articles = sorted(
+        articles,
+        key=lambda a: (
+            a.get('importance_score', 0),  # Primary sort by importance
+            a.get('published', datetime.now())  # Secondary sort by date
+        ),
+        reverse=True
+    )
+
+    # Take only top N articles based on EMAIL_SETTINGS
+    max_articles = EMAIL_SETTINGS.get('max_articles_total', 15)
+    articles_to_process = sorted_articles[:max_articles]
+    
+    logger.info(f"Selected {len(articles_to_process)} most important articles out of {len(articles)} total")
+    
     summarized = []
-    
-    # Check if OpenAI API key is configured
-    use_openai = bool(openai.api_key)
-    if use_openai:
-        logger.info("Using OpenAI for article summarization")
-    else:
-        logger.info("OpenAI API key not found - using fallback summarization")
-    
-    for i, article in enumerate(articles):
+    for i, article in enumerate(articles_to_process):
         try:
             title = article.get('title', '')
             content = article.get('content', '')
             
-            # Skip if no content
-            if not content:
-                article['summary'] = "No content available to summarize."
-                summarized.append(article)
+            if not content or len(content.strip()) < 100:
+                logger.warning(f"Insufficient content for article: {title}")
                 continue
             
-            # Try OpenAI summarization first if API key is available
-            if use_openai:
+            # Try newspaper3k summarization first
+            if SYSTEM_SETTINGS.get('use_newspaper3k', True):
                 try:
-                    ai_summary = summarize_with_openai(content, title)
-                    if ai_summary:
-                        article['summary'] = ai_summary
-                        article['summary_method'] = 'openai'
-                        summarized.append(article)
-                        logger.info(f"Used OpenAI to summarize: {title}")
-                        
-                        # Log progress for every article with OpenAI
-                        logger.info(f"Summarized {i+1}/{len(articles)} articles using OpenAI")
-                        continue
-                except Exception as e:
-                    logger.error(f"OpenAI summarization failed for {title}: {str(e)}")
-                    # Continue to fallback methods
-            
-            # Fallback 1: If content is too long, use newspaper's built-in summarization
-            if len(content) > 1000:
-                try:
-                    article_url = article.get('url', '')
-                    from newspaper import Article as NewspaperArticle
-                    article_obj = NewspaperArticle(article_url)
-                    article_obj.download()
-                    article_obj.parse()
+                    article_obj = Article('')
+                    article_obj.text = content
                     article_obj.nlp()
                     article['summary'] = article_obj.summary
                     article['summary_method'] = 'newspaper'
                 except Exception as e:
                     logger.warning(f"Newspaper summarization failed for {title}: {str(e)}")
-                    # Truncate long content as a last resort
+                    # Fall back to OpenAI summarization
+                    summary = summarize_with_openai(content, title)
+                    if summary:
+                        article['summary'] = summary
+                        article['summary_method'] = 'openai'
+                    else:
+                        # Last resort: truncate long content
+                        article['summary'] = content[:1000] + "..."
+                        article['summary_method'] = 'truncation'
+            else:
+                # Use OpenAI summarization directly
+                summary = summarize_with_openai(content, title)
+                if summary:
+                    article['summary'] = summary
+                    article['summary_method'] = 'openai'
+                else:
+                    # Fallback to truncation
                     article['summary'] = content[:1000] + "..."
                     article['summary_method'] = 'truncation'
-            else:
-                # For short articles, just use the content directly
-                article['summary'] = content
-                article['summary_method'] = 'passthrough'
             
             summarized.append(article)
             
-            # Log progress for every 5 articles
+            # Log progress periodically
             if (i+1) % 5 == 0:
-                logger.info(f"Summarized {i+1}/{len(articles)} articles")
+                logger.info(f"Summarized {i+1}/{len(articles_to_process)} articles")
                 
         except Exception as e:
             logger.error(f"Failed to process article {article.get('title', 'Unknown')}: {str(e)}")
-            # Still include the article with a default summary
-            article['summary'] = article.get('content', 'Summary not available.')
-            article['summary_method'] = 'error'
-            summarized.append(article)
+            continue
     
-    logger.info(f"Summary complete. Processed {len(summarized)}/{len(articles)} articles successfully")
-    
-    # Summarize methods used
-    methods = {}
-    for article in summarized:
-        method = article.get('summary_method', 'unknown')
-        methods[method] = methods.get(method, 0) + 1
-    
-    logger.info("Summarization methods used:")
-    for method, count in methods.items():
-        logger.info(f"  - {method}: {count} articles")
-        
+    logger.info(f"Completed summarization. Processed {len(summarized)}/{len(articles_to_process)} articles successfully")
     return summarized
 
 
