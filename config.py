@@ -27,6 +27,7 @@ GNEWS_API_CONFIG = {
 
 # --- RSS Feed Definitions ---
 # Format: Category -> Source -> URL
+# Removed problematic sources: Fox News, Politico, WKRN, Washington Times
 
 RSS_FEEDS = {
     "Left": {
@@ -35,11 +36,9 @@ RSS_FEEDS = {
         "NYT": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
         "NYT US": "https://rss.nytimes.com/services/xml/rss/nyt/US.xml",
         "NYT Politics": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
-        "NYT Education": "https://rss.nytimes.com/services/xml/rss/nyt/Education.xml",
         "MSNBC": "https://www.msnbc.com/feeds/latest",
         "Washington Post National": "http://feeds.washingtonpost.com/rss/national",
-        "Washington Post World": "https://feeds.washingtonpost.com/rss/world",
-        "Washington Post Tech": "https://feeds.washingtonpost.com/rss/business/technology"
+        "Washington Post World": "https://feeds.washingtonpost.com/rss/world"
     },
     "Center": {
         "NPR": "https://feeds.npr.org/1001/rss.xml",
@@ -57,7 +56,9 @@ RSS_FEEDS = {
         "National Review": "https://www.nationalreview.com/feed/",
         "The Hill": "https://thehill.com/rss/syndicator/19110",
         "Washington Examiner": "https://www.washingtonexaminer.com/tag/news.xml",
-        "Newsmax": "https://www.newsmax.com/rss/Headline/0"
+        "Newsmax": "https://www.newsmax.com/rss/Headline/0",
+        "The Dispatch": "https://thedispatch.com/feed/",  # Added reliable conservative source
+        "The Bulwark": "https://thebulwark.com/feed/"    # Added moderate conservative source
     },
     "International": {
         "BBC": "http://feeds.bbci.co.uk/news/world/rss.xml",
@@ -65,20 +66,27 @@ RSS_FEEDS = {
         "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
         "France24": "https://www.france24.com/en/rss",
         "DW": "https://rss.dw.com/rdf/rss-en-all",
-        "State Department Africa": "https://www.state.gov/rss-feed/africa/feed/",
-        "State Department Press Briefings": "https://www.state.gov/rss-feed/department-press-briefings/feed/"
+        "The Guardian World": "https://www.theguardian.com/world/rss", # Added reliable international source
+        "BBC US & Canada": "http://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml" # Added BBC's US coverage
     },
     "Tennessee": {
         "Tennessean": "https://rssfeeds.tennessean.com/nashville/home",
         "Tennessee Tribune": "https://tntribune.com/category/community/local/nashville/feed/",
-        "News Channel 5 Nashville": "https://www.newschannel5.com/news/local-news/feed"
+        "News Channel 5 Nashville": "https://www.newschannel5.com/news/local-news/feed",
+        "WPLN Nashville Public Radio": "https://wpln.org/feed/" # Added reliable local source
+    },
+    "Technology": { # Added dedicated Technology category
+        "TechCrunch": "https://techcrunch.com/feed/",
+        "Wired": "https://www.wired.com/feed/rss",
+        "Ars Technica": "http://feeds.arstechnica.com/arstechnica/index",
+        "BBC Tech": "http://feeds.bbci.co.uk/news/technology/rss.xml",
+        "MIT Technology Review": "https://www.technologyreview.com/feed/"
     },
     "Personalized": {
         "Scouting": "https://blog.scoutingmagazine.org/feed/",
         "Scout Life Magazine": "https://scoutlife.org/feed/",
         "Scouting Newsroom": "https://www.scoutingnewsroom.org/feed/",
-        "NPR Education": "https://feeds.npr.org/1013/rss.xml",
-        "BBC Tech": "http://feeds.bbci.co.uk/news/technology/rss.xml"
+        "NPR Education": "https://feeds.npr.org/1013/rss.xml"
     }
 }
 
@@ -125,7 +133,10 @@ EMAIL_SETTINGS = {
 # General system configuration options
 
 SYSTEM_SETTINGS = {
-    "log_level": "INFO",  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    "article_fetch_timeout": 10,  # Timeout in seconds for fetching articles
-    "max_articles_to_process": 50  # Maximum number of articles to process in one run
+    "log_level": "INFO",           # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    "article_fetch_timeout": 10,   # Timeout in seconds for fetching articles
+    "max_articles_to_process": 50, # Maximum number of articles to process in one run
+    "max_retries": 2,              # Maximum number of retries for failed requests
+    "session_reuse": True,         # Whether to reuse HTTP/browser sessions between categories
+    "skip_empty_feeds": True       # Whether to skip or flag empty feeds without spamming logs
 }
