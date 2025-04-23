@@ -769,7 +769,7 @@ def combine_feed_sources():
 
 def fetch_articles_from_all_feeds(max_articles_per_source=5):
     """
-    Main function to fetch articles based on the configured news source
+    Main function to fetch articles from all configured feed sources
     
     Args:
         max_articles_per_source (int): Maximum number of articles to fetch per source
@@ -777,73 +777,58 @@ def fetch_articles_from_all_feeds(max_articles_per_source=5):
     Returns:
         list: List of article dictionaries
     """
-    logger.info(f"Fetching news using configured source: {PRIMARY_NEWS_SOURCE}")
+    # Get combined feeds based on configuration
+    combined_feeds = combine_feed_sources()
+    logger.info(f"Fetching news from {len(combined_feeds)} total configured feeds")
     
-    if PRIMARY_NEWS_SOURCE.lower() == "gnews":
-        # Use GNews API
-        return fetch_articles_from_gnews()
+    # Convert feeds to flat dictionary for fetch_news_articles
+    flat_feeds = {}
+    
+    for source_name, feed_url in combined_feeds.items():
+        try:
+            # Skip known problematic sources early
+            if should_skip_source(feed_url):
+                logger.info(f"Skipping problematic source: {source_name} ({feed_url})")
+                continue
+                
+            flat_feeds[source_name] = feed_url
+        except Exception as e:
+            logger.error(f"Error processing source {source_name}: {e}")
+    
+    logger.info(f"Fetching content from {len(flat_feeds)} feeds (after filtering problematic sources)")
+    
+    # Now call fetch_news_articles with the flattened dictionary
+    # Use improved parameters: limit articles per feed, use parallel processing
+    max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 8)
+    max_articles = SYSTEM_SETTINGS.get("max_articles_per_feed", max_articles_per_source)
+    
+    result = fetch_news_articles(
+        flat_feeds, 
+        fetch_content=True,
+        max_articles_per_feed=max_articles,
+        max_workers=max_workers
+    )
+    
+    # Handle return values - fetch_news_articles returns a tuple (articles, stats)
+    if isinstance(result, tuple) and len(result) > 0:
+        articles, stats = result
+        logger.info(f"Fetch completed in {stats.get('processing_time', 0):.2f} seconds")
+        
+        # Log efficiency statistics
+        if stats.get('slow_sources'):
+            logger.warning(f"{len(stats['slow_sources'])} slow sources detected")
+        
+        if stats.get('slow_article_fetches'):
+            slow_count = len(stats.get('slow_article_fetches', []))
+            if slow_count > 0:
+                logger.warning(f"{slow_count} slow article fetches detected")
+                domains = set(item['url'].split('/')[2] for item in stats.get('slow_article_fetches', [])
+                              if 'url' in item and '/' in item['url'])
+                logger.warning(f"Slow domains: {', '.join(domains)}")
+        
+        return articles
     else:
-        # Default to RSS feeds
-        # Convert nested RSS_FEEDS structure to flat dictionary for fetch_news_articles
-        flat_feeds = {}
-        
-        for category, sources in RSS_FEEDS.items():
-            try:
-                # If sources is a dictionary, iterate through its items
-                if isinstance(sources, dict):
-                    for source_name, feed_url in sources.items():
-                        # Skip known problematic sources early
-                        if should_skip_source(feed_url):
-                            logger.info(f"Skipping problematic source: {source_name} ({feed_url})")
-                            continue
-                            
-                        # Create a key combining category and source name
-                        flat_key = f"{source_name} ({category})"
-                        flat_feeds[flat_key] = feed_url
-                        
-                # If sources is a string (direct URL), use category as source name
-                elif isinstance(sources, str):
-                    if not should_skip_source(sources):
-                        flat_feeds[category] = sources
-                else:
-                    logger.error(f"Unexpected format for category {category}: {type(sources)}")
-            except Exception as e:
-                logger.error(f"Error processing source {category}: {e}")
-        
-        logger.info(f"Fetching content from {len(flat_feeds)} feeds (after filtering problematic sources)")
-        
-        # Now call fetch_news_articles with the flattened dictionary
-        # Use improved parameters: limit articles per feed, use parallel processing
-        max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 8)
-        max_articles = SYSTEM_SETTINGS.get("max_articles_per_feed", max_articles_per_source)
-        
-        result = fetch_news_articles(
-            flat_feeds, 
-            fetch_content=True,
-            max_articles_per_feed=max_articles,
-            max_workers=max_workers
-        )
-        
-        # Handle return values - fetch_news_articles returns a tuple (articles, stats)
-        if isinstance(result, tuple) and len(result) > 0:
-            articles, stats = result
-            logger.info(f"Fetch completed in {stats.get('processing_time', 0):.2f} seconds")
-            
-            # Log efficiency statistics
-            if stats.get('slow_sources'):
-                logger.warning(f"{len(stats['slow_sources'])} slow sources detected")
-            
-            if stats.get('slow_article_fetches'):
-                slow_count = len(stats.get('slow_article_fetches', []))
-                if slow_count > 0:
-                    logger.warning(f"{slow_count} slow article fetches detected")
-                    domains = set(item['url'].split('/')[2] for item in stats.get('slow_article_fetches', [])
-                                  if 'url' in item and '/' in item['url'])
-                    logger.warning(f"Slow domains: {', '.join(domains)}")
-            
-            return articles
-        else:
-            return result  # Return whatever we got
+        return result  # Return whatever we got
 
 # --- Test Execution ---
 
