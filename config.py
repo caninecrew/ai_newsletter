@@ -84,7 +84,7 @@ if FEED_SETTINGS["interests"]["kenya"]:
     PRIMARY_NEWS_FEEDS["Google News Kenya"] = "https://news.google.com/news/rss/search?q=kenya+missions+OR+%22humanitarian+aid%22"
 if FEED_SETTINGS["interests"]["nazarene"]:
     PRIMARY_NEWS_FEEDS["Google News Nazarene"] = "https://news.google.com/news/rss/search?q=Nazarene+OR+%22Church+of+the+Nazarene%22+OR+%22Nazarene+Compassionate+Ministries%22"
-    
+
 # Additional aggregators
 if FEED_SETTINGS["aggregators"]["yahoo"]:
     PRIMARY_NEWS_FEEDS["Yahoo News"] = "https://www.yahoo.com/news/rss"  # Updated Yahoo News URL
@@ -94,27 +94,10 @@ if FEED_SETTINGS["aggregators"]["msn"]:
 # --- SECONDARY NEWS FEEDS ---
 # Secondary feeds for local content and specialized interests
 SECONDARY_FEEDS = {
-    "Tennessee": {
-        "The Tennessean": "https://rssfeeds.tennessean.com/nashville/home",
-        "Tennessee Tribune": "https://tntribune.com/category/community/local/nashville/feed/",
-        "News Channel 5 Nashville": "https://www.newschannel5.com/news/local-news/feed",
-        "WPLN Nashville Public Radio": "https://wpln.org/feed/",
-        "WSMV News": "https://www.wsmv.com/news/tennessee/?format=rss",
-        "Knox News": "https://www.knoxnews.com/news/?format=rss",
-        "Tennessee Lookout": "https://tennesseelookout.com/feed/",
-        "Chattanooga Times Free Press": "https://www.timesfreepress.com/rss/headlines/breakingnews/",
-        "Memphis Commercial Appeal": "https://www.commercialappeal.com/news/?format=rss",
-        "Johnson City Press": "https://www.johnsoncitypress.com/search/?f=rss"
-    },
     "Personalized": {
         "Scouting": "https://blog.scoutingmagazine.org/feed/",
         "Scout Life Magazine": "https://scoutlife.org/feed/",
         "Scouting Newsroom": "https://www.scoutingnewsroom.org/feed/",
-        "NPR Education": "https://feeds.npr.org/1013/rss.xml",
-        "Education Week": "https://www.edweek.org/rss",
-        "Chronicle of Higher Education": "https://www.chronicle.com/feed",
-        "Outdoor Life": "https://www.outdoorlife.com/rss/all/",
-        "Outside Online": "https://www.outsideonline.com/feed/"
     }
 }
 
