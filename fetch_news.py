@@ -26,6 +26,7 @@ import certifi
 import ssl
 import urllib3
 import os
+import stat
 
 # Get the logger
 logger = setup_logger()
@@ -431,74 +432,93 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
         FETCH_METRICS['failed_sources'].append(source_name)
         return []
 
-def fetch_google_news_article(article):
-    """
-    Special handling for Google News articles with proper certificate validation
-    
-    Args:
-        article (dict): Article dictionary with link and other metadata
-        
-    Returns:
-        dict: Updated article with content
-    """
+def get_random_user_agent():
+    """Return a random modern user agent"""
+    chrome_versions = [110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120]
+    return f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.choice(chrome_versions)}.0.0.0 Safari/537.36'
+
+def create_google_news_session():
+    """Create a session specifically configured for Google News"""
+    session = create_secure_session()
+    session.headers.update({
+        'User-Agent': get_random_user_agent(),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': 'https://news.google.com/',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Cache-Control': 'max-age=0'
+    })
+    return session
+
+def fetch_google_news_article(article, max_retries=3):
+    """Special handling for Google News articles with retries"""
     url = article['link']
+    session = create_google_news_session()
     
-    try:
-        session = create_secure_session()
-        
-        # Set up headers specifically for Google News
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://news.google.com/',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        }
-        
-        # Make request with certificate verification
-        response = session.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        # Parse with BeautifulSoup
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Try to find content using Google News specific selectors
-        content = ''
-        for selector in [
-            'article',
-            '[role="article"]',
-            '[role="main"]',
-            '.article-body',
-            '.article-content',
-            'main'
-        ]:
-            elements = soup.select(selector)
-            if elements:
-                # Use the largest content block
-                content = max([e.get_text(strip=True) for e in elements], key=len)
-                if len(content) > 150:
-                    break
-        
-        # If no content found with selectors, try paragraphs
-        if not content or len(content) < 150:
-            paragraphs = soup.select('p')
-            content = ' '.join([
-                p.get_text(strip=True) for p in paragraphs
-                if len(p.get_text(strip=True)) > 50
-            ])
-        
-        if content:
-            article['content'] = content
-            logger.info(f"Successfully fetched Google News content: {url}")
-        else:
-            logger.warning(f"No content found in Google News article: {url}")
+    for attempt in range(max_retries):
+        try:
+            # Rotate user agent on each retry
+            session.headers['User-Agent'] = get_random_user_agent()
             
-        return article
-        
-    except Exception as e:
-        logger.error(f"Error fetching Google News article {url}: {e}")
-        return article
+            # Add delay between retries
+            if attempt > 0:
+                time.sleep(2 ** attempt)  # Exponential backoff
+            
+            response = session.get(url, timeout=15)  # Increased timeout
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Try multiple content extraction strategies
+            content = ''
+            
+            # Strategy 1: Look for article content
+            selectors = [
+                'article', '[role="article"]', '.article-body',
+                '.article-content', '.entry-content', '.post-content',
+                'main', '[role="main"]', '#content', '.content'
+            ]
+            
+            for selector in selectors:
+                elements = soup.select(selector)
+                if elements:
+                    # Get the largest content block
+                    content = max([e.get_text(strip=True) for e in elements], key=len)
+                    if len(content) > 150:  # Content threshold
+                        break
+            
+            # Strategy 2: If no content found, try paragraphs
+            if not content or len(content) < 150:
+                paragraphs = soup.select('p')
+                content = ' '.join([
+                    p.get_text(strip=True) for p in paragraphs
+                    if len(p.get_text(strip=True)) > 50  # Skip short paragraphs
+                ])
+            
+            # Update article if content found
+            if content and len(content) > 150:
+                article['content'] = content
+                logger.info(f"Successfully fetched Google News content: {url}")
+                return article
+                
+            # If no content found and this is the last retry, try Selenium
+            if attempt == max_retries - 1:
+                logger.debug(f"No content found with requests, trying Selenium")
+                return fetch_article_content_with_selenium(article)
+                
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {url}: {e}")
+            if attempt == max_retries - 1:
+                logger.debug("All retries failed, trying Selenium as fallback")
+                return fetch_article_content_with_selenium(article)
+            
+    return article
 
 def fetch_article_content(article, max_retries=2):
     """Fetch article content with special handling for Google News"""
@@ -1046,6 +1066,60 @@ def fetch_articles_from_all_feeds(max_articles_per_source=5):
         return articles
     else:
         return result  # Return whatever we got
+
+def setup_webdriver():
+    """Set up WebDriver with proper permissions and configuration"""
+    # Get the ChromeDriver path
+    driver_path = ChromeDriverManager().install()
+    
+    # Fix permissions if on Windows
+    if os.name == 'nt':
+        # Add executable permission
+        try:
+            os.chmod(driver_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+        except Exception as e:
+            logger.warning(f"Could not set ChromeDriver permissions: {e}")
+    
+    # Configure ChromeOptions
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--ignore-certificate-errors')
+    options.add_argument('--ignore-ssl-errors')
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    
+    # Add user agent
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    
+    try:
+        # Create service with configured driver path
+        service = Service(driver_path)
+        # Create driver with service and options
+        driver = webdriver.Chrome(service=service, options=options)
+        return driver
+    except Exception as e:
+        logger.error(f"Failed to create WebDriver: {e}")
+        return None
+
+def fetch_feed_with_redirects(feed_url):
+    """Fetch RSS feed with proper redirect handling"""
+    try:
+        session = create_secure_session()
+        response = session.get(feed_url, allow_redirects=True)
+        response.raise_for_status()
+        
+        # Parse feed content
+        feed = feedparser.parse(response.content)
+        if not feed.entries:
+            logger.warning(f"RSS feed {feed_url} returned no entries")
+            return None
+            
+        return feed
+    except Exception as e:
+        logger.error(f"Failed to fetch RSS feed {feed_url}: {e}")
+        return None
 
 # --- Test Execution ---
 
