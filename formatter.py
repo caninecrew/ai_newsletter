@@ -774,9 +774,9 @@ def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional
     """
     # Calculate cutoff time
     if hours is not None:
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = datetime.now(pytz.UTC) - timedelta(hours=hours)
     else:
-        cutoff_time = datetime.now() - timedelta(days=days)
+        cutoff_time = datetime.now(pytz.UTC) - timedelta(days=days)
     
     filtered = []
     skipped_count = 0
@@ -798,63 +798,43 @@ def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional
             continue
             
         try:
-            # Handle various date formats
-            date_str = article.get('published', '')
+            # Get the published date
+            pub_date = article.get('published')
             
             # Skip articles with no date
-            if not date_str:
+            if not pub_date:
                 logger.debug(f"Skipping article with no date: {article.get('title', 'No title')}")
                 skipped_count += 1
                 continue
-                
-            # Try different parsing strategies
-            parsed_date = None
-            try:
-                # Common format in feedparser: Tue, 23 Apr 2025 14:23:45 +0000
-                parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z")
-            except ValueError:
-                try:
-                    # ISO format: 2025-04-23T14:23:45Z or 2025-04-23T14:23:45+00:00
-                    if 'T' in date_str:
-                        if date_str.endswith('Z'):
-                            parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-                        elif '+' in date_str or '-' in date_str[10:]:  # Has timezone
-                            try:
-                                parsed_date = datetime.fromisoformat(date_str)
-                            except:
-                                parsed_date = datetime.strptime(date_str[:19], "%Y-%m-%dT%H:%M:%S")
-                        else:
-                            parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-                    else:
-                        # Basic format: 2025-04-23 14:23:45
-                        parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    try:
-                        # Another common format: Wed, 23 Apr 2025 14:23:45 GMT
-                        parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
-                    except ValueError:
-                        try:
-                            # Try format with abbreviated month: 23 Apr 2025 14:23:45
-                            parsed_date = datetime.strptime(date_str, "%d %b %Y %H:%M:%S")
-                        except ValueError:
-                            try:
-                                # Last attempt - try to handle any format with dateutil
-                                from dateutil import parser
-                                parsed_date = parser.parse(date_str)
-                            except:
-                                # If all parsing attempts fail
-                                logger.warning(f"Could not parse date: {date_str} for article: {article.get('title', 'No title')}")
-                                # Include recent articles with unparseable dates rather than discarding them
-                                filtered.append(article)
-                                parsing_errors += 1
-                                continue
             
-            # Handle timezone-aware vs naive datetime comparison
-            if hasattr(parsed_date, 'tzinfo') and parsed_date.tzinfo is not None:
-                # If the parsed date is timezone-aware but cutoff_time is not
-                if cutoff_time.tzinfo is None:
-                    # Convert parsed_date to naive by removing timezone info
-                    parsed_date = parsed_date.replace(tzinfo=None)
+            # Handle the date based on its type
+            parsed_date = None
+            if isinstance(pub_date, (datetime, pd.Timestamp)):
+                # Convert pandas Timestamp to datetime if needed
+                if isinstance(pub_date, pd.Timestamp):
+                    parsed_date = pub_date.to_pydatetime()
+                else:
+                    parsed_date = pub_date
+                    
+                # Ensure timezone awareness
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+            else:
+                # Handle string dates
+                try:
+                    # Try dateutil parser first
+                    parsed_date = parser.parse(str(pub_date))
+                    if parsed_date.tzinfo is None:
+                        parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+                except Exception as e:
+                    logger.warning(f"Could not parse date: {pub_date} for article: {article.get('title', 'No title')}: {e}")
+                    # Include article with unparseable date rather than dropping it
+                    filtered.append(article)
+                    parsing_errors += 1
+                    continue
+            
+            # Standardize to UTC for comparison
+            parsed_date = parsed_date.astimezone(pytz.UTC)
             
             # Compare dates and add to filtered list if recent enough
             if parsed_date >= cutoff_time:
@@ -864,11 +844,10 @@ def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional
                 skipped_count += 1
                 
         except Exception as e:
-            logger.warning(f"Date filtering error for article '{article.get('title', 'No title') if isinstance(article, dict) else str(article)}': {str(e)}")
+            logger.warning(f"Date filtering error for article '{article.get('title', 'No title')}': {str(e)}")
             # Include articles with date errors rather than silently dropping them
-            if isinstance(article, dict):
-                filtered.append(article)
-                parsing_errors += 1
+            filtered.append(article)
+            parsing_errors += 1
     
     logger.info(f"Date filtering: {len(filtered)} articles kept, {skipped_count} skipped, {parsing_errors} with parsing errors")
     return filtered
