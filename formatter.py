@@ -150,6 +150,66 @@ def identify_tags(article):
             
     return list(set(matched_tags))  # Remove duplicates
 
+def format_date(date_str):
+    """
+    Format a date string into a clean, human-readable format.
+    Handles various input date formats and simplifies them.
+    
+    Args:
+        date_str (str): Original date string
+        
+    Returns:
+        str: Formatted date in "April 23, 2025" or similar format
+    """
+    if not date_str:
+        return "Date unavailable"
+    
+    try:
+        # Try different parsing strategies
+        parsed_date = None
+        try:
+            # Common format in feedparser: Tue, 23 Apr 2025 14:23:45 +0000
+            parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z")
+        except ValueError:
+            try:
+                # ISO format: 2025-04-23T14:23:45Z or 2025-04-23T14:23:45+00:00
+                if 'T' in date_str:
+                    if date_str.endswith('Z'):
+                        parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
+                    elif '+' in date_str or '-' in date_str[10:]:  # Has timezone
+                        try:
+                            parsed_date = datetime.fromisoformat(date_str)
+                        except:
+                            parsed_date = datetime.strptime(date_str[:19], "%Y-%m-%dT%H:%M:%S")
+                    else:
+                        parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+                else:
+                    # Basic format: 2025-04-23 14:23:45
+                    parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                try:
+                    # Another common format: Wed, 23 Apr 2025 14:23:45 GMT
+                    parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
+                except ValueError:
+                    try:
+                        # Try format with abbreviated month: 23 Apr 2025 14:23:45
+                        parsed_date = datetime.strptime(date_str, "%d %b %Y %H:%M:%S")
+                    except ValueError:
+                        try:
+                            # Last attempt - try to handle any format with dateutil
+                            from dateutil import parser
+                            parsed_date = parser.parse(date_str)
+                        except:
+                            # If all parsing attempts fail, return the original string
+                            return date_str
+                            
+        # Format the date nicely
+        return parsed_date.strftime("%B %d, %Y")
+        
+    except Exception:
+        # Fall back to original if any error occurs
+        return date_str
+
 def format_article(article, html=False):
     """
     Formats a single article into a string for display or email.
@@ -168,7 +228,10 @@ def format_article(article, html=False):
     content = article.get('summary', article.get('content', 'No Content'))
     published = article.get('published', 'Unknown Date')
     
-    # Get article tags based on content and format with emojis
+    # Format the date using our new function
+    formatted_date = format_date(published)
+    
+    # Get article tags based on content
     tags = identify_tags(article)
     
     if html:
@@ -189,7 +252,7 @@ def format_article(article, html=False):
             <h2 class="article-title"><a href="{url}" target="_blank">{title}</a></h2>
             <div class="article-meta">
                 <span class="source">{source}</span>
-                <span class="published">{published}</span>
+                <span class="published">{formatted_date}</span>
                 <div class="tags">{tags_html}</div>
             </div>
             
@@ -201,14 +264,14 @@ def format_article(article, html=False):
             </div>
             
             <div class="article-actions">
-                <a href="javascript:void(0)" onclick="toggleSummary('{article_id}')" class="toggle-link">Toggle full summary</a>
-                <a href="{url}" target="_blank" class="read-source-link">Read full article &rarr;</a>
+                <a href="javascript:void(0)" onclick="toggleSummary('{article_id}')" class="toggle-link">Read full summary</a>
+                <a href="{url}" target="_blank" class="read-source-link">Read original article →</a>
             </div>
         </div>
         """
     else:
         tags_text = ", ".join(tags)
-        return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {published}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
+        return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
 
 def limit_articles_by_source(articles, max_per_source=3):
     """
@@ -284,7 +347,7 @@ def format_section_header(category):
 def format_articles(articles, html=False):
     """
     Formats a list of articles into a single string for display or email.
-    Organizes articles by category with clear section headings.
+    Organizes articles by category with clear section headings and visual separators.
 
     Args:
         articles (list): A list of dictionaries, each containing article details.
@@ -378,18 +441,40 @@ def format_articles(articles, html=False):
                     padding: 20px;
                     background-color: #ffffff;
                     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                    position: relative;
+                    border-top: 4px solid #3498db;
+                }}
+                .section:before {{
+                    content: '';
+                    position: absolute;
+                    top: -15px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    width: 30px;
+                    height: 30px;
+                    background-color: white;
+                    border: 4px solid #3498db;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 2;
                 }}
                 .section-header {{
-                    margin-top: 0;
+                    margin-top: 10px;
                     margin-bottom: 20px;
-                    padding-bottom: 10px;
+                    padding-bottom: 15px;
                     border-bottom: 2px solid #e8e8e8;
                     color: #2c3e50;
+                    text-align: center;
+                    font-size: 24px;
+                    font-weight: bold;
                 }}
                 .section-description {{
                     font-style: italic;
                     color: #7f8c8d;
                     margin-bottom: 20px;
+                    text-align: center;
                 }}
                 .article {{
                     border-bottom: 1px solid #f0f0f0;
@@ -515,14 +600,39 @@ def format_articles(articles, html=False):
                 .toggle-link:hover, .read-source-link:hover {{
                     text-decoration: underline;
                 }}
+                .section-divider {{
+                    height: 30px;
+                    border-top: 1px solid #ddd;
+                    margin: 40px 0;
+                    text-align: center;
+                    position: relative;
+                }}
+                .section-divider:before {{
+                    content: "§";
+                    position: absolute;
+                    top: -15px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: white;
+                    padding: 0 10px;
+                    font-size: 20px;
+                    color: #aaa;
+                }}
+                .no-content-notice {{
+                    font-style: italic;
+                    color: #888;
+                }}
             </style>
             <script type="text/javascript">
                 function toggleSummary(id) {{
                     var element = document.getElementById(id + "-full");
+                    var link = document.getElementById(id + "-toggle");
                     if (element.style.display === "none") {{
                         element.style.display = "block";
+                        link.innerHTML = "Hide full summary";
                     }} else {{
                         element.style.display = "none";
+                        link.innerHTML = "Read full summary";
                     }}
                 }}
             </script>
@@ -553,9 +663,16 @@ def format_articles(articles, html=False):
         """
         
         # Add each section in the specified order, but only if it has articles
+        first_section = True
         for section_key in section_order:
             if section_key in categories and categories[section_key]:
                 emoji, title = format_section_header(section_key)
+                
+                # Add section divider except for the first section
+                if not first_section:
+                    html_output += '<div class="section-divider"></div>'
+                else:
+                    first_section = False
                 
                 html_output += f"""
                 <div id="{section_key}-section" class="section">
@@ -602,8 +719,8 @@ def format_articles(articles, html=False):
         
         for section_key in section_order:
             if section_key in categorized and categorized[section_key]:
-                _, title = format_section_header(section_key)
-                output += f"==== {title} ====\n\n"
+                emoji, title = format_section_header(section_key)
+                output += f"====== {emoji} {title} ======\n\n"
                 
                 for article in categorized[section_key]:
                     output += format_article(article, html=False) + "\n---\n"
@@ -813,6 +930,7 @@ def deduplicate_articles(articles):
     """
     Remove duplicate articles from the list with improved algorithm.
     Prioritizes keeping articles from preferred sources when duplicates are found.
+    Also ensures no duplicate URLs are included.
     
     Args:
         articles (list): List of article dictionaries
@@ -854,13 +972,24 @@ def deduplicate_articles(articles):
     unique_articles = []
     duplicate_count = 0
     duplicate_groups = []
+    seen_urls = set()  # Track URLs we've already seen
     
     # Track duplicate groups for reporting
     current_duplicates = []
     
     for article in sorted_articles:
         is_dup = False
+        url = article.get('url', article.get('link', ''))
         
+        # Check if this URL has been seen before (exact URL match)
+        if url and url in seen_urls:
+            is_dup = True
+            duplicate_count += 1
+            current_duplicates.append(article.get('title', 'No title'))
+            logger.debug(f"Duplicate URL found: {url}")
+            continue
+        
+        # Check for content similarity with existing articles
         for existing in unique_articles:
             if is_duplicate(article, existing):
                 is_dup = True
@@ -874,6 +1003,9 @@ def deduplicate_articles(articles):
                 duplicate_groups.append(current_duplicates)
                 current_duplicates = []
             
+            # Add to seen URLs and unique articles
+            if url:
+                seen_urls.add(url)
             unique_articles.append(article)
     
     # Add the last group if it exists
@@ -898,6 +1030,7 @@ def get_key_takeaways(content):
     """
     Extract key takeaways from the article content in a TL;DR style.
     This uses a simple extraction approach based on the first few sentences.
+    Includes fallback handling for empty content.
     
     Args:
         content (str): The article content or summary
@@ -905,8 +1038,14 @@ def get_key_takeaways(content):
     Returns:
         str: HTML formatted key takeaways
     """
-    if not content:
-        return ""
+    if not content or content.strip() == "No content available to summarize." or content.strip() == "Summary not available.":
+        # Fallback to a "No content available" message
+        return """
+        <div class="key-takeaways">
+            <h4>🔑 Key Takeaways:</h4>
+            <p class="no-content-notice">This article couldn't be summarized. Please refer to the original source for details.</p>
+        </div>
+        """
     
     # Split content into sentences
     sentences = re.split(r'(?<=[.!?])\s+', content)
@@ -919,17 +1058,25 @@ def get_key_takeaways(content):
     takeaways = sentences[:num_sentences]
     
     # Format as bullet points
-    bullet_points = "".join([f"<li>{sentence.strip()}</li>" for sentence in takeaways])
-    
-    return f"""
-    <div class="key-takeaways">
-        <h4>🔑 Key Takeaways:</h4>
-        <ul class="takeaway-bullets">
-            {bullet_points}
-        </ul>
-        <p class="read-full"><a href="#full-summary" class="summary-toggle">Read Full Summary ▼</a></p>
-    </div>
-    """
+    if takeaways:
+        bullet_points = "".join([f"<li>{sentence.strip()}</li>" for sentence in takeaways])
+        
+        return f"""
+        <div class="key-takeaways">
+            <h4>🔑 Key Takeaways:</h4>
+            <ul class="takeaway-bullets">
+                {bullet_points}
+            </ul>
+        </div>
+        """
+    else:
+        # Fallback if no sentences were extracted
+        return """
+        <div class="key-takeaways">
+            <h4>🔑 Key Takeaways:</h4>
+            <p class="no-content-notice">Key points not available. Please check the original article.</p>
+        </div>
+        """
 
 def get_why_this_matters(article):
     """
@@ -1006,6 +1153,7 @@ def get_why_this_matters(article):
 def get_personalization_tags_html(article):
     """
     Generate HTML for personalization tags with emojis.
+    Ensures tags are deduplicated and consistently applied.
     
     Args:
         article (dict): The article dictionary
@@ -1013,32 +1161,77 @@ def get_personalization_tags_html(article):
     Returns:
         str: HTML formatted tags with emojis
     """
-    tags = identify_tags(article)
+    raw_tags = identify_tags(article)
+    processed_tags = set()  # Use a set to avoid duplicates
     html_tags = []
     
-    # Map common tags to the personalization tags with emojis
-    for tag in tags:
-        # Direct matches
-        if tag in PERSONALIZATION_TAGS:
-            emoji = PERSONALIZATION_TAGS[tag]
-            html_tags.append(f'<span class="tag">{emoji} {tag}</span>')
-        # Related matches
-        elif "Legal" in tag or "law" in tag.lower() or "regulation" in tag.lower():
-            html_tags.append(f'<span class="tag">🔒 Legal</span>')
-        elif "Education" in tag or "school" in tag.lower() or "learning" in tag.lower():
-            html_tags.append(f'<span class="tag">🏫 Education</span>')
-        elif "Health" in tag or "medical" in tag.lower() or "hospital" in tag.lower():
-            html_tags.append(f'<span class="tag">🏥 Healthcare</span>')
-        elif "Economy" in tag or "market" in tag.lower() or "financial" in tag.lower():
-            html_tags.append(f'<span class="tag">📈 Economy</span>')
-        elif "Global" in tag or "international" in tag.lower() or "world" in tag.lower():
-            html_tags.append(f'<span class="tag">🧭 Global Affairs</span>')
-        elif "Tech" in tag or "software" in tag.lower() or "digital" in tag.lower():
-            html_tags.append(f'<span class="tag">⚡️ Technology</span>')
-        elif "Government" in tag or "policy" in tag.lower() or "politics" in tag.lower():
-            html_tags.append(f'<span class="tag">🏛️ Politics</span>')
+    # Create a mapping of tag categories to prevent duplicates like "AI🏛 Politics"
+    tag_categories = {
+        "legal": "🔒 Legal",
+        "education": "🏫 Education",
+        "health": "🏥 Healthcare",
+        "economy": "📈 Economy",
+        "global": "🧭 Global Affairs", 
+        "tech": "⚡️ Technology",
+        "politics": "🏛️ Politics",
+        "environment": "🌳 Environment",
+        "science": "🔬 Science"
+    }
+    
+    # Check which categories this article belongs to
+    category_matches = set()
+    
+    for tag in raw_tags:
+        tag_lower = tag.lower()
+        
+        # Check for category matches
+        if "legal" in tag_lower or "law" in tag_lower or "regulation" in tag_lower:
+            category_matches.add("legal")
+        elif "education" in tag_lower or "school" in tag_lower or "learning" in tag_lower:
+            category_matches.add("education")
+        elif "health" in tag_lower or "medical" in tag_lower or "hospital" in tag_lower:
+            category_matches.add("health")
+        elif "economy" in tag_lower or "market" in tag_lower or "financial" in tag_lower or "business" in tag_lower:
+            category_matches.add("economy")
+        elif "global" in tag_lower or "international" in tag_lower or "world" in tag_lower:
+            category_matches.add("global")
+        elif "tech" in tag_lower or "ai" in tag_lower or "software" in tag_lower or "digital" in tag_lower:
+            category_matches.add("tech")
+        elif "government" in tag_lower or "policy" in tag_lower or "politics" in tag_lower:
+            category_matches.add("politics")
+        elif "environment" in tag_lower or "climate" in tag_lower or "sustainability" in tag_lower:
+            category_matches.add("environment")
+        elif "science" in tag_lower or "research" in tag_lower:
+            category_matches.add("science")
         else:
-            # Generic tag without emoji
-            html_tags.append(f'<span class="tag">{tag}</span>')
+            # For unmatched tags, add them directly if they're not already included
+            if tag not in processed_tags:
+                processed_tags.add(tag)
+                if tag in PERSONALIZATION_TAGS:
+                    emoji = PERSONALIZATION_TAGS[tag]
+                    html_tags.append(f'<span class="tag">{emoji} {tag}</span>')
+                else:
+                    # Use a generic tag without emoji
+                    html_tags.append(f'<span class="tag">{tag}</span>')
+    
+    # Add all matched category tags
+    for category in category_matches:
+        html_tags.append(f'<span class="tag">{tag_categories[category]}</span>')
+    
+    # If no tags were found, add a generic tag based on the article category
+    if not html_tags:
+        section = categorize_article(article)
+        if section == 'WORLD_NEWS':
+            html_tags.append('<span class="tag">🧭 Global Affairs</span>')
+        elif section == 'US_NEWS':
+            html_tags.append('<span class="tag">🏛️ U.S. News</span>')
+        elif section == 'TECHNOLOGY':
+            html_tags.append('<span class="tag">⚡️ Technology</span>')
+        elif section == 'BUSINESS':
+            html_tags.append('<span class="tag">📈 Economy</span>')
+        elif section == 'POLITICS':
+            html_tags.append('<span class="tag">🏛️ Politics</span>')
+        else:
+            html_tags.append('<span class="tag">📰 News</span>')
     
     return "".join(html_tags)
