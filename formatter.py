@@ -362,6 +362,9 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
     if not articles:
         return "No articles to display." if not html else "<p>No articles to display.</p>"
     
+    # Define the section order at the start
+    section_order = ['US_NEWS', 'POLITICS', 'WORLD_NEWS', 'BUSINESS', 'TECHNOLOGY', 'LOCAL', 'PERSONALIZED', 'LEFT_LEANING', 'CENTER', 'RIGHT_LEANING']
+    
     # Limit articles per source to maintain balance
     max_articles_per_source = EMAIL_SETTINGS.get("max_articles_per_source", 3)
     articles = limit_articles_by_source(articles, max_per_source=max_articles_per_source)
