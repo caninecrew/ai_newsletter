@@ -10,12 +10,34 @@ import openai
 import time
 from logger_config import setup_logger
 from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS, USER_INTERESTS
+import certifi
+import ssl
+import urllib3
 
 # Set up logger
 logger = setup_logger()
 
 # Load environment variables
 load_dotenv()
+
+# Configure requests for secure SSL
+def create_secure_session():
+    """Create a requests session with proper SSL configuration"""
+    session = requests.Session()
+    session.verify = certifi.where()
+    
+    # Configure adapter with modern SSL settings
+    adapter = requests.adapters.HTTPAdapter(
+        max_retries=3,
+        pool_connections=100,
+        pool_maxsize=100
+    )
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+# Create secure session for reuse
+secure_session = create_secure_session()
 
 # Set up OpenAI API
 openai.api_key = os.environ.get('OPENAI_API_KEY')
@@ -100,7 +122,7 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                     # Fallback to requests + BeautifulSoup
                     try:
                         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-                        response = requests.get(entry.link, headers=headers, timeout=10)
+                        response = secure_session.get(entry.link, headers=headers, timeout=10)
                         response.raise_for_status()
                         soup = BeautifulSoup(response.text, 'html.parser')
                         content = soup.get_text(separator="\n").strip()
