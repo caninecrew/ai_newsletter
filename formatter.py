@@ -1,12 +1,12 @@
-# This module contains functions to format news articles for email or display purposes.
+from typing import List, Dict, Optional, Set
 from datetime import datetime, timedelta
 import re
 from difflib import SequenceMatcher
-from logger_config import setup_logger
-from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
-from typing import List, Dict
 import hashlib
 import pytz
+from dateutil import parser
+from logger_config import setup_logger
+from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 
 # Set up logger
 logger = setup_logger()
@@ -25,15 +25,15 @@ SECTION_CATEGORIES = {
     'LOCAL': 'Local News'
 }
 
-def categorize_article(article):
+def categorize_article(article: Dict) -> str:
     """
     Categorize an article based on its source, content, and metadata.
     
     Args:
-        article (dict): Article dictionary with title, content, source, etc.
+        article: Article dictionary with title, content, source, etc.
         
     Returns:
-        str: Category key from SECTION_CATEGORIES
+        Category key from SECTION_CATEGORIES
     """
     title = article.get('title', '').lower()
     content = article.get('content', '').lower()
@@ -93,16 +93,16 @@ def categorize_article(article):
     # Default to U.S. News if nothing else matches
     return 'US_NEWS'
 
-def identify_tags(article):
+def identify_tags(article: Dict) -> List[str]:
     """
     Identify relevant tags based on article content and user interests.
     More aggressive matching to ensure accuracy.
     
     Args:
-        article (dict): Article dictionary
+        article: Article dictionary
         
     Returns:
-        list: List of matching tags
+        List of matching tags
     """
     title = article.get('title', '').lower()
     content = article.get('content', '').lower()
@@ -153,16 +153,16 @@ def identify_tags(article):
             
     return list(set(matched_tags))  # Remove duplicates
 
-def format_date(date_str):
+def format_date(date_str: str) -> str:
     """
     Format a date string into a clean, human-readable format.
     Handles various input date formats and simplifies them.
     
     Args:
-        date_str (str): Original date string
+        date_str: Original date string
         
     Returns:
-        str: Formatted date in "April 23, 2025" or similar format
+        Formatted date in "April 23, 2025" or similar format
     """
     if not date_str:
         return "Date unavailable"
@@ -213,16 +213,16 @@ def format_date(date_str):
         # Fall back to original if any error occurs
         return date_str
 
-def format_article(article, html=False):
+def format_article(article: Dict, html: bool = False) -> str:
     """
     Formats a single article into a string for display or email.
 
     Args:
-        article (dict): A dictionary containing article details.
-        html (bool): Whether to format as HTML or plain text.
+        article: A dictionary containing article details.
+        html: Whether to format as HTML or plain text.
 
     Returns:
-        str: A formatted string representation of the article.
+        A formatted string representation of the article.
     """
     title = article.get('title', 'No Title')
     source = article.get('source', 'Unknown Source')
@@ -276,16 +276,16 @@ def format_article(article, html=False):
         tags_text = ", ".join(tags)
         return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
 
-def limit_articles_by_source(articles, max_per_source=3):
+def limit_articles_by_source(articles: List[Dict], max_per_source: int = 3) -> List[Dict]:
     """
     Limit the number of articles from each source to prevent one source dominating.
     
     Args:
-        articles (list): List of article dictionaries
-        max_per_source (int): Maximum articles allowed per source
+        articles: List of article dictionaries
+        max_per_source: Maximum articles allowed per source
         
     Returns:
-        list: Limited list of articles
+        Limited list of articles
     """
     if not articles:
         return []
@@ -314,15 +314,15 @@ def limit_articles_by_source(articles, max_per_source=3):
     
     return limited_articles
 
-def format_section_header(category):
+def format_section_header(category: str) -> tuple[str, str]:
     """
     Create a section header with appropriate emoji based on category
     
     Args:
-        category (str): Category key from SECTION_CATEGORIES
+        category: Category key from SECTION_CATEGORIES
         
     Returns:
-        tuple: (emoji, title)
+        Tuple of (emoji, title)
     """
     if category == 'US_NEWS':
         return '🇺🇸', 'U.S. Headlines'
@@ -347,17 +347,17 @@ def format_section_header(category):
     else:
         return '📰', 'Other News'
 
-def format_articles(articles, html=False):
+def format_articles(articles: List[Dict], html: bool = False) -> str:
     """
     Formats a list of articles into a single string for display or email.
     Organizes articles by category with clear section headings and visual separators.
 
     Args:
-        articles (list): A list of dictionaries, each containing article details.
-        html (bool): Whether to format as HTML or plain text.
+        articles: A list of dictionaries, each containing article details.
+        html: Whether to format as HTML or plain text.
 
     Returns:
-        str: A formatted string representation of all articles.
+        A formatted string representation of all articles.
     """
     if not articles:
         return "No articles to display." if not html else "<p>No articles to display.</p>"
@@ -732,15 +732,15 @@ def format_articles(articles, html=False):
         
         return output
 
-def get_section_description(section_key):
+def get_section_description(section_key: str) -> str:
     """
     Generate a description for each section
     
     Args:
-        section_key (str): Category key
+        section_key: Category key
         
     Returns:
-        str: Section description
+        Section description
     """
     descriptions = {
         'US_NEWS': 'Top domestic news stories from across the United States.',
@@ -757,48 +757,7 @@ def get_section_description(section_key):
     
     return descriptions.get(section_key, '')
 
-def filter_articles_by_date(articles: List[Dict], cutoff_date: datetime) -> List[Dict]:
-    """Filter articles by publication date"""
-    if not cutoff_date.tzinfo:
-        cutoff_date = pytz.UTC.localize(cutoff_date)
-    
-    filtered = []
-    for article in articles:
-        pub_date = article.get('published')
-        if not pub_date:
-            continue
-            
-        # Ensure timezone awareness
-        if not pub_date.tzinfo:
-            pub_date = pytz.UTC.localize(pub_date)
-            
-        if pub_date >= cutoff_date:
-            filtered.append(article)
-            
-    logger.info(f"Date filtering: kept {len(filtered)}/{len(articles)} articles")
-    return filtered
-
-def deduplicate_articles(articles: List[Dict]) -> List[Dict]:
-    """Remove duplicate articles based on content similarity"""
-    seen_hashes = set()
-    unique_articles = []
-    
-    for article in articles:
-        # Create a hash based on title and first paragraph of content
-        title = article.get('title', '').lower()
-        content = article.get('content', '').lower()
-        first_para = content.split('\n')[0] if content else ''
-        
-        content_hash = hashlib.md5(f"{title}{first_para}".encode()).hexdigest()
-        
-        if content_hash not in seen_hashes:
-            seen_hashes.add(content_hash)
-            unique_articles.append(article)
-    
-    logger.info(f"Deduplication: kept {len(unique_articles)}/{len(articles)} articles")
-    return unique_articles
-
-def filter_articles_by_date(articles, days=1, hours=None):
+def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional[int] = None) -> List[Dict]:
     """
     Filter articles based on publication date
     
@@ -823,7 +782,6 @@ def filter_articles_by_date(articles, days=1, hours=None):
     # First ensure we're working with flat list of articles
     flat_articles = []
     for item in articles:
-        # Handle case where an article might be a list itself (nested structure)
         if isinstance(item, list):
             flat_articles.extend(item)
         else:
@@ -912,18 +870,19 @@ def filter_articles_by_date(articles, days=1, hours=None):
     logger.info(f"Date filtering: {len(filtered)} articles kept, {skipped_count} skipped, {parsing_errors} with parsing errors")
     return filtered
 
-def is_duplicate(article1, article2, title_threshold=0.8, content_threshold=0.6):
+def is_duplicate(article1: Dict, article2: Dict, title_threshold: float = 0.8, content_threshold: float = 0.6) -> bool:
     """
     Advanced duplicate detection using both title and content similarity
     with weighted comparison for better accuracy.
     
     Args:
-        article1, article2: Article dictionaries to compare
+        article1: First article dictionary to compare
+        article2: Second article dictionary to compare
         title_threshold: Similarity threshold for titles (0.0-1.0)
         content_threshold: Similarity threshold for content (0.0-1.0)
         
     Returns:
-        bool: True if articles are likely duplicates, False otherwise
+        True if articles are likely duplicates, False otherwise
     """
     # Clean and normalize text for comparison
     def normalize_text(text):
@@ -970,17 +929,17 @@ def is_duplicate(article1, article2, title_threshold=0.8, content_threshold=0.6)
     
     return False
 
-def deduplicate_articles(articles):
+def deduplicate_articles(articles: List[Dict]) -> List[Dict]:
     """
     Remove duplicate articles from the list with improved algorithm.
     Prioritizes keeping articles from preferred sources when duplicates are found.
     Also ensures no duplicate URLs are included.
     
     Args:
-        articles (list): List of article dictionaries
+        articles: List of article dictionaries
         
     Returns:
-        list: Deduplicated list of articles
+        Deduplicated list of articles
     """
     if not articles:
         return []
@@ -1070,17 +1029,17 @@ def deduplicate_articles(articles):
     
     return unique_articles
 
-def get_key_takeaways(content):
+def get_key_takeaways(content: str) -> str:
     """
     Extract key takeaways from the article content in a TL;DR style.
     This uses a simple extraction approach based on the first few sentences.
     Includes fallback handling for empty content.
     
     Args:
-        content (str): The article content or summary
+        content: The article content or summary
         
     Returns:
-        str: HTML formatted key takeaways
+        HTML formatted key takeaways
     """
     if not content or content.strip() == "No content available to summarize." or content.strip() == "Summary not available.":
         # Fallback to a "No content available" message
@@ -1122,15 +1081,15 @@ def get_key_takeaways(content):
         </div>
         """
 
-def get_why_this_matters(article):
+def get_why_this_matters(article: Dict) -> str:
     """
     Generate a "Why This Matters" section for the article based on its content and tags.
     
     Args:
-        article (dict): The article dictionary with content, tags, etc.
+        article: The article dictionary with content, tags, etc.
         
     Returns:
-        str: HTML formatted explanation of why this article matters
+        HTML formatted explanation of why this article matters
     """
     title = article.get('title', '').lower()
     content = article.get('content', '').lower()
@@ -1194,16 +1153,16 @@ def get_why_this_matters(article):
     </div>
     """
 
-def get_personalization_tags_html(article):
+def get_personalization_tags_html(article: Dict) -> str:
     """
     Generate HTML for personalization tags with emojis.
     Ensures tags are deduplicated and consistently applied.
     
     Args:
-        article (dict): The article dictionary
+        article: The article dictionary
         
     Returns:
-        str: HTML formatted tags with emojis
+        HTML formatted tags with emojis
     """
     raw_tags = identify_tags(article)
     processed_tags = set()  # Use a set to avoid duplicates
@@ -1279,4 +1238,3 @@ def get_personalization_tags_html(article):
             html_tags.append('<span class="tag">📰 News</span>')
     
     return "".join(html_tags)
-```
