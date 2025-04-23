@@ -7,12 +7,31 @@ from dotenv import load_dotenv
 from logger_config import setup_logger
 import ssl
 import certifi
+from config import EMAIL_SETTINGS
 
 # Set up logger
 logger = setup_logger()
 
 # Load environment variables
 load_dotenv()
+
+def setup_email_settings():
+    """Initialize email settings from environment variables"""
+    # Get recipient emails from environment
+    recipient_str = os.getenv("RECIPIENT_EMAIL", "")
+    recipients = [email.strip() for email in recipient_str.split(',') if email.strip()]
+    EMAIL_SETTINGS['recipients'] = recipients
+
+    # Set up SMTP settings
+    EMAIL_SETTINGS['smtp'].update({
+        'host': os.getenv("SMTP_SERVER", ""),
+        'port': int(os.getenv("SMTP_PORT", "587")),
+        'username': os.getenv("SMTP_EMAIL", ""),
+        'password': os.getenv("SMTP_PASS", ""),
+        'sender': os.getenv("SMTP_EMAIL", "")
+    })
+
+    return bool(recipients and EMAIL_SETTINGS['smtp']['host'] and EMAIL_SETTINGS['smtp']['username'])
 
 def create_secure_smtp_context():
     """Create a secure SSL context for SMTP"""
@@ -50,41 +69,32 @@ def test_send_email():
     """
     Sends a test email to verify the email sending functionality.
     """
-    load_dotenv()
-
-    # Load credentials from .env
-    email        = os.getenv("SMTP_EMAIL")
-    password     = os.getenv("SMTP_PASS")
-    smtp_server  = os.getenv("SMTP_SERVER", "mail.postale.io")  # Updated default host
-    smtp_port    = int(os.getenv("SMTP_PORT", "587"))           # Default to STARTTLS port
-    sender_name  = os.getenv("SENDER_NAME", "Newsletter Bot")
-
-    # Validate required environment variables
-    if not email or not password:
-        logger.error("Missing required environment variables: SMTP_EMAIL or SMTP_PASS")
-        raise ValueError("Missing required environment variables: SMTP_EMAIL or SMTP_PASS")
+    if not setup_email_settings():
+        logger.error("Email settings not properly configured")
+        return False
 
     subject = "✅ Test Email"
-    body    = f"This is a test email sent from {sender_name} using Postale SMTP."
+    body = f"This is a test email sent using the configured SMTP settings."
 
     try:
         logger.info("Sending test email to validate configuration")
-        # Ensure secure connection using STARTTLS
-        send_email(
+        success = send_email(
             subject=subject,
             body=body,
-            recipients=[email],        # send to self
-            smtp_settings={
-                'host': smtp_server,
-                'port': smtp_port,
-                'username': email,
-                'password': password,
-                'sender': email
-            }
+            recipients=EMAIL_SETTINGS['recipients'],
+            smtp_settings=EMAIL_SETTINGS['smtp']
         )
-        logger.info("✅ Test email sent successfully.")
+        if success:
+            logger.info("✅ Test email sent successfully.")
+        else:
+            logger.error("❌ Failed to send test email.")
+        return success
     except Exception as e:
         logger.error(f"❌ Failed to send test email: {e}", exc_info=True)
+        return False
+
+# Initialize email settings when module is imported
+setup_email_settings()
 
 if __name__ == "__main__":
     test_send_email()
