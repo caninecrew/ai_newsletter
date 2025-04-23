@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-import datetime
 from concurrent_log_handler import ConcurrentRotatingFileHandler
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
@@ -181,7 +180,7 @@ def setup_logger(name='ai_newsletter', level=None):
     logger.addHandler(console_handler)
     
     # Create and add file handler with rotation
-    today = datetime.datetime.now().strftime('%Y%m%d')
+    today = datetime.now().strftime('%Y%m%d')
     log_filename = f'logs/newsletter_{today}.log'
     
     # Use ConcurrentRotatingFileHandler to handle concurrent writes
