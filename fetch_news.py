@@ -21,7 +21,6 @@ import concurrent.futures
 from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
 from urllib.parse import urlparse
 from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS
-from gnews_api import fetch_articles_from_gnews
 from collections import defaultdict
 
 # Get the logger
