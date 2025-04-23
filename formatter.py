@@ -628,205 +628,192 @@ def format_articles(articles, html=False):
     else:
         return "\n---\n".join(format_article(article) for article in articles)
 
-def filter_articles_by_date(articles, days=None, hours=None):
+def filter_articles_by_date(articles, days=1, hours=None):
     """
-    Filter articles based on publication date with fallback options.
-    Supports filtering by either days or hours for more flexibility.
+    Filter articles based on publication date
     
     Args:
-        articles (list): List of article dictionaries
-        days (int, optional): Number of days to look back (default: None)
-        hours (int, optional): Number of hours to look back (default: None)
+        articles: List of article dictionaries
+        days: Number of days back to include (default=1)
+        hours: Number of hours back to include (overrides days if provided)
         
     Returns:
-        list: Filtered list of articles
+        List of filtered articles
     """
-    # Set the time window based on either days or hours parameter
+    # Calculate cutoff time
     if hours is not None:
-        time_window = timedelta(hours=hours)
-        window_text = f"{hours} hours"
-    elif days is not None:
-        time_window = timedelta(days=days)
-        window_text = f"{days} days"
+        cutoff_time = datetime.now() - timedelta(hours=hours)
     else:
-        # Default to 24 hours if neither parameter is provided
-        time_window = timedelta(hours=24)
-        window_text = "24 hours"
-        
-    target_date = datetime.now() - time_window
-    target_date_str = target_date.strftime('%Y-%m-%d %H:%M')
-    today_date = datetime.now()
+        cutoff_time = datetime.now() - timedelta(days=days)
     
-    logger.info(f"Filtering for articles from: {target_date_str} onwards (past {window_text})")
-    logger.info(f"Starting with {len(articles)} articles")
-    
-    # Filter articles within the time window
-    filtered_articles = []
-    
-    # Date formats to try
-    date_formats = [
-        '%a, %d %b %Y %H:%M:%S %z',  # RFC 822 format
-        '%a, %d %b %Y %H:%M:%S %Z',
-        '%Y-%m-%dT%H:%M:%S%z',       # ISO format
-        '%Y-%m-%dT%H:%M:%SZ',
-        '%Y-%m-%dT%H:%M:%S.%f%z',
-        '%Y-%m-%d %H:%M:%S',
-        '%a, %d %b %Y %H:%M:%S',
-        '%d %b %Y %H:%M:%S',
-        '%Y/%m/%d',
-        '%m/%d/%Y',
-        '%B %d, %Y',
-        '%d %B %Y',
-        '%A, %B %d, %Y',
-        '%A, %d %B %Y'
-    ]
+    filtered = []
+    skipped_count = 0
+    parsing_errors = 0
     
     for article in articles:
         try:
-            # Try different date formats
-            published_str = article.get('published', '')
-            if not published_str or published_str == 'Unknown Date':
+            # Handle various date formats
+            date_str = article.get('published', '')
+            
+            # Skip articles with no date
+            if not date_str:
+                logger.debug(f"Skipping article with no date: {article.get('title', 'No title')}")
+                skipped_count += 1
                 continue
                 
-            parsed = False
-            for date_format in date_formats:
+            # Try different parsing strategies
+            parsed_date = None
+            try:
+                # Common format in feedparser: Tue, 23 Apr 2025 14:23:45 +0000
+                parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z")
+            except ValueError:
                 try:
-                    published_date = datetime.strptime(published_str, date_format)
-                    parsed = True
-                    
-                    # Include article if it's within the time window (newer than target_date)
-                    if published_date >= target_date:
-                        filtered_articles.append(article)
-                        logger.info(f"Including article from {published_date}: {article.get('title', 'No Title')}")
+                    # ISO format: 2025-04-23T14:23:45Z or 2025-04-23T14:23:45+00:00
+                    if 'T' in date_str:
+                        if date_str.endswith('Z'):
+                            parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
+                        elif '+' in date_str or '-' in date_str[10:]:  # Has timezone
+                            try:
+                                parsed_date = datetime.fromisoformat(date_str)
+                            except:
+                                parsed_date = datetime.strptime(date_str[:19], "%Y-%m-%dT%H:%M:%S")
+                        else:
+                            parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
                     else:
-                        logger.info(f"Excluding article from {published_date}: {article.get('title', 'No Title')}")
-                    break
+                        # Basic format: 2025-04-23 14:23:45
+                        parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
                 except ValueError:
-                    continue
+                    try:
+                        # Another common format: Wed, 23 Apr 2025 14:23:45 GMT
+                        parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
+                    except ValueError:
+                        try:
+                            # Try format with abbreviated month: 23 Apr 2025 14:23:45
+                            parsed_date = datetime.strptime(date_str, "%d %b %Y %H:%M:%S")
+                        except ValueError:
+                            try:
+                                # Last attempt - try to handle any format with dateutil
+                                from dateutil import parser
+                                parsed_date = parser.parse(date_str)
+                            except:
+                                # If all parsing attempts fail
+                                logger.warning(f"Could not parse date: {date_str} for article: {article.get('title', 'No title')}")
+                                # Include recent articles with unparseable dates rather than discarding them
+                                filtered.append(article)
+                                parsing_errors += 1
+                                continue
             
-            if not parsed:
-                logger.info(f"Excluding article with unparseable date: {article.get('title', 'No Title')}")
+            # Handle timezone-aware vs naive datetime comparison
+            if hasattr(parsed_date, 'tzinfo') and parsed_date.tzinfo is not None:
+                # If the parsed date is timezone-aware but cutoff_time is not
+                if cutoff_time.tzinfo is None:
+                    # Convert parsed_date to naive by removing timezone info
+                    parsed_date = parsed_date.replace(tzinfo=None)
+            
+            # Compare dates and add to filtered list if recent enough
+            if parsed_date >= cutoff_time:
+                filtered.append(article)
+            else:
+                logger.debug(f"Article too old: {article.get('title', 'No title')} - {parsed_date}")
+                skipped_count += 1
                 
         except Exception as e:
-            logger.info(f"Excluding article due to date parsing error: {article.get('title', 'No Title')}, Error: {e}")
+            logger.warning(f"Date filtering error for article '{article.get('title', 'No title')}': {str(e)}")
+            # Include articles with date errors rather than silently dropping them
+            filtered.append(article)
+            parsing_errors += 1
     
-    # If we don't have enough articles from time window, include articles with unknown dates
-    if len(filtered_articles) < 3:
-        logger.info(f"Not enough articles from past {window_text}. Including some articles with unknown dates.")
-        unknown_date_articles = []
-        
-        # Add up to 5 articles with unknown dates
-        for article in articles:
-            published_str = article.get('published', '')
-            if not published_str or published_str == 'Unknown Date':
-                unknown_date_articles.append(article)
-                logger.info(f"Including article with unknown date: {article.get('title', 'No Title')}")
-                if len(unknown_date_articles) >= 5:
-                    break
-        
-        filtered_articles.extend(unknown_date_articles[:5])  # Add up to 5 unknown date articles
-    
-    # If we still don't have enough articles, include the most recent ones regardless of date
-    if len(filtered_articles) < 3 and len(articles) > 3:
-        logger.info(f"Still not enough articles. Including recent available articles.")
-        
-        # Try to sort articles by date if possible
-        dated_articles = []
-        for article in articles:
-            if article in filtered_articles:
-                continue  # Skip articles already included
-                
-            try:
-                published_str = article.get('published', '')
-                if not published_str or published_str == 'Unknown Date':
-                    continue
-                    
-                for date_format in date_formats:
-                    try:
-                        published_date = datetime.strptime(published_str, date_format)
-                        dated_articles.append((published_date, article))
-                        break
-                    except ValueError:
-                        continue
-            except Exception:
-                pass
-        
-        # Sort by date (most recent first) and take what we need
-        if dated_articles:
-            dated_articles.sort(reverse=True)  # Sort most recent first
-            needed = max(0, 5 - len(filtered_articles))  # Get enough to have at least 5 articles
-            for _, article in dated_articles[:needed]:
-                filtered_articles.append(article)
-                logger.info(f"Including recent article: {article.get('title', 'No Title')}")
-    
-    # If we still have no articles, include some without date checking (last resort)
-    if not filtered_articles and articles:
-        logger.warning(f"No dated articles found. Including up to 5 articles without date checking.")
-        filtered_articles = articles[:5]  # Include up to 5 articles
-    
-    logger.info(f"Final article count: {len(filtered_articles)} articles")
-    return filtered_articles
+    logger.info(f"Date filtering: {len(filtered)} articles kept, {skipped_count} skipped, {parsing_errors} with parsing errors")
+    return filtered
 
-def deduplicate_articles(articles, similarity_threshold=0.7):
+def deduplicate_articles(articles, similarity_threshold=0.6):
     """
-    Remove duplicate or highly similar articles from the list.
+    Remove duplicate or very similar articles from the list
     
     Args:
-        articles (list): List of article dictionaries
-        similarity_threshold (float): Threshold for considering two articles as duplicates (0.0-1.0)
+        articles: List of article dictionaries
+        similarity_threshold: Float between 0-1, higher means more similarity required to consider as duplicate
         
     Returns:
-        list: Deduplicated list of articles
+        List of deduplicated articles
     """
     if not articles:
         return []
+    
+    unique_articles = []
+    duplicate_count = 0
+    url_memory = set()  # Track URLs we've already seen
+    title_memory = {}   # Map normalized titles to articles
+    
+    for article in articles:
+        # Skip articles with duplicate URLs
+        url = article.get('url', '')
+        if url in url_memory:
+            duplicate_count += 1
+            logger.debug(f"Skipping duplicate URL: {url}")
+            continue
         
-    # Initialize with the first article
-    deduplicated = [articles[0]]
-    duplicates_removed = 0
-    
-    # Helper function to compute text similarity ratio
-    def similarity_ratio(text1, text2):
-        return SequenceMatcher(None, str(text1).lower(), str(text2).lower()).ratio()
-    
-    # Process remaining articles
-    for article in articles[1:]:
+        if url:
+            url_memory.add(url)
+        
+        # Clean and normalize the title for comparison
         title = article.get('title', '').lower()
-        content_preview = article.get('content', '')[:500].lower()  # Use just beginning of content
-        combined = f"{title} {content_preview}"
+        # Remove common prefixes that some feeds add
+        title = re.sub(r'^(breaking|exclusive|watch|video|update):\s*', '', title, flags=re.IGNORECASE)
+        # Remove special characters and extra whitespace
+        title = re.sub(r'[^\w\s]', '', title)
+        title = re.sub(r'\s+', ' ', title).strip()
         
-        # Check if this article is similar to any already included article
+        # Check for highly similar titles using various methods
         is_duplicate = False
-        for existing in deduplicated:
-            existing_title = existing.get('title', '').lower()
-            existing_preview = existing.get('content', '')[:500].lower()
-            existing_combined = f"{existing_title} {existing_preview}"
-            
-            # Calculate similarity between titles and content
-            title_similarity = similarity_ratio(title, existing_title)
-            combined_similarity = similarity_ratio(combined, existing_combined)
-            
-            # If either title or content is very similar, consider it a duplicate
-            if title_similarity > similarity_threshold or combined_similarity > similarity_threshold:
-                is_duplicate = True
-                duplicates_removed += 1
-                
-                # Choose the article with more content if they're similar
-                if len(article.get('content', '')) > len(existing.get('content', '')):
-                    # Replace the existing article with this one
-                    deduplicated.remove(existing)
-                    deduplicated.append(article)
-                    logger.info(f"Replaced duplicate with more detailed version: {article.get('title', 'No Title')}")
-                else:
-                    logger.info(f"Removed duplicate article: {article.get('title', 'No Title')}")
-                break
         
-        # If not a duplicate, include it
+        # Direct normalized title match
+        if title in title_memory:
+            logger.debug(f"Found exact title match: {title}")
+            duplicate_count += 1
+            is_duplicate = True
+        else:
+            # Use sequence matcher for fuzzy matching
+            for known_title, known_article in title_memory.items():
+                # Skip short titles or obvious non-matches to save processing time
+                if abs(len(title) - len(known_title)) > 15:
+                    continue
+                    
+                # Calculate string similarity
+                similarity = SequenceMatcher(None, title, known_title).ratio()
+                
+                # Check if article content is from the same original source
+                same_origin = False
+                if article.get('source') == known_article.get('source'):
+                    same_origin = True
+                
+                # If very similar or moderately similar with same origin
+                if similarity > similarity_threshold or (similarity > 0.5 and same_origin):
+                    logger.debug(f"Found similar title ({similarity:.2f}): '{title}' vs '{known_title}'")
+                    duplicate_count += 1
+                    is_duplicate = True
+                    break
+                    
+                # Also check content similarity for borderline cases
+                if 0.45 < similarity < similarity_threshold:
+                    # Get first 200 chars of content for quicker comparison
+                    content1 = article.get('content', '')[:200].lower()
+                    content2 = known_article.get('content', '')[:200].lower()
+                    
+                    if content1 and content2:
+                        content_similarity = SequenceMatcher(None, content1, content2).ratio()
+                        if content_similarity > 0.7:  # High content similarity
+                            logger.debug(f"Similar content ({content_similarity:.2f}) for borderline title match")
+                            duplicate_count += 1
+                            is_duplicate = True
+                            break
+        
         if not is_duplicate:
-            deduplicated.append(article)
+            unique_articles.append(article)
+            title_memory[title] = article
     
-    logger.info(f"Deduplicated {len(articles)} articles to {len(deduplicated)} (removed {duplicates_removed} duplicates)")
-    return deduplicated
+    logger.info(f"Deduplication: {len(unique_articles)} unique articles, {duplicate_count} duplicates removed")
+    return unique_articles
 
 def get_key_takeaways(content):
     """
