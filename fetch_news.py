@@ -431,20 +431,84 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
         FETCH_METRICS['failed_sources'].append(source_name)
         return []
 
-def fetch_article_content(article, max_retries=2):
+def fetch_google_news_article(article):
     """
-    Fetch the full content of an article using requests and BeautifulSoup.
-    If that fails, try using Selenium WebDriver.
+    Special handling for Google News articles with proper certificate validation
     
     Args:
-        article (dict): Article dictionary containing link
-        max_retries (int): Maximum number of retry attempts
+        article (dict): Article dictionary with link and other metadata
         
     Returns:
-        dict: Updated article dictionary with content
+        dict: Updated article with content
     """
     url = article['link']
     
+    try:
+        session = create_secure_session()
+        
+        # Set up headers specifically for Google News
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://news.google.com/',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        # Make request with certificate verification
+        response = session.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Parse with BeautifulSoup
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Try to find content using Google News specific selectors
+        content = ''
+        for selector in [
+            'article',
+            '[role="article"]',
+            '[role="main"]',
+            '.article-body',
+            '.article-content',
+            'main'
+        ]:
+            elements = soup.select(selector)
+            if elements:
+                # Use the largest content block
+                content = max([e.get_text(strip=True) for e in elements], key=len)
+                if len(content) > 150:
+                    break
+        
+        # If no content found with selectors, try paragraphs
+        if not content or len(content) < 150:
+            paragraphs = soup.select('p')
+            content = ' '.join([
+                p.get_text(strip=True) for p in paragraphs
+                if len(p.get_text(strip=True)) > 50
+            ])
+        
+        if content:
+            article['content'] = content
+            logger.info(f"Successfully fetched Google News content: {url}")
+        else:
+            logger.warning(f"No content found in Google News article: {url}")
+            
+        return article
+        
+    except Exception as e:
+        logger.error(f"Error fetching Google News article {url}: {e}")
+        return article
+
+def fetch_article_content(article, max_retries=2):
+    """Fetch article content with special handling for Google News"""
+    url = article['link']
+    
+    # Check if this is a Google News article
+    if 'news.google.com' in url or article.get('source', '').startswith('Google News'):
+        return fetch_google_news_article(article)
+    
+    # Rest of the existing function for non-Google News articles
     if url in failed_urls:
         logger.debug(f"Skipping previously failed URL: {url}")
         return article
