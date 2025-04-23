@@ -8,7 +8,9 @@ import os
 from dotenv import load_dotenv
 import openai
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+import pytz
+from typing import Optional
 from logger_config import setup_logger
 from config import (
     PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, 
@@ -23,6 +25,9 @@ logger = setup_logger()
 
 # Load environment variables
 load_dotenv()
+
+# Configure default timezone
+DEFAULT_TZ = pytz.timezone(SYSTEM_SETTINGS.get('default_timezone', 'America/Chicago'))
 
 # Configure newspaper
 config = Config()
@@ -53,12 +58,44 @@ secure_session = create_secure_session()
 # Set up OpenAI API
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
-# Ensure required NLTK resources are available
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    logger.info("Downloading NLTK 'punkt' resource...")
-    nltk.download('punkt')
+def ensure_nltk_resources():
+    """Ensure all required NLTK resources are available"""
+    required_resources = ['punkt']
+    for resource in required_resources:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+        except LookupError:
+            logger.info(f"Downloading NLTK resource: {resource}")
+            try:
+                nltk.download(resource, quiet=True)
+            except Exception as e:
+                logger.error(f"Failed to download NLTK resource {resource}: {e}")
+                raise
+
+def normalize_datetime(dt: Optional[datetime]) -> datetime:
+    """
+    Normalize a datetime object to the configured timezone
+    
+    Args:
+        dt: datetime object to normalize, can be naive or timezone-aware
+        
+    Returns:
+        datetime: Timezone-aware datetime in the configured timezone
+    """
+    if dt is None:
+        return datetime.now(DEFAULT_TZ)
+        
+    # If naive, assume UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    # Convert to configured timezone
+    if SYSTEM_SETTINGS.get('use_central_timezone', True):
+        return dt.astimezone(DEFAULT_TZ)
+    return dt.astimezone(timezone.utc)
+
+# Initialize NLTK resources
+ensure_nltk_resources()
 
 # --- RSS Feed Configuration ---
 RSS_FEEDS = {}
