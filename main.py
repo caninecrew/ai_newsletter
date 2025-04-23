@@ -26,7 +26,13 @@ SKIP_DATE_FILTER = "--skip-date-filter" in sys.argv
 
 def run_newsletter():
     # Fetch raw articles
-    raw_articles = fetch_articles_from_all_feeds()
+    fetch_result = fetch_articles_from_all_feeds()
+    
+    # Handle both return types (tuple or direct list)
+    if isinstance(fetch_result, tuple) and len(fetch_result) >= 1:
+        raw_articles = fetch_result[0]  # Get articles from the tuple
+    else:
+        raw_articles = fetch_result  # Direct list of articles
     
     if DEBUG_MODE:
         logger.debug(f"Fetched {len(raw_articles)} raw articles")
