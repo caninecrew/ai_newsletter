@@ -4,6 +4,9 @@ import re
 from difflib import SequenceMatcher
 from logger_config import setup_logger
 from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
+from typing import List, Dict
+import hashlib
+import pytz
 
 # Set up logger
 logger = setup_logger()
@@ -754,6 +757,47 @@ def get_section_description(section_key):
     
     return descriptions.get(section_key, '')
 
+def filter_articles_by_date(articles: List[Dict], cutoff_date: datetime) -> List[Dict]:
+    """Filter articles by publication date"""
+    if not cutoff_date.tzinfo:
+        cutoff_date = pytz.UTC.localize(cutoff_date)
+    
+    filtered = []
+    for article in articles:
+        pub_date = article.get('published')
+        if not pub_date:
+            continue
+            
+        # Ensure timezone awareness
+        if not pub_date.tzinfo:
+            pub_date = pytz.UTC.localize(pub_date)
+            
+        if pub_date >= cutoff_date:
+            filtered.append(article)
+            
+    logger.info(f"Date filtering: kept {len(filtered)}/{len(articles)} articles")
+    return filtered
+
+def deduplicate_articles(articles: List[Dict]) -> List[Dict]:
+    """Remove duplicate articles based on content similarity"""
+    seen_hashes = set()
+    unique_articles = []
+    
+    for article in articles:
+        # Create a hash based on title and first paragraph of content
+        title = article.get('title', '').lower()
+        content = article.get('content', '').lower()
+        first_para = content.split('\n')[0] if content else ''
+        
+        content_hash = hashlib.md5(f"{title}{first_para}".encode()).hexdigest()
+        
+        if content_hash not in seen_hashes:
+            seen_hashes.add(content_hash)
+            unique_articles.append(article)
+    
+    logger.info(f"Deduplication: kept {len(unique_articles)}/{len(articles)} articles")
+    return unique_articles
+
 def filter_articles_by_date(articles, days=1, hours=None):
     """
     Filter articles based on publication date
@@ -1235,3 +1279,4 @@ def get_personalization_tags_html(article):
             html_tags.append('<span class="tag">📰 News</span>')
     
     return "".join(html_tags)
+```
