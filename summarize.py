@@ -60,6 +60,32 @@ except LookupError:
     logger.info("Downloading NLTK 'punkt' resource...")
     nltk.download('punkt')
 
+# --- RSS Feed Configuration ---
+RSS_FEEDS = {}
+# Include PRIMARY_NEWS_FEEDS
+RSS_FEEDS.update(PRIMARY_NEWS_FEEDS)
+
+# Include SECONDARY_FEEDS if enabled
+if SYSTEM_SETTINGS.get("use_secondary_feeds", True):
+    for category, feeds in SECONDARY_FEEDS.items():
+        if category not in RSS_FEEDS:
+            RSS_FEEDS[category] = {}
+        RSS_FEEDS[category].update(feeds)
+
+# Include SUPPLEMENTAL_FEEDS if enabled
+if SYSTEM_SETTINGS.get("use_supplemental_feeds", False):
+    for category, feeds in SUPPLEMENTAL_FEEDS.items():
+        if category not in RSS_FEEDS:
+            RSS_FEEDS[category] = {}
+        RSS_FEEDS[category].update(feeds)
+
+# Include BACKUP_RSS_FEEDS if primary sources fail
+if SYSTEM_SETTINGS.get("use_backup_feeds", True):
+    for category, feeds in BACKUP_RSS_FEEDS.items():
+        if category not in RSS_FEEDS:
+            RSS_FEEDS[category] = {}
+        RSS_FEEDS[category].update(feeds)
+
 def process_article_with_newspaper(url, retries=3, delay=2):
     """
     Process an article URL with Newspaper3k with retry logic
@@ -320,6 +346,63 @@ def summarize_articles(articles):
     logger.info(f"Failed articles: {summarization_stats['failed']}")
     
     return summarized
+
+def summarize_with_openai(text, title=None, max_retries=3, retry_delay=1):
+    """
+    Summarize text using OpenAI's API as 2-3 bullet points for fast reading.
+    
+    Args:
+        text (str): The article text to summarize
+        title (str): The article title for context
+        max_retries (int): Maximum number of retries for API calls
+        retry_delay (int): Delay between retries in seconds
+        
+    Returns:
+        str: Summarized text (bullet points)
+    """
+    if not openai.api_key:
+        logger.warning("OpenAI API key not set. Skipping AI summarization.")
+        return None
+    
+    # Prepare the text for summarization
+    context = f"Title: {title}\n\nContent: {text}" if title else text
+    
+    # Truncate if too long for API call
+    if len(context) > 15000:
+        context = context[:15000] + "..."
+    
+    # Define the summarization prompt
+    prompt = (
+        "Summarize the following news article as 2-3 concise bullet points for fast reading. "
+        "Each bullet should focus on a key fact, event, or takeaway. Do not write paragraphs. "
+        "Be factual, neutral, and clear. Only output the bullet points, nothing else."
+    )
+    
+    # Try to get a summary with retries for API errors
+    attempts = 0
+    while attempts < max_retries:
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o-mini",  # Use a suitable model
+                messages=[
+                    {"role": "system", "content": "You are a professional news editor. Return only 2-3 bullet points summarizing the article's key facts."},
+                    {"role": "user", "content": f"{prompt}\n\n{context}"}
+                ],
+                temperature=0.4,
+                max_tokens=300
+            )
+            
+            summary = response.choices[0].message.content.strip()
+            return summary
+            
+        except Exception as e:
+            attempts += 1
+            logger.warning(f"OpenAI API error (attempt {attempts}/{max_retries}): {str(e)}")
+            if attempts < max_retries:
+                time.sleep(retry_delay * attempts)  # Exponential backoff
+            else:
+                logger.error(f"Failed to get OpenAI summary after {max_retries} attempts")
+                return None
 
 # --- Test Execution ---
 if __name__ == "__main__":
