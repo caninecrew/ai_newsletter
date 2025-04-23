@@ -750,105 +750,141 @@ def fetch_google_news_article(article, max_retries=3):
 def fetch_article_content(article, max_retries=2):
     """Fetch article content with special handling for Google News"""
     url = article['link']
+    start_time = time.time()
     
-    # Check if this is a Google News article and resolve redirect if needed
-    if 'news.google.com' in url or article.get('source', '').startswith('Google News'):
-        resolved_url = resolve_redirect_url(url)
-        if resolved_url != url:
-            article['original_link'] = url
-            article['link'] = resolved_url
-            url = resolved_url
-        return fetch_google_news_article(article)
-    
-    # Rest of the existing function for non-Google News articles
-    if url in failed_urls:
-        logger.debug(f"Skipping previously failed URL: {url}")
-        return article
-    
-    # Skip problematic sources
-    if should_skip_source(url):
-        logger.info(f"Skipping problematic content source: {url}")
-        return article
-    
-    # Use a session for better connection reuse
-    session = secure_session
-    retries = requests.adapters.Retry(
-        total=max_retries,
-        backoff_factor=0.5,  # Will sleep for [0.5, 1, 2, 4] seconds between retries
-        status_forcelist=[408, 429, 500, 502, 503, 504],
-        allowed_methods=["GET"]
-    )
-    session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
-    session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
-    
-    # Try with requests/BeautifulSoup first (faster)
-    for attempt in range(max_retries):
-        try:
-            headers = {
-                'User-Agent': f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 120)}.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Cache-Control': 'max-age=0'
-            }
-            
-            # Add delay between retries with exponential backoff
-            if attempt > 0:
-                sleep_time = (2 ** attempt) * 0.5  # 0.5, 1, 2 seconds
-                time.sleep(sleep_time)
-            
-            response = session.get(url, headers=headers, timeout=5)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Try to find the article content based on common patterns
-            content = ''
-            
-            # Look for article body in common containers
-            content_containers = soup.select('article, [role="article"], .article-body, .article-content, .entry-content, .post-content, main, .content-area, .story-content')
-            
-            if content_containers:
-                # Use the first matching container
-                container = content_containers[0]
+    try:
+        # Check if this is a Google News article and resolve redirect if needed
+        if 'news.google.com' in url or article.get('source', '').startswith('Google News'):
+            resolved_url = resolve_redirect_url(url)
+            if resolved_url != url:
+                article['original_link'] = url
+                article['link'] = resolved_url
+                url = resolved_url
+            return fetch_google_news_article(article)
+        
+        # Rest of the existing function for non-Google News articles
+        if url in failed_urls:
+            logger.debug(f"Skipping previously failed URL: {url}")
+            FETCH_METRICS['failed_fetches'].append({'url': url, 'reason': 'previous_failure'})
+            return article
+        
+        # Skip problematic sources
+        if should_skip_source(url):
+            logger.info(f"Skipping problematic content source: {url}")
+            FETCH_METRICS['failed_fetches'].append({'url': url, 'reason': 'problematic_source'})
+            return article
+        
+        # Use a session for better connection reuse
+        session = secure_session
+        retries = requests.adapters.Retry(
+            total=max_retries,
+            backoff_factor=0.5,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            allowed_methods=["GET"]
+        )
+        session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
+        session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
+        
+        content_found = False
+        for attempt in range(max_retries):
+            try:
+                headers = {
+                    'User-Agent': get_random_user_agent(),
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Cache-Control': 'max-age=0'
+                }
                 
-                # Remove unwanted elements
-                for unwanted in container.select('script, style, nav, header, footer, .ad, .advertisement, .social-share, .related-posts, .newsletter-signup, .paywall, aside'):
-                    unwanted.extract()
+                response = session.get(url, headers=headers, timeout=5)
+                response.raise_for_status()
+                
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Try to find the article content based on common patterns
+                content = ''
+                
+                # Look for article body in common containers
+                content_containers = soup.select('article, [role="article"], .article-body, .article-content, .entry-content, .post-content, main, .content-area, .story-content')
+                
+                if content_containers:
+                    container = content_containers[0]
+                    for unwanted in container.select('script, style, nav, header, footer, .ad, .advertisement, .social-share, .related-posts, .newsletter-signup, .paywall, aside'):
+                        unwanted.extract()
+                    content = container.get_text().strip()
+                
+                if not content:
+                    paragraphs = soup.select('p')
+                    content = ' '.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
+                
+                # Clean up the content
+                content = re.sub(r'\s+', ' ', content)
+                content = re.sub(r'\n\s*\n', '\n\n', content)
+                
+                # Update the article and metrics if we found content
+                if content and len(content) > 150:
+                    article['content'] = content
+                    content_found = True
                     
-                content = container.get_text().strip()
-            
-            if not content:
-                # Try to get all paragraphs as fallback
-                paragraphs = soup.select('p')
-                content = ' '.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
-            
-            # Clean up the content
-            content = re.sub(r'\s+', ' ', content)  # Replace multiple spaces
-            content = re.sub(r'\n\s*\n', '\n\n', content)  # Clean up newlines
-            
-            # Update the article if we found content
-            if content and len(content) > 150:  # Minimum content length threshold
-                article['content'] = content
-                logger.debug(f"Successfully fetched content with requests: {url}")
-                return article
-            
-            # If no content found, try with WebDriver on last attempt
-            if attempt == max_retries - 1:
-                logger.debug(f"No content found with requests, trying WebDriver: {url}")
-                return fetch_article_content_with_selenium(article)
+                    # Update content statistics
+                    FETCH_METRICS['content_statistics']['articles_with_content'] += 1
+                    FETCH_METRICS['content_statistics']['total_length'] += len(content)
+                    articles_with_content = FETCH_METRICS['content_statistics']['articles_with_content']
+                    total_length = FETCH_METRICS['content_statistics']['total_length']
+                    FETCH_METRICS['content_statistics']['average_length'] = total_length / articles_with_content
+                    
+                    # Update age statistics if we have a published date
+                    if 'published' in article:
+                        age_category = categorize_article_age(article['published'])
+                        FETCH_METRICS['article_ages'][age_category] = FETCH_METRICS['article_ages'].get(age_category, 0) + 1
+                    
+                    logger.debug(f"Successfully fetched content with requests: {url}")
+                    break
                 
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Request failed for {url}: {e}")
-            if attempt == max_retries - 1:
-                logger.debug(f"Request failed after {max_retries} attempts, trying WebDriver")
-                return fetch_article_content_with_selenium(article)
-            
-    # If we get here, both methods failed
-    failed_urls.add(url)
-    return article
+                # If no content found and this is the last retry, try WebDriver
+                if attempt == max_retries - 1 and not content_found:
+                    logger.debug(f"No content found with requests, trying WebDriver: {url}")
+                    FETCH_METRICS['driver_reuse_count'] += 1
+                    return fetch_article_content_with_selenium(article)
+                    
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Request failed for {url}: {e}")
+                if attempt == max_retries - 1:
+                    logger.debug(f"Request failed after {max_retries} attempts, trying WebDriver")
+                    FETCH_METRICS['driver_reuse_count'] += 1
+                    return fetch_article_content_with_selenium(article)
+                
+        if not content_found:
+            FETCH_METRICS['content_statistics']['articles_without_content'] += 1
+            FETCH_METRICS['failed_fetches'].append({'url': url, 'reason': 'no_content'})
+            failed_urls.add(url)
+        
+        # Update performance metrics
+        fetch_time = time.time() - start_time
+        FETCH_METRICS['average_article_fetch_time'] = (
+            FETCH_METRICS['average_article_fetch_time'] * FETCH_METRICS['total_articles'] + fetch_time
+        ) / (FETCH_METRICS['total_articles'] + 1)
+        
+        if fetch_time > 5:
+            FETCH_METRICS['slow_sources'].append({
+                'source': article.get('source', 'Unknown'),
+                'url': url,
+                'time': fetch_time
+            })
+        
+        return article
+        
+    except Exception as e:
+        logger.error(f"Error fetching content for {url}: {e}")
+        FETCH_METRICS['failed_fetches'].append({
+            'url': url,
+            'reason': str(e),
+            'type': type(e).__name__
+        })
+        failed_urls.add(url)
+        return article
 
 def fetch_article_content_with_selenium(article, max_retries=3, base_delay=2):
     """
