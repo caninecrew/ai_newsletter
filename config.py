@@ -230,7 +230,6 @@ PERSONALIZATION_TAGS = {
 }
 
 # --- Email Formatting Settings ---
-# Control the appearance and structure of the newsletter
 EMAIL_SETTINGS = {
     "max_articles_per_category": 4,         # Maximum articles for each category 
     "max_articles_per_source": 2,           # Maximum articles from any single source to prevent domination
@@ -242,7 +241,15 @@ EMAIL_SETTINGS = {
     "show_why_this_matters": True,
     "show_key_takeaways": True,
     "include_table_of_contents": True,
-    "include_source_statistics": True       # Include statistics about source distribution in email
+    "include_source_statistics": True,      # Include statistics about source distribution in email
+    "recipients": [],                       # Will be populated from environment variables
+    "smtp": {
+        "host": "",                        # Will be populated from SMTP_SERVER env var
+        "port": 587,                       # Will be populated from SMTP_PORT env var
+        "username": "",                    # Will be populated from SMTP_EMAIL env var
+        "password": "",                    # Will be populated from SMTP_PASS env var
+        "sender": ""                       # Will be populated from SMTP_EMAIL env var
+    }
 }
 
 # --- System Settings ---
