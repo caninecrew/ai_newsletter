@@ -37,6 +37,10 @@ jobs:
             echo "ERROR: requirements.txt not found!"
             exit 1
           fi
+          if [ ! -f "config.py" ]; then
+            echo "ERROR: config.py not found!"
+            exit 1
+          fi
           echo "All required files found."
       
       - name: Set up Chrome for Selenium
@@ -50,10 +54,14 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
+          NEWS_SOURCE: ${{ secrets.NEWS_SOURCE || 'rss' }}  # Default to RSS if not specified
         run: |
-          echo "Starting newsletter script..."
+          echo "Starting newsletter script with news source: $NEWS_SOURCE"
           # Create empty logs.txt file if it doesn't exist
           touch logs.txt
+          # Update config.py with the specified news source
+          sed -i "s/PRIMARY_NEWS_SOURCE = \".*\"/PRIMARY_NEWS_SOURCE = \"$NEWS_SOURCE\"/" config.py
           # Run with error handling
           python main.py || { echo "Script failed with exit code $?"; exit 1; }
           
@@ -62,5 +70,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: newsletter-logs
-          path: logs.txt
+          path: |
+            logs.txt
+            logs/*.log
           retention-days: 7
+
+      - name: Report completion status
+        if: ${{ success() }}
+        run: |
+          echo "Newsletter generated and sent successfully at $(date)"
+          echo "Latest entries from logs.txt:"
+          tail -n 5 logs.txt

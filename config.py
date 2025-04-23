@@ -31,25 +31,42 @@ GNEWS_API_CONFIG = {
 RSS_FEEDS = {
     "Left": {
         "CNN": "http://rss.cnn.com/rss/cnn_topstories.rss",
+        "CNN Americas": "http://rss.cnn.com/rss/edition_americas.rss",
         "NYT": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-        "MSNBC": "https://www.msnbc.com/feeds/latest"
+        "NYT US": "https://rss.nytimes.com/services/xml/rss/nyt/US.xml",
+        "NYT Politics": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
+        "NYT Education": "https://rss.nytimes.com/services/xml/rss/nyt/Education.xml",
+        "MSNBC": "https://www.msnbc.com/feeds/latest",
+        "Washington Post National": "http://feeds.washingtonpost.com/rss/national",
+        "Washington Post World": "https://feeds.washingtonpost.com/rss/world",
+        "Washington Post Tech": "https://feeds.washingtonpost.com/rss/business/technology"
     },
     "Center": {
         "NPR": "https://feeds.npr.org/1001/rss.xml",
         "AP": "https://apnews.com/rss",
-        "Reuters": "http://feeds.reuters.com/reuters/domesticNews"
+        "Reuters": "http://feeds.reuters.com/reuters/domesticNews",
+        "PBS Headlines": "https://www.pbs.org/newshour/feeds/rss/headlines",
+        "PBS World": "https://www.pbs.org/newshour/feeds/rss/podcasts/world",
+        "PBS Politics": "https://www.pbs.org/newshour/feeds/rss/politics",
+        "ABC US": "https://abcnews.go.com/abcnews/usheadlines",
+        "CBS Top Stories": "https://www.cbsnews.com/latest/rss/main"
     },
     "Right": {
         "Fox News": "http://feeds.foxnews.com/foxnews/latest",
+        "Fox News Latest": "https://moxie.foxnews.com/google-publisher/latest.xml",
         "Daily Wire": "https://www.dailywire.com/feed",
-        "Washington Times": "https://www.washingtontimes.com/rss/headlines/news/politics/"
+        "Washington Times": "https://www.washingtontimes.com/rss/headlines/news/politics/",
+        "Politico Congress": "http://rss.politico.com/congress.xml",
+        "Politico Politics": "https://rss.politico.com/politics-news.xml"
     },
     "International": {
         "BBC": "http://feeds.bbci.co.uk/news/world/rss.xml",
         "Reuters": "http://feeds.reuters.com/reuters/worldNews",
         "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
         "France24": "https://www.france24.com/en/rss",
-        "DW": "https://rss.dw.com/rdf/rss-en-all"
+        "DW": "https://rss.dw.com/rdf/rss-en-all",
+        "State Department Africa": "https://www.state.gov/rss-feed/africa/feed/",
+        "State Department Press Briefings": "https://www.state.gov/rss-feed/department-press-briefings/feed/"
     },
     "Tennessee": {
         "WKRN News 2 Nashville": "https://wkrn.com/feed",
@@ -58,6 +75,8 @@ RSS_FEEDS = {
     },
     "Personalized": {
         "Scouting": "https://blog.scoutingmagazine.org/feed/",
+        "Scout Life Magazine": "https://scoutlife.org/feed/",
+        "Scouting Newsroom": "https://www.scoutingnewsroom.org/feed/",
         "NPR Education": "https://feeds.npr.org/1013/rss.xml",
         "BBC Tech": "http://feeds.bbci.co.uk/news/technology/rss.xml"
     }
