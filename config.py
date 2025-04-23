@@ -250,13 +250,13 @@ EMAIL_SETTINGS = {
 SYSTEM_SETTINGS = {
     "log_level": "INFO",                   # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
     "article_fetch_timeout": 5,            # Timeout in seconds for article fetching
-    "max_articles_to_process": 50,         # Maximum number of articles to process in one run
+    "max_articles_to_process": 25,         # Maximum number of articles to process in one run
     "max_retries": 2,                      # Maximum number of retries for failed requests
     "session_reuse": True,                 # Whether to reuse HTTP/browser sessions between categories
     "skip_empty_feeds": True,              # Whether to skip or flag empty feeds without spamming logs
     "max_parallel_workers": 8,             # Number of parallel workers for concurrent processing
-    "max_primary_articles_per_feed": 3,    # Maximum number of articles to fetch per primary feed
-    "max_secondary_articles_per_feed": 2,  # Maximum number of articles to fetch per secondary feed
+    "max_primary_articles_per_feed": 2,    # Maximum number of articles to fetch per primary feed
+    "max_secondary_articles_per_feed": 1,  # Maximum number of articles to fetch per secondary feed
     "report_slow_sources": True,           # Whether to report slow sources in logs
     "use_newspaper3k": True,               # Whether to use newspaper3k for article extraction
     "cache_articles": True,                # Whether to cache articles to prevent duplicate processing
