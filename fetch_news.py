@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 from config import RSS_FEEDS, SYSTEM_SETTINGS, PRIMARY_NEWS_SOURCE
 from gnews_api import fetch_articles_from_gnews
 from collections import defaultdict
+import concurrent.futures
 
 # Get the logger
 logger = setup_logger()
@@ -34,6 +35,36 @@ failed_urls = set()
 _driver = None
 _driver_creation_time = None
 _driver_request_count = 0
+
+# List of problematic sources/domains that should be skipped or handled with extra care
+PROBLEMATIC_SOURCES = [
+    "nytimes.com/section/politics",  # New York Times Politics section
+    "cnnunderscored.com",           # CNN Underscored is often problematic
+    "nytimes.com/wirecutter",       # NYT Wirecutter has complex JS and paywalls
+    "wsj.com",                      # Wall Street Journal has strong paywall
+    "washingtonpost.com/opinions",  # Washington Post opinions section
+    "bloomberg.com",                # Bloomberg has strict paywall
+    "foxnews.com/opinion",          # Fox News opinions often has issues
+]
+
+# Performance tracking and statistics
+source_performance = defaultdict(lambda: {'avg_time': 0, 'success_rate': 0, 'attempts': 0})
+
+def should_skip_source(url):
+    """
+    Determine if a source should be skipped based on known problematic sources.
+    
+    Args:
+        url (str): The URL to check
+        
+    Returns:
+        bool: True if the source should be skipped, False otherwise
+    """
+    for problem_source in PROBLEMATIC_SOURCES:
+        if problem_source in url:
+            logger.info(f"Skipping known problematic source: {url}")
+            return True
+    return False
 
 def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
     """
@@ -191,13 +222,14 @@ def parse_date(date_str, url=None):
         logger.error(f"Could not parse date '{original_date_str}' in any format{' for ' + url if url else ''}")
         return datetime.datetime.now(pytz.UTC)
 
-def fetch_rss_feed(feed_url, source_name):
+def fetch_rss_feed(feed_url, source_name, max_articles=5):
     """
-    Fetch and parse an RSS feed.
+    Fetch and parse an RSS feed with early limiting of articles.
     
     Args:
         feed_url (str): URL of the RSS feed
         source_name (str): Name of the source for logging
+        max_articles (int): Maximum number of articles to fetch per feed
         
     Returns:
         list: List of article dictionaries
@@ -208,10 +240,19 @@ def fetch_rss_feed(feed_url, source_name):
         logger.debug(f"Skipping previously attempted RSS feed: {feed_url}")
         return []
     
+    if should_skip_source(feed_url):
+        logger.info(f"Skipping problematic source: {source_name} ({feed_url})")
+        return []
+    
     attempted_urls.add(feed_url)
     
     try:
+        start_time = time.time()
         feed = feedparser.parse(feed_url)
+        parsing_time = time.time() - start_time
+        
+        if parsing_time > 5:  # Log slow feeds
+            logger.warning(f"Slow RSS feed parsing: {source_name} took {parsing_time:.2f}s")
         
         if feed.get('status') != 200:
             logger.warning(f"Failed to fetch RSS feed {source_name}: Status {feed.get('status', 'unknown')}")
@@ -224,24 +265,37 @@ def fetch_rss_feed(feed_url, source_name):
         
         articles = []
         
+        # Process all entries to extract dates first
+        entries_with_dates = []
         for entry in feed.entries:
             try:
-                title = entry.get('title', '')
-                link = entry.get('link', '')
-                
                 # Skip if we don't have essential fields
-                if not title or not link:
+                if not entry.get('title') or not entry.get('link'):
                     continue
                 
                 # Skip if URL was previously processed
-                if link in attempted_urls:
+                if entry.get('link') in attempted_urls:
                     continue
-                
-                attempted_urls.add(link)
                 
                 # Parse the published date
                 published = entry.get('published', '')
-                published_date = parse_date(published, link)
+                published_date = parse_date(published, entry.get('link'))
+                
+                entries_with_dates.append((entry, published_date))
+                
+            except Exception as e:
+                logger.error(f"Error processing RSS entry from {source_name}: {e}")
+        
+        # Sort entries by date (newest first) and take only the top N
+        entries_with_dates.sort(key=lambda x: x[1], reverse=True)
+        limited_entries = entries_with_dates[:max_articles]
+        
+        # Now process the limited entries
+        for entry, published_date in limited_entries:
+            try:
+                title = entry.get('title', '')
+                link = entry.get('link', '')
+                attempted_urls.add(link)
                 
                 # Get description/summary if available
                 description = entry.get('description', entry.get('summary', ''))
@@ -269,9 +323,9 @@ def fetch_rss_feed(feed_url, source_name):
                 })
                 
             except Exception as e:
-                logger.error(f"Error processing RSS entry from {source_name}: {e}")
+                logger.error(f"Error processing RSS entry data from {source_name}: {e}")
         
-        logger.info(f"Successfully fetched {len(articles)} articles from {source_name}")
+        logger.info(f"Successfully fetched {len(articles)} articles from {source_name} (limited from {len(feed.entries)})")
         return articles
         
     except Exception as e:
@@ -296,6 +350,11 @@ def fetch_article_content(article, max_retries=2):
     if url in failed_urls:
         logger.debug(f"Skipping previously failed URL: {url}")
         return article
+    
+    # Skip problematic sources
+    if should_skip_source(url):
+        logger.info(f"Skipping problematic content source: {url}")
+        return article
         
     # Try with requests/BeautifulSoup first (faster)
     for attempt in range(max_retries):
@@ -304,7 +363,8 @@ def fetch_article_content(article, max_retries=2):
                 'User-Agent': f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 120)}.0.0.0 Safari/537.36'
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            # Reduced timeout from 10 to 5 seconds
+            response = requests.get(url, headers=headers, timeout=5)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -364,6 +424,11 @@ def fetch_article_content_with_selenium(article):
     """
     url = article['link']
     
+    # Skip if this is a known problematic source
+    if should_skip_source(url):
+        logger.info(f"Skipping selenium fetch for problematic source: {url}")
+        return article
+    
     try:
         # Get the driver (which handles session reuse)
         driver = get_webdriver()
@@ -371,13 +436,18 @@ def fetch_article_content_with_selenium(article):
         # Load the page
         driver.get(url)
         
-        # Wait for the page to load
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
+        # Reduced wait time from 10 to 5 seconds
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            logger.warning(f"Selenium timeout waiting for page to load: {url}")
+            failed_urls.add(url)
+            return article
         
-        # Give JS a moment to render content
-        time.sleep(2)
+        # Reduced JS render waiting time from 2 to 1 second
+        time.sleep(1)
         
         # Try to find article content
         content = ''
@@ -389,7 +459,7 @@ def fetch_article_content_with_selenium(article):
                 if elements:
                     content = elements[0].text
                     break
-            except Exception as e:
+            except Exception:
                 pass
         
         # Fallback to paragraphs if no container found
@@ -417,14 +487,16 @@ def fetch_article_content_with_selenium(article):
     
     return article
 
-def fetch_news_articles(rss_feeds, fetch_content=True):
+def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=8):
     """
     Fetch news articles from multiple RSS feeds with improved statistics
-    and tracking features.
+    and tracking features. Uses parallel processing for improved speed.
     
     Args:
         rss_feeds (dict): Dictionary mapping source names to RSS feed URLs
         fetch_content (bool): Whether to fetch full article content
+        max_articles_per_feed (int): Maximum articles to fetch per feed
+        max_workers (int): Maximum number of parallel workers
         
     Returns:
         tuple: (List of article dictionaries, Statistics dictionary)
@@ -444,94 +516,143 @@ def fetch_news_articles(rss_feeds, fetch_content=True):
         'failed_content_fetches': 0,
         'sources': {},
         'domain_stats': {},
-        'processing_time': 0
+        'processing_time': 0,
+        'slow_sources': []
     }
     
     start_time = time.time()
     
-    # Process each feed
-    for source_name, feed_url in rss_feeds.items():
-        try:
-            articles = fetch_rss_feed(feed_url, source_name)
+    # Process feeds in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create a mapping of futures to source names for tracking
+        future_to_source = {
+            executor.submit(fetch_rss_feed, feed_url, source_name, max_articles_per_feed): source_name
+            for source_name, feed_url in rss_feeds.items()
+            if not should_skip_source(feed_url)
+        }
+        
+        # Process completed futures as they come in
+        for future in concurrent.futures.as_completed(future_to_source):
+            source_name = future_to_source[future]
+            feed_url = next((url for name, url in rss_feeds.items() if name == source_name), None)
             
-            if articles:
-                stats['successful_sources'] += 1
-                stats['sources'][source_name] = len(articles)
-                stats['total_articles_found'] += len(articles)
+            try:
+                source_start_time = time.time()
+                articles = future.result()
+                source_time = time.time() - source_start_time
                 
-                # Track domain statistics
-                domain = urlparse(feed_url).netloc
-                if domain not in stats['domain_stats']:
-                    stats['domain_stats'][domain] = {
-                        'articles': 0,
-                        'success_rate': 0,
-                        'avg_content_length': 0
-                    }
-                stats['domain_stats'][domain]['articles'] += len(articles)
+                # Track slow sources
+                if source_time > 5:
+                    stats['slow_sources'].append({
+                        'source': source_name,
+                        'time': source_time,
+                        'url': feed_url
+                    })
                 
-                all_articles.extend(articles)
-            else:
+                if articles:
+                    stats['successful_sources'] += 1
+                    stats['sources'][source_name] = len(articles)
+                    stats['total_articles_found'] += len(articles)
+                    
+                    # Track domain statistics
+                    domain = urlparse(feed_url).netloc if feed_url else "unknown"
+                    if domain not in stats['domain_stats']:
+                        stats['domain_stats'][domain] = {
+                            'articles': 0,
+                            'success_rate': 0,
+                            'avg_content_length': 0
+                        }
+                    stats['domain_stats'][domain]['articles'] += len(articles)
+                    
+                    all_articles.extend(articles)
+                else:
+                    stats['failed_sources'] += 1
+                    stats['sources'][source_name] = 0
+                    
+            except Exception as e:
+                logger.error(f"Error processing source {source_name}: {e}")
                 stats['failed_sources'] += 1
                 stats['sources'][source_name] = 0
-        except Exception as e:
-            logger.error(f"Error processing source {source_name}: {e}")
-            stats['failed_sources'] += 1
-            stats['sources'][source_name] = 0
     
-    # Fetch full content if requested
+    # Fetch full content in parallel if requested
     if fetch_content and all_articles:
-        logger.info(f"Fetching content for {len(all_articles)} articles")
+        logger.info(f"Fetching content for {len(all_articles)} articles in parallel")
         
         content_stats = {
             'total': len(all_articles),
             'success': 0,
             'failed': 0,
-            'avg_length': 0
+            'avg_length': 0,
+            'slow_articles': []
         }
         
         total_content_length = 0
         
-        for i, article in enumerate(all_articles):
-            try:
-                # Log progress periodically
-                if (i + 1) % 10 == 0 or i == 0 or i == len(all_articles) - 1:
-                    logger.info(f"Fetching content: {i+1}/{len(all_articles)} articles")
+        # Process article content in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Create a mapping of futures to articles
+            future_to_article = {
+                executor.submit(fetch_article_content, article): article
+                for article in all_articles
+                if not should_skip_source(article.get('link', ''))
+            }
+            
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_article)):
+                article = future_to_article[future]
                 
-                # Fetch content
-                article = fetch_article_content(article)
-                
-                # Track stats
-                if article.get('content'):
-                    content_stats['success'] += 1
-                    content_length = len(article['content'])
-                    total_content_length += content_length
+                try:
+                    # Log progress periodically
+                    if (i + 1) % 10 == 0 or i == 0 or i == len(future_to_article) - 1:
+                        logger.info(f"Fetching content: {i+1}/{len(future_to_article)} articles")
                     
-                    # Update domain stats
-                    domain = urlparse(article['link']).netloc
-                    if domain not in stats['domain_stats']:
-                        stats['domain_stats'][domain] = {
-                            'articles': 1,
-                            'success_rate': 100.0,
-                            'avg_content_length': content_length
-                        }
-                    else:
-                        domain_stats = stats['domain_stats'][domain]
-                        domain_stats['articles'] = domain_stats.get('articles', 0) + 1
+                    content_start = time.time()
+                    updated_article = future.result()
+                    content_time = time.time() - content_start
+                    
+                    # Track slow article fetches
+                    if content_time > 3:
+                        content_stats['slow_articles'].append({
+                            'title': updated_article.get('title', 'Unknown'),
+                            'url': updated_article.get('link', 'Unknown'),
+                            'time': content_time,
+                            'source': updated_article.get('source', 'Unknown')
+                        })
+                    
+                    # Update the original article with content
+                    article.update({k: v for k, v in updated_article.items() if v})
+                    
+                    # Track stats
+                    if article.get('content'):
+                        content_stats['success'] += 1
+                        content_length = len(article['content'])
+                        total_content_length += content_length
                         
-                        # Update running average of content length
-                        current_total = domain_stats.get('avg_content_length', 0) * (domain_stats['articles'] - 1)
-                        domain_stats['avg_content_length'] = (current_total + content_length) / domain_stats['articles']
-                else:
-                    content_stats['failed'] += 1
+                        # Update domain stats
+                        domain = urlparse(article['link']).netloc
+                        if domain not in stats['domain_stats']:
+                            stats['domain_stats'][domain] = {
+                                'articles': 1,
+                                'success_rate': 100.0,
+                                'avg_content_length': content_length
+                            }
+                        else:
+                            domain_stats = stats['domain_stats'][domain]
+                            domain_stats['articles'] = domain_stats.get('articles', 0) + 1
+                            
+                            # Update running average of content length
+                            current_total = domain_stats.get('avg_content_length', 0) * (domain_stats['articles'] - 1)
+                            domain_stats['avg_content_length'] = (current_total + content_length) / domain_stats['articles']
+                    else:
+                        content_stats['failed'] += 1
+                        
+                        # Update domain failure stats
+                        domain = urlparse(article['link']).netloc
+                        if domain in stats['domain_stats']:
+                            stats['domain_stats'][domain]['articles'] = stats['domain_stats'][domain].get('articles', 0) + 1
                     
-                    # Update domain failure stats
-                    domain = urlparse(article['link']).netloc
-                    if domain in stats['domain_stats']:
-                        stats['domain_stats'][domain]['articles'] = stats['domain_stats'][domain].get('articles', 0) + 1
-                
-            except Exception as e:
-                logger.error(f"Error fetching content for article {article.get('title', 'Unknown')}: {e}")
-                content_stats['failed'] += 1
+                except Exception as e:
+                    logger.error(f"Error fetching content for article {article.get('title', 'Unknown')}: {e}")
+                    content_stats['failed'] += 1
         
         # Calculate averages and update stats
         if content_stats['success'] > 0:
@@ -541,10 +662,22 @@ def fetch_news_articles(rss_feeds, fetch_content=True):
         stats['articles_with_content'] = content_stats['success']
         stats['failed_content_fetches'] = content_stats['failed']
         stats['avg_content_length'] = content_stats['avg_length']
+        stats['slow_article_fetches'] = content_stats['slow_articles']
         
         # Calculate success rates for domains
         for domain, domain_stat in stats['domain_stats'].items():
             domain_stat['success_rate'] = (domain_stat.get('avg_content_length', 0) > 0) * 100.0
+            
+        # Log slow sources and articles for future optimization
+        if stats.get('slow_sources'):
+            logger.warning(f"Slow sources detected ({len(stats['slow_sources'])})")
+            for src in stats['slow_sources'][:5]:  # Log top 5 slowest
+                logger.warning(f"Slow source: {src['source']} - {src['time']:.2f}s")
+                
+        if content_stats.get('slow_articles'):
+            logger.warning(f"Slow article fetches detected ({len(content_stats['slow_articles'])})")
+            for art in content_stats['slow_articles'][:5]:  # Log top 5 slowest
+                logger.warning(f"Slow article: {art['title']} from {art['source']} - {art['time']:.2f}s")
     
     # Calculate processing time
     stats['processing_time'] = time.time() - start_time
