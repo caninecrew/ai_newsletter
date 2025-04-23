@@ -166,13 +166,15 @@ def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
         options.add_argument("--disable-gpu")
         options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
         
-        # Add SSL configuration
+        # SSL configuration
         options.add_argument(f"--ssl-version=tls1.2")
         options.add_argument(f"--ssl-key-log-file={os.path.expanduser('~')}/.ssl-key.log")
         
         try:
             service = Service()
-            service.creation_flags = 0x08000000  # No console window
+            # Only set creation_flags on Windows
+            if os.name == 'nt':  # Windows check
+                service.creation_flags = 0x08000000  # No console window
             _driver = webdriver.Chrome(service=service, options=options)
             _driver_creation_time = current_time
             _driver_request_count = 0
