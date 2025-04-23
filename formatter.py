@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 import hashlib
 import pytz
 from dateutil import parser
+import pandas as pd
 from logger_config import setup_logger
 from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 
