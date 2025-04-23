@@ -25,41 +25,64 @@ from collections import defaultdict
 import certifi
 import ssl
 import urllib3
+import os
 
 # Get the logger
 logger = setup_logger()
 
-# Configure SSL context with system certificates
-def get_ssl_context():
-    """
-    Create a properly configured SSL context using system certificates
-    """
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
-    ssl_context.verify_mode = ssl.CERT_REQUIRED
-    ssl_context.check_hostname = True
-    return ssl_context
-
-# Configure requests session with proper SSL verification
-def get_requests_session():
+# Create a secure session for requests
+def create_secure_session():
     """
     Create a requests session with proper SSL configuration
     """
     session = requests.Session()
     session.verify = certifi.where()
-    # Configure adapter with modern SSL configuration
+    
+    # Configure modern cipher suites
+    ciphers = [
+        'ECDHE-ECDSA-AES128-GCM-SHA256',
+        'ECDHE-RSA-AES128-GCM-SHA256',
+        'ECDHE-ECDSA-AES256-GCM-SHA384',
+        'ECDHE-RSA-AES256-GCM-SHA384',
+    ]
+    
+    # Create custom adapter with modern SSL config
     adapter = requests.adapters.HTTPAdapter(
-        pool_connections=100,
-        pool_maxsize=100,
         max_retries=3,
-        pool_block=False
+        pool_connections=100,
+        pool_maxsize=100
     )
+    
+    # Mount adapter for both HTTP and HTTPS
+    session.mount('http://', adapter)
     session.mount('https://', adapter)
+    
     return session
 
-# Configure feedparser to use proper SSL context
-feedparser.PREFERRED_XML_PARSERS.append('html.parser')
-ssl_context = get_ssl_context()
-feedparser._SOCKET_DEFAULT_KWARGS['ssl_context'] = ssl_context
+# Configure feedparser SSL context
+def configure_feedparser():
+    """
+    Configure feedparser with secure SSL context
+    """
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    ssl_context.verify_mode = ssl.CERT_REQUIRED
+    ssl_context.check_hostname = True
+    
+    # Set minimum TLS version
+    ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+    
+    # Update feedparser settings
+    feedparser.PREFERRED_XML_PARSERS = ['lxml', 'html.parser']
+    feedparser._SOCKET_DEFAULT_KWARGS = {
+        'ssl_context': ssl_context,
+        'timeout': 10
+    }
+
+# Configure SSL at module load
+configure_feedparser()
+
+# Create session for reuse
+secure_session = create_secure_session()
 
 # Global URL tracking to prevent duplicate attempts
 attempted_urls = set()
@@ -114,92 +137,49 @@ def should_skip_source(url):
     return False
 
 def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
-    """Get or create a WebDriver instance with SSL handling and retries"""
+    """
+    Get or create a WebDriver instance with proper SSL configuration
+    """
     global _driver, _driver_creation_time, _driver_request_count
     
-    # SSL verification override
-    import ssl
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    
-    # Add the SSL context to the global requests session
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    session = requests.Session()
-    session.verify = False
-    
     current_time = time.time()
+    create_new = (
+        _driver is None or
+        force_new or
+        (_driver_creation_time and (current_time - _driver_creation_time) / 60 > max_age_minutes) or
+        (_driver_request_count >= max_requests)
+    )
     
-    # Determine if we need a new driver
-    create_new = False
-    reason = None
-    
-    if _driver is None:
-        create_new = True
-        reason = "No driver exists"
-    elif force_new:
-        create_new = True
-        reason = "Force new requested"
-    elif _driver_creation_time and (current_time - _driver_creation_time) / 60 > max_age_minutes:
-        create_new = True
-        reason = f"Driver age exceeded {max_age_minutes} minutes"
-    elif _driver_request_count >= max_requests:
-        create_new = True
-        reason = f"Request count exceeded {max_requests}"
-        
-    # Close existing driver if needed
-    if create_new and _driver is not None:
-        try:
-            _driver.quit()
-        except Exception as e:
-            logger.warning(f"Error closing existing WebDriver: {e}")
-    
-    # Create a new driver if needed
     if create_new:
-        logger.debug(f"Creating new WebDriver instance: {reason}")
+        if _driver is not None:
+            try:
+                _driver.quit()
+            except Exception as e:
+                logger.warning(f"Error closing existing WebDriver: {e}")
+        
         options = Options()
         options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--mute-audio")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--disable-software-rasterizer")  # Disable WebGL
-        options.add_argument("--ignore-certificate-errors")    # Handle SSL issues
-        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        options.add_argument("--ignore-certificate-errors")  # Required for Google News
+        options.add_argument("--disable-gpu")
+        options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
+        
+        # Add SSL configuration
+        options.add_argument(f"--ssl-version=tls1.2")
+        options.add_argument(f"--ssl-key-log-file={os.path.expanduser('~')}/.ssl-key.log")
         
         try:
-            # Try to create the driver with default service first
-            try:
-                service = Service()
-                _driver = webdriver.Chrome(service=service, options=options)
-            except Exception as e:
-                logger.warning(f"Failed to create driver with default service: {e}")
-                
-                # Try creating with ChromeDriverManager
-                try:
-                    # Force download to user directory
-                    import os
-                    os.environ['WDM_LOCAL'] = '1'
-                    service = Service(ChromeDriverManager().install())
-                    _driver = webdriver.Chrome(service=service, options=options)
-                except Exception as e:
-                    logger.error(f"Failed to create driver with ChromeDriverManager: {e}")
-                    raise
-                    
+            service = Service()
+            service.creation_flags = 0x08000000  # No console window
+            _driver = webdriver.Chrome(service=service, options=options)
             _driver_creation_time = current_time
             _driver_request_count = 0
-            logger.debug("WebDriver created successfully")
-            
         except Exception as e:
             logger.error(f"Failed to create WebDriver: {e}")
             _driver = None
             raise
     
-    # Increment request counter if driver exists
     if _driver is not None:
         _driver_request_count += 1
     
@@ -327,7 +307,7 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
     
     try:
         # Create a session with proper SSL verification
-        session = get_requests_session()
+        session = secure_session
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, */*'
@@ -475,8 +455,7 @@ def fetch_article_content(article, max_retries=2):
         return article
     
     # Use a session for better connection reuse
-    session = requests.Session()
-    session.verify = False  # Bypass SSL verification
+    session = secure_session
     retries = requests.adapters.Retry(
         total=max_retries,
         backoff_factor=0.5,  # Will sleep for [0.5, 1, 2, 4] seconds between retries
@@ -574,49 +553,111 @@ def fetch_article_content_with_selenium(article):
     
     try:
         # Get the driver (which handles session reuse)
-        driver = get_webdriver()
+        driver = get_webdriver(force_new=True)  # Force new instance for Google News
         
-        # Load the page
+        # Add specific headers for Google News
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            "platform": "Windows"
+        })
+        
+        # Set extra headers
+        driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {
+            "headers": {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Referer": "https://news.google.com/"
+            }
+        })
+        
+        # Load the page with increased timeout
+        driver.set_page_load_timeout(15)  # Increase timeout for Google News
         driver.get(url)
         
-        # Reduced wait time from 10 to 5 seconds
+        # Wait for content with increased timeout
         try:
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            WebDriverWait(driver, 10).until(  # Increased wait time
+                EC.presence_of_element_located((By.CSS_SELECTOR, "article, [role='article'], .article-body, .article-content"))
             )
         except TimeoutException:
-            logger.warning(f"Selenium timeout waiting for page to load: {url}")
-            failed_urls.add(url)
-            return article
+            # Try alternate wait condition
+            try:
+                WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except TimeoutException:
+                logger.warning(f"Selenium timeout waiting for page to load: {url}")
+                failed_urls.add(url)
+                return article
         
-        # Reduced JS render waiting time from 2 to 1 second
-        time.sleep(1)
+        # Wait for dynamic content to load
+        time.sleep(2)  # Increased wait time for JS content
         
-        # Try to find article content
+        # Try multiple content extraction strategies
         content = ''
         
-        # Try to find article container
-        for selector in ['article', '.article-body', '.article-content', '.entry-content', '.post-content', 'main']:
+        # Strategy 1: Look for article container with specific selectors for Google News
+        for selector in [
+            '[role="article"]',  # Google News specific
+            'article',
+            '.article-body',
+            '.article-content',
+            '.entry-content',
+            '.post-content',
+            'main',
+            '#content',  # Common content container
+            '.content'
+        ]:
             try:
                 elements = driver.find_elements(By.CSS_SELECTOR, selector)
                 if elements:
-                    content = elements[0].text
-                    break
+                    # Try to find the largest text content
+                    contents = [e.text for e in elements]
+                    content = max(contents, key=len, default='')
+                    if len(content) > 150:  # Minimum content threshold
+                        break
             except Exception:
-                pass
+                continue
         
-        # Fallback to paragraphs if no container found
-        if not content:
+        # Strategy 2: If no content found, try looking for paragraphs
+        if not content or len(content) < 150:
             try:
-                paragraphs = driver.find_elements(By.TAG_NAME, 'p')
-                content = ' '.join([p.text for p in paragraphs])
+                # Look for paragraphs within the main content area
+                paragraphs = driver.find_elements(By.CSS_SELECTOR, 'article p, [role="article"] p, .article-body p, .article-content p')
+                if not paragraphs:
+                    # Fallback to all paragraphs if no article container found
+                    paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+                
+                # Filter and join paragraphs
+                content = ' '.join([
+                    p.text for p in paragraphs
+                    if len(p.text.strip()) > 50  # Skip short paragraphs
+                    and not any(skip in p.text.lower() for skip in ['advertisement', 'subscribe', 'newsletter'])
+                ])
             except Exception as e:
                 logger.warning(f"Failed to get paragraphs with Selenium: {e}")
         
-        # Update article if content found
+        # Strategy 3: If still no content, try getting all text from body
+        if not content or len(content) < 150:
+            try:
+                body = driver.find_element(By.TAG_NAME, 'body')
+                content = body.text
+            except Exception as e:
+                logger.warning(f"Failed to get body text: {e}")
+        
+        # Clean up the content
         if content:
+            # Remove extra whitespace and normalize
+            content = re.sub(r'\s+', ' ', content).strip()
+            content = re.sub(r'\n\s*\n', '\n\n', content)
+            
+            # Remove common unwanted text
+            unwanted = ['Advertisement', 'Subscribe', 'Sign up', 'Newsletter']
+            for text in unwanted:
+                content = re.sub(f'(?i){text}.*?\n', '', content)
+            
             article['content'] = content
-            logger.debug(f"Successfully fetched content with WebDriver: {url}")
+            logger.info(f"Successfully fetched content with WebDriver: {url}")
         else:
             logger.warning(f"No content found with WebDriver: {url}")
             failed_urls.add(url)
@@ -624,6 +665,14 @@ def fetch_article_content_with_selenium(article):
     except (WebDriverException, TimeoutException) as e:
         logger.error(f"WebDriver exception for {url}: {e}")
         failed_urls.add(url)
+        # Force driver recreation on next attempt
+        global _driver
+        if _driver is not None:
+            try:
+                _driver.quit()
+            except:
+                pass
+            _driver = None
     except Exception as e:
         logger.error(f"Unexpected error fetching with WebDriver for {url}: {e}")
         failed_urls.add(url)
