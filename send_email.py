@@ -1,19 +1,27 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr
+from email.utils import formataddr, formatdate
 import os
 from dotenv import load_dotenv
 from logger_config import setup_logger
 import ssl
 import certifi
 from config import EMAIL_SETTINGS
+import time
+from socket import error as socket_error
 
 # Set up logger
 logger = setup_logger()
 
 # Load environment variables
 load_dotenv()
+
+# Constants for retry settings
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+KEEPALIVE_INTERVAL = 60
+SMTP_TIMEOUT = 30
 
 def setup_email_settings():
     """Initialize email settings from environment variables"""
@@ -41,28 +49,69 @@ def create_secure_smtp_context():
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
 
-def send_email(subject, body, recipients, smtp_settings):
-    """Send email with secure SSL configuration"""
+def create_smtp_connection(smtp_settings):
+    """Create and configure SMTP connection with retry logic"""
+    context = create_secure_smtp_context()
+    server = smtplib.SMTP(smtp_settings['host'], smtp_settings['port'], timeout=SMTP_TIMEOUT)
+    server.starttls(context=context)
+    server.login(smtp_settings['username'], smtp_settings['password'])
+    return server
+
+def send_email(subject, body, recipients, smtp_settings, retry_count=0):
+    """
+    Send email with secure SSL configuration, retry logic, and connection management
+    
+    Args:
+        subject (str): Email subject
+        body (str): Email body content
+        recipients (list): List of recipient email addresses
+        smtp_settings (dict): SMTP server configuration
+        retry_count (int): Current retry attempt number
+    """
     try:
+        # Prepare email message
         msg = MIMEMultipart()
         msg['Subject'] = subject
-        msg['From'] = smtp_settings['sender']
+        msg['From'] = formataddr(("Newsletter", smtp_settings['sender']))
         msg['To'] = ', '.join(recipients)
+        msg['Date'] = formatdate(localtime=True)
         msg.attach(MIMEText(body, 'html'))
 
-        # Create secure SSL context
-        context = create_secure_smtp_context()
-        
-        with smtplib.SMTP(smtp_settings['host'], smtp_settings['port']) as server:
-            server.starttls(context=context)
-            server.login(smtp_settings['username'], smtp_settings['password'])
-            server.send_message(msg)
+        server = None
+        try:
+            # Create SMTP connection
+            server = create_smtp_connection(smtp_settings)
             
-        logger.info(f"Successfully sent email to {len(recipients)} recipients")
-        return True
-        
+            # Send the message
+            server.send_message(msg)
+            logger.info(f"Successfully sent email to {len(recipients)} recipients")
+            return True
+            
+        except (smtplib.SMTPServerDisconnected, socket_error) as e:
+            if retry_count < MAX_RETRIES:
+                logger.warning(f"SMTP connection lost: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
+                time.sleep(RETRY_DELAY * (retry_count + 1))
+                return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
+            else:
+                raise
+                
+        except smtplib.SMTPException as e:
+            if retry_count < MAX_RETRIES:
+                logger.warning(f"SMTP error: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
+                time.sleep(RETRY_DELAY * (retry_count + 1))
+                return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
+            else:
+                raise
+                
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except Exception as e:
+                    logger.warning(f"Error closing SMTP connection: {e}")
+
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"Failed to send email: {e}", exc_info=True)
         return False
 
 def test_send_email():
