@@ -19,7 +19,7 @@ import random
 import logging
 import concurrent.futures
 from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, urlunparse
 from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS, USER_INTERESTS
 from collections import defaultdict
 import certifi
@@ -27,6 +27,9 @@ import ssl
 import urllib3
 import os
 import stat
+from difflib import SequenceMatcher
+import hashlib
+from urllib.parse import urlencode
 
 # Define a pool of realistic user agents
 USER_AGENTS = [
@@ -139,6 +142,14 @@ PROBLEMATIC_SOURCES = [
 
 # Performance tracking and statistics
 source_performance = defaultdict(lambda: {'avg_time': 0, 'success_rate': 0, 'attempts': 0})
+
+# URL and content deduplication caching
+article_cache = {
+    'urls': set(),
+    'title_hashes': set(),
+    'content_hashes': set(),
+    'last_cleanup': time.time()
+}
 
 def should_skip_source(url):
     """
@@ -969,6 +980,92 @@ def fetch_article_content_with_selenium(article, max_retries=3, base_delay=2):
     
     return article
 
+def normalize_url(url):
+    """Normalize a URL by removing common tracking parameters and fragments"""
+    try:
+        # Remove common tracking parameters
+        ignore_params = {
+            'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+            'source', 'ref', 'referrer', 'mc_cid', 'mc_eid', 'fbclid', 'gclid',
+            '_ga', '_gl', '_hsenc', '_hsmi', 'yclid', 'mkt_tok'
+        }
+        
+        parsed = urlparse(url)
+        if not parsed.query:
+            return url
+            
+        params = parse_qs(parsed.query)
+        filtered_params = {k: v for k, v in params.items() if k.lower() not in ignore_params}
+        
+        # Rebuild URL without ignored parameters
+        clean_query = urlencode(filtered_params, doseq=True)
+        return urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            clean_query,
+            ''  # Remove fragment
+        ))
+    except:
+        return url
+
+def is_duplicate_article(article, similarity_threshold=0.85):
+    """
+    Check if an article is a duplicate based on URL and content similarity
+    
+    Args:
+        article (dict): Article to check
+        similarity_threshold (float): Threshold for content similarity (0-1)
+        
+    Returns:
+        bool: True if article is likely a duplicate
+    """
+    url = article.get('link', '')
+    title = article.get('title', '').lower()
+    content = article.get('content', '').lower()
+    
+    if not url or (not title and not content):
+        return False
+        
+    # Check cache age and clean if needed (24 hour retention)
+    current_time = time.time()
+    if current_time - article_cache['last_cleanup'] > 86400:  # 24 hours
+        article_cache['urls'].clear()
+        article_cache['title_hashes'].clear()
+        article_cache['content_hashes'].clear()
+        article_cache['last_cleanup'] = current_time
+    
+    # Check normalized URL
+    normalized_url = normalize_url(url)
+    if normalized_url in article_cache['urls']:
+        return True
+        
+    # Generate hashes for quick comparison
+    title_hash = None
+    if title:
+        title_hash = hashlib.md5(title.encode()).hexdigest()
+        if title_hash in article_cache['title_hashes']:
+            # If title matches, do a more detailed comparison
+            for cached_title in article_cache['title_hashes']:
+                if SequenceMatcher(None, title, cached_title).ratio() > similarity_threshold:
+                    return True
+    
+    content_hash = None
+    if content:
+        content_hash = hashlib.md5(content.encode()).hexdigest()
+        if content_hash in article_cache['content_hashes']:
+            return True
+    
+    # Not a duplicate - add to cache
+    article_cache['urls'].add(normalized_url)
+    if title_hash:
+        article_cache['title_hashes'].add(title_hash)
+    if content_hash:
+        article_cache['content_hashes'].add(content_hash)
+    
+    return False
+
 def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=8):
     """
     Fetch news articles from multiple RSS feeds with improved statistics
@@ -997,6 +1094,7 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
         'total_articles_found': 0,
         'articles_with_content': 0,
         'failed_content_fetches': 0,
+        'duplicate_articles': 0,
         'sources': {},
         'domain_stats': {},
         'processing_time': 0,
@@ -1060,6 +1158,19 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
                 # Update metrics for exceptions
                 if source_name not in FETCH_METRICS['failed_sources']:
                     FETCH_METRICS['failed_sources'].append(source_name)
+    
+    # After fetching articles, before content fetching:
+    logger.info("Checking for duplicate articles...")
+    unique_articles = []
+    for article in all_articles:
+        if not is_duplicate_article(article):
+            unique_articles.append(article)
+        else:
+            stats['duplicate_articles'] += 1
+            logger.debug(f"Duplicate article removed: {article.get('title', 'Unknown')}")
+    
+    all_articles = unique_articles
+    logger.info(f"Removed {stats['duplicate_articles']} duplicate articles, {len(all_articles)} unique articles remain")
     
     # Fetch full content in parallel if requested
     if fetch_content and all_articles:
@@ -1263,7 +1374,7 @@ def fetch_articles_from_all_feeds(max_articles_per_source=5):
         
         if stats.get('slow_article_fetches'):
             slow_count = len(stats.get('slow_article_fetches', []))
-            if slow_count > 0:
+            if (slow_count > 0):
                 logger.warning(f"{slow_count} slow article fetches detected")
                 domains = set(item['url'].split('/')[2] for item in stats.get('slow_article_fetches', [])
                               if 'url' in item and '/' in item['url'])
