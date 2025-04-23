@@ -698,7 +698,7 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     
     return all_articles, stats
 
-def fetch_articles_from_all_feeds(max_articles_per_source=3):
+def fetch_articles_from_all_feeds(max_articles_per_source=5):
     """
     Main function to fetch articles based on the configured news source
     
@@ -723,23 +723,54 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
                 # If sources is a dictionary, iterate through its items
                 if isinstance(sources, dict):
                     for source_name, feed_url in sources.items():
+                        # Skip known problematic sources early
+                        if should_skip_source(feed_url):
+                            logger.info(f"Skipping problematic source: {source_name} ({feed_url})")
+                            continue
+                            
                         # Create a key combining category and source name
                         flat_key = f"{source_name} ({category})"
                         flat_feeds[flat_key] = feed_url
+                        
                 # If sources is a string (direct URL), use category as source name
                 elif isinstance(sources, str):
-                    flat_feeds[category] = sources
+                    if not should_skip_source(sources):
+                        flat_feeds[category] = sources
                 else:
                     logger.error(f"Unexpected format for category {category}: {type(sources)}")
             except Exception as e:
                 logger.error(f"Error processing source {category}: {e}")
         
+        logger.info(f"Fetching content from {len(flat_feeds)} feeds (after filtering problematic sources)")
+        
         # Now call fetch_news_articles with the flattened dictionary
-        result = fetch_news_articles(flat_feeds)
+        # Use improved parameters: limit articles per feed, use parallel processing
+        max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 8)
+        result = fetch_news_articles(
+            flat_feeds, 
+            fetch_content=True,
+            max_articles_per_feed=max_articles_per_source,
+            max_workers=max_workers
+        )
         
         # Handle return values - fetch_news_articles returns a tuple (articles, stats)
         if isinstance(result, tuple) and len(result) > 0:
-            return result[0]  # Return just the articles list
+            articles, stats = result
+            logger.info(f"Fetch completed in {stats.get('processing_time', 0):.2f} seconds")
+            
+            # Log efficiency statistics
+            if stats.get('slow_sources'):
+                logger.warning(f"{len(stats['slow_sources'])} slow sources detected")
+            
+            if stats.get('slow_article_fetches'):
+                slow_count = len(stats.get('slow_article_fetches', []))
+                if slow_count > 0:
+                    logger.warning(f"{slow_count} slow article fetches detected")
+                    domains = set(item['url'].split('/')[2] for item in stats.get('slow_article_fetches', [])
+                                  if 'url' in item and '/' in item['url'])
+                    logger.warning(f"Slow domains: {', '.join(domains)}")
+            
+            return articles
         else:
             return result  # Return whatever we got
 
