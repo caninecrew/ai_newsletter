@@ -19,53 +19,31 @@ def create_secure_smtp_context():
     context = ssl.create_default_context(cafile=certifi.where())
     context.verify_mode = ssl.CERT_REQUIRED
     context.check_hostname = True
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
 
-def send_email(subject, html_content, recipients):
-    """
-    Send an HTML email with proper SSL/TLS security
-    
-    Args:
-        subject (str): Email subject
-        html_content (str): HTML content of the email
-        recipients (list): List of recipient email addresses
-    """
-    # Get email configuration from environment
-    smtp_server = os.environ.get('SMTP_SERVER')
-    smtp_port = int(os.environ.get('SMTP_PORT', 587))
-    smtp_username = os.environ.get('SMTP_USERNAME')
-    smtp_password = os.environ.get('SMTP_PASSWORD')
-    sender_email = os.environ.get('SENDER_EMAIL')
-    sender_name = os.environ.get('SENDER_NAME', 'AI Newsletter')
-    
-    if not all([smtp_server, smtp_username, smtp_password, sender_email]):
-        logger.error("Missing required email configuration in environment variables")
-        return False
-    
+def send_email(subject, body, recipients, smtp_settings):
+    """Send email with secure SSL configuration"""
     try:
-        # Create message
-        msg = MIMEMultipart('alternative')
+        msg = MIMEMultipart()
         msg['Subject'] = subject
-        msg['From'] = formataddr((sender_name, sender_email))
+        msg['From'] = smtp_settings['sender']
         msg['To'] = ', '.join(recipients)
-        
-        # Attach HTML content
-        msg.attach(MIMEText(html_content, 'html'))
-        
+        msg.attach(MIMEText(body, 'html'))
+
         # Create secure SSL context
         context = create_secure_smtp_context()
         
-        # Create SMTP connection with SSL/TLS
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        with smtplib.SMTP(smtp_settings['host'], smtp_settings['port']) as server:
             server.starttls(context=context)
-            server.login(smtp_username, smtp_password)
+            server.login(smtp_settings['username'], smtp_settings['password'])
             server.send_message(msg)
             
-        logger.info(f"Email sent successfully to {len(recipients)} recipients")
+        logger.info(f"Successfully sent email to {len(recipients)} recipients")
         return True
         
     except Exception as e:
-        logger.error(f"Failed to send email: {str(e)}")
+        logger.error(f"Failed to send email: {e}")
         return False
 
 def test_send_email():
@@ -95,15 +73,14 @@ def test_send_email():
         send_email(
             subject=subject,
             body=body,
-            to_email=email,        # send to self
-            from_email=email,
-            smtp_server=smtp_server,
-            smtp_port=smtp_port,
-            login=email,
-            password=password,
-            use_tls=(smtp_port == 587),  # Use STARTTLS for port 587
-            use_ssl=(smtp_port == 465),   # Use SSL for port 465
-            is_html=False
+            recipients=[email],        # send to self
+            smtp_settings={
+                'host': smtp_server,
+                'port': smtp_port,
+                'username': email,
+                'password': password,
+                'sender': email
+            }
         )
         logger.info("✅ Test email sent successfully.")
     except Exception as e:
