@@ -49,8 +49,8 @@ def run_newsletter(args):
         
         # Filter by date unless skipped
         if not args.skip_date_filter:
-            cutoff_date = datetime.now() - timedelta(hours=24)
-            articles = filter_articles_by_date(articles, cutoff_date)
+            # Pass hours=24 instead of cutoff_date
+            articles = filter_articles_by_date(articles, hours=24)
             logger.info(f"Date filtering: {len(articles)} articles kept")
         
         # Remove duplicates
