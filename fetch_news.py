@@ -717,12 +717,15 @@ def fetch_article_content(article, max_retries=2):
     failed_urls.add(url)
     return article
 
-def fetch_article_content_with_selenium(article):
+def fetch_article_content_with_selenium(article, max_retries=3, base_delay=2):
     """
     Fetch article content using Selenium WebDriver for JavaScript-heavy sites.
+    Includes enhanced retry logic and anti-detection measures.
     
     Args:
         article (dict): Article dictionary containing link
+        max_retries (int): Maximum number of retry attempts
+        base_delay (int): Base delay between retries in seconds
         
     Returns:
         dict: Updated article dictionary with content
@@ -734,131 +737,113 @@ def fetch_article_content_with_selenium(article):
         logger.info(f"Skipping selenium fetch for problematic source: {url}")
         return article
     
-    try:
-        # Get the driver (which handles session reuse)
-        driver = get_webdriver(force_new=True)  # Force new instance for Google News
-        
-        # Add specific headers for Google News
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            "platform": "Windows"
-        })
-        
-        # Set extra headers
-        driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {
-            "headers": {
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Referer": "https://news.google.com/"
-            }
-        })
-        
-        # Load the page with increased timeout
-        driver.set_page_load_timeout(15)  # Increase timeout for Google News
-        driver.get(url)
-        
-        # Wait for content with increased timeout
+    for attempt in range(max_retries):
         try:
-            WebDriverWait(driver, 10).until(  # Increased wait time
-                EC.presence_of_element_located((By.CSS_SELECTOR, "article, [role='article'], .article-body, .article-content"))
-            )
-        except TimeoutException:
-            # Try alternate wait condition
+            # Add random delay between attempts with exponential backoff
+            if attempt > 0:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                logger.info(f"Retry attempt {attempt + 1}/{max_retries} for {url}, waiting {delay:.1f}s")
+                time.sleep(delay)
+            
+            # Get a fresh WebDriver instance for each retry to avoid stale sessions
+            driver = get_webdriver(force_new=(attempt > 0))
+            
+            # Random delay before page load (0.5-2s) to appear more natural
+            time.sleep(random.uniform(0.5, 2))
+            
+            # Load the page with increased timeout
+            driver.set_page_load_timeout(15)
+            driver.get(url)
+            
+            # Random scroll behavior to mimic human interaction
             try:
-                WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-            except TimeoutException:
-                logger.warning(f"Selenium timeout waiting for page to load: {url}")
-                failed_urls.add(url)
-                return article
-        
-        # Wait for dynamic content to load
-        time.sleep(2)  # Increased wait time for JS content
-        
-        # Try multiple content extraction strategies
-        content = ''
-        
-        # Strategy 1: Look for article container with specific selectors for Google News
-        for selector in [
-            '[role="article"]',  # Google News specific
-            'article',
-            '.article-body',
-            '.article-content',
-            '.entry-content',
-            '.post-content',
-            'main',
-            '#content',  # Common content container
-            '.content'
-        ]:
-            try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    # Try to find the largest text content
-                    contents = [e.text for e in elements]
-                    content = max(contents, key=len, default='')
-                    if len(content) > 150:  # Minimum content threshold
-                        break
-            except Exception:
-                continue
-        
-        # Strategy 2: If no content found, try looking for paragraphs
-        if not content or len(content) < 150:
-            try:
-                # Look for paragraphs within the main content area
-                paragraphs = driver.find_elements(By.CSS_SELECTOR, 'article p, [role="article"] p, .article-body p, .article-content p')
-                if not paragraphs:
-                    # Fallback to all paragraphs if no article container found
-                    paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+                total_height = int(driver.execute_script("return document.body.scrollHeight"))
+                for scroll in range(0, total_height, random.randint(500, 1000)):
+                    driver.execute_script(f"window.scrollTo(0, {scroll});")
+                    time.sleep(random.uniform(0.1, 0.3))
+            except Exception as e:
+                logger.debug(f"Non-critical scroll simulation error: {e}")
+            
+            # Wait for content with dynamic timeout
+            content_selectors = [
+                "article", 
+                "[role='article']", 
+                ".article-body", 
+                ".article-content",
+                ".entry-content",
+                ".post-content",
+                "main",
+                "#content",
+                ".content"
+            ]
+            
+            content = ''
+            for selector in content_selectors:
+                try:
+                    # Wait for element with random timeout (5-10s)
+                    timeout = random.uniform(5, 10)
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    if element:
+                        content = element.text
+                        if len(content) > 150:
+                            break
+                except TimeoutException:
+                    continue
+            
+            # If no content found with selectors, try paragraphs
+            if not content or len(content) < 150:
+                try:
+                    paragraphs = driver.find_elements(By.CSS_SELECTOR, 'article p, [role="article"] p, .article-body p, .article-content p')
+                    if not paragraphs:
+                        paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+                    
+                    # Filter and join paragraphs
+                    content = ' '.join([
+                        p.text for p in paragraphs
+                        if len(p.text.strip()) > 50
+                        and not any(skip in p.text.lower() for skip in ['advertisement', 'subscribe', 'newsletter'])
+                    ])
+                except Exception as e:
+                    logger.warning(f"Failed to get paragraphs: {e}")
+            
+            # Clean up the content
+            if content:
+                # Remove unwanted elements and normalize whitespace
+                content = re.sub(r'\s+', ' ', content).strip()
+                content = re.sub(r'\n\s*\n', '\n\n', content)
                 
-                # Filter and join paragraphs
-                content = ' '.join([
-                    p.text for p in paragraphs
-                    if len(p.text.strip()) > 50  # Skip short paragraphs
-                    and not any(skip in p.text.lower() for skip in ['advertisement', 'subscribe', 'newsletter'])
-                ])
-            except Exception as e:
-                logger.warning(f"Failed to get paragraphs with Selenium: {e}")
-        
-        # Strategy 3: If still no content, try getting all text from body
-        if not content or len(content) < 150:
-            try:
-                body = driver.find_element(By.TAG_NAME, 'body')
-                content = body.text
-            except Exception as e:
-                logger.warning(f"Failed to get body text: {e}")
-        
-        # Clean up the content
-        if content:
-            # Remove extra whitespace and normalize
-            content = re.sub(r'\s+', ' ', content).strip()
-            content = re.sub(r'\n\s*\n', '\n\n', content)
+                # Remove common unwanted text
+                unwanted = ['Advertisement', 'Subscribe', 'Sign up', 'Newsletter']
+                for text in unwanted:
+                    content = re.sub(f'(?i){text}.*?\n', '', content)
+                
+                if len(content) > 150:
+                    article['content'] = content
+                    logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
+                    return article
             
-            # Remove common unwanted text
-            unwanted = ['Advertisement', 'Subscribe', 'Sign up', 'Newsletter']
-            for text in unwanted:
-                content = re.sub(f'(?i){text}.*?\n', '', content)
+            logger.warning(f"No content found with WebDriver (attempt {attempt + 1}): {url}")
             
-            article['content'] = content
-            logger.info(f"Successfully fetched content with WebDriver: {url}")
-        else:
-            logger.warning(f"No content found with WebDriver: {url}")
-            failed_urls.add(url)
-            
-    except (WebDriverException, TimeoutException) as e:
-        logger.error(f"WebDriver exception for {url}: {e}")
-        failed_urls.add(url)
-        # Force driver recreation on next attempt
-        global _driver
-        if _driver is not None:
-            try:
-                _driver.quit()
-            except:
-                pass
-            _driver = None
-    except Exception as e:
-        logger.error(f"Unexpected error fetching with WebDriver for {url}: {e}")
-        failed_urls.add(url)
+        except WebDriverException as e:
+            logger.error(f"WebDriver exception (attempt {attempt + 1}) for {url}: {e}")
+            if attempt == max_retries - 1:
+                failed_urls.add(url)
+        except Exception as e:
+            logger.error(f"Unexpected error (attempt {attempt + 1}) fetching {url}: {e}")
+            if attempt == max_retries - 1:
+                failed_urls.add(url)
+        finally:
+            # Clean up the driver on failure or last attempt
+            if attempt == max_retries - 1:
+                global _driver
+                if _driver is not None:
+                    try:
+                        _driver.quit()
+                    except:
+                        pass
+                    _driver = None
     
     return article
 
