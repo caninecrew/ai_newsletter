@@ -167,13 +167,175 @@ def parse_date(date_str):
         logger.error(f"Unexpected date parsing error: {type(e).__name__}: {e} for '{date_str}'")
         return datetime.datetime.now(pytz.UTC)
 
+class WebDriverManager:
+    """
+    Class to manage Selenium WebDriver instances with proper session reuse
+    """
+    def __init__(self):
+        self._driver = None
+        self.initialized = False
+        self.max_retries = 3
+
+    def get_driver(self):
+        """Get an existing driver or initialize a new one"""
+        if self._driver is not None and self.initialized:
+            try:
+                # Check if driver is still responsive
+                self._driver.title
+                return self._driver
+            except Exception as e:
+                logger.warning(f"WebDriver session expired: {e}. Reinitializing...")
+                self.close()
+        
+        # Initialize new driver
+        return self.initialize_driver()
+            
+    def initialize_driver(self):
+        """Initialize a new Chrome WebDriver"""
+        attempt = 0
+        while attempt < self.max_retries:
+            try:
+                chrome_options = Options()
+                chrome_options.add_argument("--headless")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_argument("--disable-extensions")
+                chrome_options.add_argument("--disable-browser-side-navigation")
+                chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+                chrome_options.add_argument("--disable-software-rasterizer")
+                chrome_options.add_argument("--window-size=1920,1080")
+                chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+
+                logger.info("Initializing new Chrome WebDriver instance")
+                self._driver = webdriver.Chrome(
+                    service=Service(ChromeDriverManager().install()),
+                    options=chrome_options
+                )
+                self._driver.set_page_load_timeout(30)  # 30 seconds timeout
+                self.initialized = True
+                return self._driver
+            except Exception as e:
+                attempt += 1
+                logger.error(f"WebDriver initialization attempt {attempt} failed: {e}")
+                time.sleep(2)  # Wait before retrying
+                
+                if self._driver:
+                    try:
+                        self._driver.quit()
+                    except:
+                        pass
+                self._driver = None
+                
+        logger.critical("Failed to initialize WebDriver after multiple attempts")
+        raise RuntimeError("WebDriver initialization failed")
+                
+    def close(self):
+        """Close the current driver properly"""
+        if self._driver:
+            try:
+                self._driver.quit()
+                logger.debug("WebDriver closed successfully")
+            except Exception as e:
+                logger.warning(f"Error closing WebDriver: {e}")
+            finally:
+                self._driver = None
+                self.initialized = False
+    
+    def __del__(self):
+        """Ensure driver is closed on garbage collection"""
+        self.close()
+
+# Initialize the WebDriver manager as a module-level variable
+driver_manager = WebDriverManager()
+
+class UrlTracker:
+    """
+    Track processed URLs to prevent duplicate processing and minimize repeat requests
+    """
+    def __init__(self, cache_file=None):
+        self.processed_urls = set()
+        self.failed_urls = {}
+        self.cache_file = cache_file
+        
+        # Load cache if available
+        self._load_cache()
+    
+    def _load_cache(self):
+        """Load previously processed URLs from disk if available"""
+        if not self.cache_file:
+            return
+            
+        try:
+            import json
+            import os
+            
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, 'r') as f:
+                    data = json.load(f)
+                    self.processed_urls = set(data.get('processed_urls', []))
+                    self.failed_urls = data.get('failed_urls', {})
+                    logger.info(f"Loaded {len(self.processed_urls)} previously processed URLs from cache")
+        except Exception as e:
+            logger.warning(f"Failed to load URL cache: {e}")
+    
+    def _save_cache(self):
+        """Save processed URLs to disk"""
+        if not self.cache_file:
+            return
+            
+        try:
+            import json
+            with open(self.cache_file, 'w') as f:
+                json.dump({
+                    'processed_urls': list(self.processed_urls),
+                    'failed_urls': self.failed_urls
+                }, f)
+            logger.debug(f"Saved {len(self.processed_urls)} URLs to cache")
+        except Exception as e:
+            logger.warning(f"Failed to save URL cache: {e}")
+    
+    def is_processed(self, url):
+        """Check if URL has already been processed"""
+        return url in self.processed_urls
+    
+    def is_failed(self, url):
+        """Check if URL previously failed processing"""
+        return url in self.failed_urls
+    
+    def mark_processed(self, url):
+        """Mark URL as successfully processed"""
+        self.processed_urls.add(url)
+        
+        # If it was previously failed, remove from failed list
+        if url in self.failed_urls:
+            del self.failed_urls[url]
+        
+        # Save periodically (every 20 new URLs)
+        if len(self.processed_urls) % 20 == 0:
+            self._save_cache()
+    
+    def mark_failed(self, url, reason):
+        """Mark URL as failed with reason"""
+        self.failed_urls[url] = {
+            'reason': str(reason),
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+    
+    def __del__(self):
+        """Save cache on object destruction"""
+        self._save_cache()
+
+# Initialize URL tracker
+url_tracker = UrlTracker(cache_file='url_cache.json')
+
 def fetch_articles_from_rss(max_articles_per_source=3):
     """
     Fetch news articles from RSS feeds as defined in config.py
+    with optimized URL tracking and WebDriver management
     """
     all_articles = []
     skipped_articles = []
-    processed_urls = set()  # Track URLs to avoid duplicates
     
     # Statistics collection
     stats = {
@@ -181,27 +343,15 @@ def fetch_articles_from_rss(max_articles_per_source=3):
         "empty_feeds": 0,
         "successful_fetches": 0,
         "failed_fetches": 0,
+        "skipped_duplicates": 0,
+        "previously_failed": 0,
         "articles_by_category": defaultdict(int),
         "articles_by_source": defaultdict(int),
+        "articles_by_method": defaultdict(int),
+        "error_types": defaultdict(int)
     }
 
-    # Configure Selenium WebDriver
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    driver = None
     try:
-        # Only initialize the WebDriver if we're going to use it
-        if SYSTEM_SETTINGS.get("session_reuse", True):
-            logger.info("Setting up Chrome WebDriver (reusing session)")
-            driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()), 
-                options=chrome_options
-            )
-
         for category, feeds in RSS_FEEDS.items():
             logger.info(f"Fetching articles for category: {category}")
             
@@ -228,14 +378,24 @@ def fetch_articles_from_rss(max_articles_per_source=3):
                         if count >= max_articles_per_source:
                             break
                             
-                        # Skip already processed URLs
+                        # Skip already processed URLs using our tracker
                         url = entry.get('link', '')
-                        if not url or url in processed_urls:
-                            logger.debug(f"Skipping duplicate URL: {url}")
+                        if not url:
+                            logger.debug(f"Skipping entry with no URL from {source_name}")
                             continue
                             
-                        processed_urls.add(url)  # Mark URL as processed
-                        
+                        # Check if URL was already processed
+                        if url_tracker.is_processed(url):
+                            logger.debug(f"Skipping previously processed URL: {url}")
+                            stats["skipped_duplicates"] += 1
+                            continue
+                            
+                        # Check if URL previously failed (with backoff)
+                        if url_tracker.is_failed(url):
+                            logger.debug(f"Skipping previously failed URL: {url}")
+                            stats["previously_failed"] += 1
+                            continue
+                            
                         try:
                             content = None
                             method = None
@@ -245,14 +405,42 @@ def fetch_articles_from_rss(max_articles_per_source=3):
                             article.download()
                             article.parse()
                             content = article.text
-                            method = "full"
+                            method = "newspaper"
                             stats["successful_fetches"] += 1
+                            stats["articles_by_method"][method] += 1
                             logger.debug(f"Successfully parsed article from {source_name}: {entry.get('title', 'No Title')}")
+                            
+                            # Mark URL as successfully processed
+                            url_tracker.mark_processed(url)
                             
                         except Exception as e:
                             stats["failed_fetches"] += 1
-                            logger.warning(f"Newspaper failed for: {url} - Reason: {str(e)}")
-                            content, method = get_article_fallback_content(entry)
+                            error_type = type(e).__name__
+                            stats["error_types"][error_type] += 1
+                            logger.warning(f"Newspaper failed for: {url} - Error type: {error_type} - Reason: {str(e)}")
+                            
+                            try:
+                                # Use fallback methods
+                                content, method = get_article_fallback_content(entry)
+                                if content:
+                                    stats["articles_by_method"][method] += 1
+                                    # Mark URL as successfully processed if we got content via fallback
+                                    url_tracker.mark_processed(url)
+                                else:
+                                    url_tracker.mark_failed(url, f"No content: {str(e)}")
+                                    skipped_articles.append({
+                                        'url': url,
+                                        'reason': f'All methods failed: {str(e)}'
+                                    })
+                                    continue
+                            except Exception as fallback_error:
+                                url_tracker.mark_failed(url, f"Fallback failed: {str(fallback_error)}")
+                                logger.error(f"All retrieval methods failed for {url}: {str(fallback_error)}")
+                                skipped_articles.append({
+                                    'url': url,
+                                    'reason': f'Fallback methods failed: {str(fallback_error)}'
+                                })
+                                continue
 
                         # Get and parse publication date with improved error handling
                         pub_date_str = entry.get('published', 'Unknown')
@@ -272,7 +460,8 @@ def fetch_articles_from_rss(max_articles_per_source=3):
                                 'category': category,
                                 'published': pub_date_str,
                                 'content': content,
-                                'fetch_method': method
+                                'fetch_method': method,
+                                'summary': entry.get('summary', '')  # Include RSS summary as fallback
                             })
                             count += 1
                             stats["articles_by_category"][category] += 1
@@ -283,6 +472,7 @@ def fetch_articles_from_rss(max_articles_per_source=3):
                                 'url': url,
                                 'reason': 'No content retrieved'
                             })
+                            url_tracker.mark_failed(url, "Empty content")
                             
                 except Exception as e:
                     logger.error(f"Error processing feed {source_name}: {str(e)}")
@@ -292,8 +482,10 @@ def fetch_articles_from_rss(max_articles_per_source=3):
         # Log skipped articles
         if skipped_articles:
             logger.info(f"Skipped {len(skipped_articles)} articles")
-            for skipped in skipped_articles:
+            for skipped in skipped_articles[:10]:  # Log only first 10 to avoid excessive logging
                 logger.debug(f"Skipped URL: {skipped['url']} - Reason: {skipped['reason']}")
+            if len(skipped_articles) > 10:
+                logger.debug(f"... and {len(skipped_articles) - 10} more skipped articles")
 
         # Log comprehensive statistics
         logger.info("=" * 50)
@@ -303,7 +495,13 @@ def fetch_articles_from_rss(max_articles_per_source=3):
         logger.info(f"Empty feeds: {stats['empty_feeds']}")
         logger.info(f"Successful fetches: {stats['successful_fetches']}")
         logger.info(f"Failed fetches: {stats['failed_fetches']}")
+        logger.info(f"Skipped duplicates: {stats['skipped_duplicates']}")
+        logger.info(f"Skipped previously failed: {stats['previously_failed']}")
         logger.info(f"Total articles collected: {len(all_articles)}")
+        logger.info("-" * 50)
+        logger.info("Articles by fetch method:")
+        for method, count in stats["articles_by_method"].items():
+            logger.info(f"  {method}: {count}")
         logger.info("-" * 50)
         logger.info("Articles by category:")
         for cat, count in stats["articles_by_category"].items():
@@ -312,14 +510,14 @@ def fetch_articles_from_rss(max_articles_per_source=3):
         logger.info("Top sources:")
         for source, count in sorted(stats["articles_by_source"].items(), key=lambda x: x[1], reverse=True)[:10]:
             logger.info(f"  {source}: {count}")
+        logger.info("-" * 50)
+        logger.info("Error types:")
+        for error_type, count in sorted(stats["error_types"].items(), key=lambda x: x[1], reverse=True):
+            logger.info(f"  {error_type}: {count}")
         logger.info("=" * 50)
 
     except Exception as e:
         logger.error(f"Error in fetch_articles_from_rss: {str(e)}", exc_info=True)
-    finally:
-        if driver is not None:
-            driver.quit()
-            logger.debug("WebDriver closed")
 
     logger.info(f"RSS article fetching completed. Retrieved {len(all_articles)} articles.")
     return all_articles
