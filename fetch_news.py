@@ -49,7 +49,14 @@ PROBLEMATIC_SOURCES = [
     "foxnews.com/opinion",          # Fox News opinions often has issues
     "politico.com",                 # Politico - frequently requires login
     "wkrn.com",                     # WKRN - frequently has issues with parsing
-    "washingtontimes.com"           # Washington Times - frequently has issues
+    "washingtontimes.com",          # Washington Times - frequently has issues
+    "edweek.org",                   # Education Week - SSL issues
+    "chronicle.com",                # Chronicle of Higher Education - SSL issues
+    "outdoorlife.com",              # Outdoor Life - SSL issues
+    "outsideonline.com",            # Outside Online - SSL issues
+    "rssfeeds.tennessean.com",      # The Tennessean - SSL issues
+    "newschannel5.com",             # News Channel 5 Nashville - SSL issues
+    "johnsoncitypress.com"          # Johnson City Press - Rate limiting issues
 ]
 
 # Performance tracking and statistics
@@ -72,18 +79,20 @@ def should_skip_source(url):
     return False
 
 def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
-    """
-    Get or create a WebDriver instance, with intelligent session management.
-    
-    Args:
-        force_new (bool): Force creation of a new WebDriver instance
-        max_age_minutes (int): Maximum age of driver in minutes before recreation
-        max_requests (int): Maximum number of requests before recreating driver
-        
-    Returns:
-        WebDriver: A Chrome WebDriver instance
-    """
+    """Get or create a WebDriver instance with SSL handling and retries"""
     global _driver, _driver_creation_time, _driver_request_count
+    
+    # SSL verification override
+    import ssl
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    # Add the SSL context to the global requests session
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    session = requests.Session()
+    session.verify = False
     
     current_time = time.time()
     
@@ -123,13 +132,33 @@ def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
         options.add_argument("--disable-infobars")
         options.add_argument("--mute-audio")
         options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-software-rasterizer")  # Disable WebGL
+        options.add_argument("--ignore-certificate-errors")    # Handle SSL issues
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         try:
-            _driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            # Try to create the driver with default service first
+            try:
+                service = Service()
+                _driver = webdriver.Chrome(service=service, options=options)
+            except Exception as e:
+                logger.warning(f"Failed to create driver with default service: {e}")
+                
+                # Try creating with ChromeDriverManager
+                try:
+                    # Force download to user directory
+                    import os
+                    os.environ['WDM_LOCAL'] = '1'
+                    service = Service(ChromeDriverManager().install())
+                    _driver = webdriver.Chrome(service=service, options=options)
+                except Exception as e:
+                    logger.error(f"Failed to create driver with ChromeDriverManager: {e}")
+                    raise
+                    
             _driver_creation_time = current_time
             _driver_request_count = 0
             logger.debug("WebDriver created successfully")
+            
         except Exception as e:
             logger.error(f"Failed to create WebDriver: {e}")
             _driver = None
@@ -262,14 +291,29 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
     attempted_urls.add(feed_url)
     
     try:
+        # First try to fetch the feed with requests to handle redirects properly
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, */*'
+        }
+        
         start_time = time.time()
-        feed = feedparser.parse(feed_url)
+        response = requests.get(feed_url, headers=headers, allow_redirects=True, timeout=10)
+        response.raise_for_status()
+        
+        # Parse the feed content
+        feed = feedparser.parse(response.content)
         parsing_time = time.time() - start_time
+        
+        # If feedparser fails to parse the content, try parsing the URL directly
+        if not feed.entries and not feed.get('status'):
+            feed = feedparser.parse(feed_url)
         
         if parsing_time > 5:  # Log slow feeds
             logger.warning(f"Slow RSS feed parsing: {source_name} took {parsing_time:.2f}s")
         
-        if feed.get('status') != 200:
+        # Check both status codes since some feeds might return 301/302 but still have content
+        if not feed.entries and feed.get('status') not in [200, 301, 302]:
             logger.warning(f"Failed to fetch RSS feed {source_name}: Status {feed.get('status', 'unknown')}")
             failed_urls.add(feed_url)
             FETCH_METRICS['failed_sources'].append(source_name)
@@ -393,16 +437,38 @@ def fetch_article_content(article, max_retries=2):
     if should_skip_source(url):
         logger.info(f"Skipping problematic content source: {url}")
         return article
-        
+    
+    # Use a session for better connection reuse
+    session = requests.Session()
+    session.verify = False  # Bypass SSL verification
+    retries = requests.adapters.Retry(
+        total=max_retries,
+        backoff_factor=0.5,  # Will sleep for [0.5, 1, 2, 4] seconds between retries
+        status_forcelist=[408, 429, 500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+    session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
+    session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
+    
     # Try with requests/BeautifulSoup first (faster)
     for attempt in range(max_retries):
         try:
             headers = {
-                'User-Agent': f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 120)}.0.0.0 Safari/537.36'
+                'User-Agent': f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 120)}.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Cache-Control': 'max-age=0'
             }
             
-            # Reduced timeout from 10 to 5 seconds
-            response = requests.get(url, headers=headers, timeout=5)
+            # Add delay between retries with exponential backoff
+            if attempt > 0:
+                sleep_time = (2 ** attempt) * 0.5  # 0.5, 1, 2 seconds
+                time.sleep(sleep_time)
+            
+            response = session.get(url, headers=headers, timeout=5)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -411,14 +477,14 @@ def fetch_article_content(article, max_retries=2):
             content = ''
             
             # Look for article body in common containers
-            content_containers = soup.select('article, .article-body, .article-content, .entry-content, .post-content, main')
+            content_containers = soup.select('article, [role="article"], .article-body, .article-content, .entry-content, .post-content, main, .content-area, .story-content')
             
             if content_containers:
                 # Use the first matching container
                 container = content_containers[0]
                 
                 # Remove unwanted elements
-                for unwanted in container.select('script, style, nav, header, footer, .ad, .advertisement, .social-share, .related-posts'):
+                for unwanted in container.select('script, style, nav, header, footer, .ad, .advertisement, .social-share, .related-posts, .newsletter-signup, .paywall, aside'):
                     unwanted.extract()
                     
                 content = container.get_text().strip()
@@ -426,10 +492,14 @@ def fetch_article_content(article, max_retries=2):
             if not content:
                 # Try to get all paragraphs as fallback
                 paragraphs = soup.select('p')
-                content = ' '.join([p.get_text().strip() for p in paragraphs])
+                content = ' '.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
+            
+            # Clean up the content
+            content = re.sub(r'\s+', ' ', content)  # Replace multiple spaces
+            content = re.sub(r'\n\s*\n', '\n\n', content)  # Clean up newlines
             
             # Update the article if we found content
-            if content:
+            if content and len(content) > 150:  # Minimum content length threshold
                 article['content'] = content
                 logger.debug(f"Successfully fetched content with requests: {url}")
                 return article
@@ -444,8 +514,7 @@ def fetch_article_content(article, max_retries=2):
             if attempt == max_retries - 1:
                 logger.debug(f"Request failed after {max_retries} attempts, trying WebDriver")
                 return fetch_article_content_with_selenium(article)
-            time.sleep(1)  # Brief delay before retry
-    
+            
     # If we get here, both methods failed
     failed_urls.add(url)
     return article
