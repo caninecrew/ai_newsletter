@@ -72,7 +72,7 @@ if FEED_SETTINGS["location"]["memphis"]:
 
 # Type 4: News by search criteria - personalized to user interests
 if FEED_SETTINGS["interests"]["scouting"]:
-    PRIMARY_NEWS_FEEDS["Google News Scouting"] = "https://news.google.com/rss/search?q=scouting+OR+%22boy+scouts%22+OR+%22scout+troop%22&hl=en-US&gl=US&ceid=US:en"
+    PRIMARY_NEWS_FEEDS["Google News Scouting"] = "https://news.google.com/rss/search?q=scouting+OR+%22boy+scouts%22+OR+%22scout+troop%22+OR+%22scouting+america%22&hl=en-US&gl=US&ceid=US:en"
 if FEED_SETTINGS["interests"]["education"]:
     PRIMARY_NEWS_FEEDS["Google News Education"] = "https://news.google.com/rss/search?q=(education+OR+learning+OR+teaching)+Tennessee&hl=en-US&gl=US&ceid=US:en"
 if FEED_SETTINGS["interests"]["youth_leadership"]:
