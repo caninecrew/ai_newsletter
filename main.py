@@ -56,8 +56,18 @@ def run_newsletter():
     if DEBUG_MODE:
         logger.debug(f"After deduplication: {len(deduplicated_articles)} articles")
     
-    # Summarize the articles
-    summaries = summarize_articles(deduplicated_articles)
+    # Determine maximum articles to include in the newsletter
+    max_articles = EMAIL_SETTINGS.get("max_articles_total", 15)
+    
+    # Select only the top N articles based on configuration
+    # This reduces the number of articles sent to the LLM for summarization
+    articles_to_summarize = deduplicated_articles[:max_articles]
+    
+    if DEBUG_MODE:
+        logger.debug(f"Selected {len(articles_to_summarize)} articles for summarization out of {len(deduplicated_articles)} total")
+    
+    # Only summarize articles that will be included in the email
+    summaries = summarize_articles(articles_to_summarize) if articles_to_summarize else []
     
     if DEBUG_MODE:
         logger.debug(f"After summarization: {len(summaries)} articles")

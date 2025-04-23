@@ -124,6 +124,7 @@ PERSONALIZATION_TAGS = {
 
 EMAIL_SETTINGS = {
     "max_articles_per_category": 3,
+    "max_articles_total": 15,      # Maximum total articles to include in newsletter
     "show_why_this_matters": True,
     "show_key_takeaways": True,
     "include_table_of_contents": True
