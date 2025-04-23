@@ -1,71 +1,73 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
+from email.utils import formataddr
 import os
+from dotenv import load_dotenv
 from logger_config import setup_logger
+import ssl
+import certifi
 
 # Set up logger
 logger = setup_logger()
 
-def send_email(subject: str, body: str, to_email: str, from_email: str,
-               smtp_server: str, smtp_port: int, login: str, password: str,
-               use_tls: bool = False, use_ssl: bool = False, 
-               is_html: bool = False) -> None:
+# Load environment variables
+load_dotenv()
+
+def create_secure_smtp_context():
+    """Create a secure SSL context for SMTP"""
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.check_hostname = True
+    return context
+
+def send_email(subject, html_content, recipients):
     """
-    Sends an email with the given subject and body to the specified recipient.
-    Allows exceptions to bubble up for the caller to handle.
-    """
-    try:
-        logger.info(f"Preparing to send email to {to_email}")
-        logger.debug(f"SMTP Server: {smtp_server}:{smtp_port}, TLS: {use_tls}, SSL: {use_ssl}")
-        
-        if use_ssl:
-            # Connect using SSL
-            logger.debug("Connecting with SSL")
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port)
-        else:
-            # Connect without SSL
-            logger.debug("Connecting without SSL")
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            if use_tls:
-                logger.debug("Starting TLS")
-                server.starttls()  # Upgrade to secure connection
-
-        # Log in to the SMTP server
-        logger.debug(f"Logging in as {login}")
-        server.login(login, password)
-
-        # Create the email message
-        msg = MIMEMultipart('alternative')
-        msg['From'] = from_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        
-        logger.debug(f"Email subject: {subject}")
-
-        # Attach plain text and HTML versions if HTML is provided
-        if is_html:
-            logger.debug("Creating multipart HTML/plain email")
-            # Create a plain text version as fallback
-            plain_text = body.replace('<br>', '\n').replace('<p>', '').replace('</p>', '\n\n')
-            plain_text = ''.join(c for c in plain_text if ord(c) < 128)  # Remove non-ASCII chars
-            msg.attach(MIMEText(plain_text, 'plain'))
-            msg.attach(MIMEText(body, 'html'))
-        else:
-            logger.debug("Creating plain text email")
-            msg.attach(MIMEText(body, 'plain'))
-
-        # Send the email
-        logger.debug("Sending email")
-        server.send_message(msg)
-        logger.info(f"Email sent successfully to {to_email}")
-        server.quit()
-        logger.debug("SMTP connection closed")
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}", exc_info=True)
-        raise RuntimeError(f"Failed to send email: {e}")
+    Send an HTML email with proper SSL/TLS security
     
+    Args:
+        subject (str): Email subject
+        html_content (str): HTML content of the email
+        recipients (list): List of recipient email addresses
+    """
+    # Get email configuration from environment
+    smtp_server = os.environ.get('SMTP_SERVER')
+    smtp_port = int(os.environ.get('SMTP_PORT', 587))
+    smtp_username = os.environ.get('SMTP_USERNAME')
+    smtp_password = os.environ.get('SMTP_PASSWORD')
+    sender_email = os.environ.get('SENDER_EMAIL')
+    sender_name = os.environ.get('SENDER_NAME', 'AI Newsletter')
+    
+    if not all([smtp_server, smtp_username, smtp_password, sender_email]):
+        logger.error("Missing required email configuration in environment variables")
+        return False
+    
+    try:
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = formataddr((sender_name, sender_email))
+        msg['To'] = ', '.join(recipients)
+        
+        # Attach HTML content
+        msg.attach(MIMEText(html_content, 'html'))
+        
+        # Create secure SSL context
+        context = create_secure_smtp_context()
+        
+        # Create SMTP connection with SSL/TLS
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls(context=context)
+            server.login(smtp_username, smtp_password)
+            server.send_message(msg)
+            
+        logger.info(f"Email sent successfully to {len(recipients)} recipients")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to send email: {str(e)}")
+        return False
+
 def test_send_email():
     """
     Sends a test email to verify the email sending functionality.
