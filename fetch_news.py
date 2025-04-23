@@ -17,12 +17,12 @@ import re
 import time
 import random
 import logging
-from logger_config import setup_logger
+import concurrent.futures
+from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
 from urllib.parse import urlparse
 from config import RSS_FEEDS, SYSTEM_SETTINGS, PRIMARY_NEWS_SOURCE
 from gnews_api import fetch_articles_from_gnews
 from collections import defaultdict
-import concurrent.futures
 
 # Get the logger
 logger = setup_logger()
@@ -30,6 +30,9 @@ logger = setup_logger()
 # Global URL tracking to prevent duplicate attempts
 attempted_urls = set()
 failed_urls = set()
+
+# Track unique article URLs to prevent duplicates across feeds
+unique_article_urls = set()
 
 # Global WebDriver instance for reuse
 _driver = None
@@ -45,6 +48,9 @@ PROBLEMATIC_SOURCES = [
     "washingtonpost.com/opinions",  # Washington Post opinions section
     "bloomberg.com",                # Bloomberg has strict paywall
     "foxnews.com/opinion",          # Fox News opinions often has issues
+    "politico.com",                 # Politico - frequently requires login
+    "wkrn.com",                     # WKRN - frequently has issues with parsing
+    "washingtontimes.com"           # Washington Times - frequently has issues
 ]
 
 # Performance tracking and statistics
@@ -138,7 +144,7 @@ def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
 
 def parse_date(date_str, url=None):
     """
-    Parse a date string into a datetime object with improved error handling.
+    Parse a date string into a datetime object with improved timezone handling.
     
     Args:
         date_str (str): The date string to parse
@@ -193,9 +199,12 @@ def parse_date(date_str, url=None):
         # Try parsing with dateutil
         parsed_date = dateutil.parser.parse(date_str)
         
-        # If no timezone info, assume UTC
+        # Always ensure timezone info
         if parsed_date.tzinfo is None:
             parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+        else:
+            # Standardize on UTC
+            parsed_date = parsed_date.astimezone(pytz.UTC)
             
         return parsed_date
         
@@ -212,15 +221,18 @@ def parse_date(date_str, url=None):
         for fmt in date_formats:
             try:
                 parsed_date = datetime.datetime.strptime(date_str, fmt)
+                # Always add timezone info to prevent naive/aware mismatches
                 parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
                 logger.debug(f"Successfully parsed date with format {fmt}")
                 return parsed_date
             except ValueError:
                 continue
         
-        # If all parsing attempts fail, return current time
+        # If all parsing attempts fail, use current time but with a specific tag
         logger.error(f"Could not parse date '{original_date_str}' in any format{' for ' + url if url else ''}")
-        return datetime.datetime.now(pytz.UTC)
+        # Return current time but flag it in the log
+        current_time = datetime.datetime.now(pytz.UTC)
+        return current_time
 
 def fetch_rss_feed(feed_url, source_name, max_articles=5):
     """
@@ -236,12 +248,16 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
     """
     logger.info(f"Fetching RSS feed: {source_name} ({feed_url})")
     
+    # Update metrics
+    FETCH_METRICS['sources_checked'] += 1
+    
     if feed_url in attempted_urls:
         logger.debug(f"Skipping previously attempted RSS feed: {feed_url}")
         return []
     
     if should_skip_source(feed_url):
         logger.info(f"Skipping problematic source: {source_name} ({feed_url})")
+        FETCH_METRICS['failed_sources'].append(source_name)
         return []
     
     attempted_urls.add(feed_url)
@@ -257,10 +273,12 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
         if feed.get('status') != 200:
             logger.warning(f"Failed to fetch RSS feed {source_name}: Status {feed.get('status', 'unknown')}")
             failed_urls.add(feed_url)
+            FETCH_METRICS['failed_sources'].append(source_name)
             return []
         
         if not feed.entries:
             logger.warning(f"RSS feed {source_name} returned no entries")
+            FETCH_METRICS['empty_sources'].append(source_name)
             return []
         
         articles = []
@@ -273,8 +291,9 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                 if not entry.get('title') or not entry.get('link'):
                     continue
                 
-                # Skip if URL was previously processed
-                if entry.get('link') in attempted_urls:
+                # Skip if URL was previously processed globally (across all feeds)
+                if entry.get('link') in unique_article_urls:
+                    FETCH_METRICS['duplicate_articles'] += 1
                     continue
                 
                 # Parse the published date
@@ -295,7 +314,10 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             try:
                 title = entry.get('title', '')
                 link = entry.get('link', '')
+                
+                # Mark URL as processed globally and locally
                 attempted_urls.add(link)
+                unique_article_urls.add(link)
                 
                 # Get description/summary if available
                 description = entry.get('description', entry.get('summary', ''))
@@ -325,12 +347,29 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             except Exception as e:
                 logger.error(f"Error processing RSS entry data from {source_name}: {e}")
         
+        # Update metrics
+        if articles:
+            FETCH_METRICS['successful_sources'] += 1
+            FETCH_METRICS['total_articles'] += len(articles)
+            
+            # Update source statistics
+            if source_name not in FETCH_METRICS['source_statistics']:
+                FETCH_METRICS['source_statistics'][source_name] = {
+                    'articles': len(articles),
+                    'success_rate': 100.0
+                }
+            else:
+                FETCH_METRICS['source_statistics'][source_name]['articles'] += len(articles)
+        else:
+            FETCH_METRICS['empty_sources'].append(source_name)
+        
         logger.info(f"Successfully fetched {len(articles)} articles from {source_name} (limited from {len(feed.entries)})")
         return articles
         
     except Exception as e:
         logger.error(f"Exception fetching RSS feed {source_name}: {e}")
         failed_urls.add(feed_url)
+        FETCH_METRICS['failed_sources'].append(source_name)
         return []
 
 def fetch_article_content(article, max_retries=2):
@@ -502,9 +541,10 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
         tuple: (List of article dictionaries, Statistics dictionary)
     """
     # Reset tracking for this session
-    global attempted_urls, failed_urls
+    global attempted_urls, failed_urls, unique_article_urls
     attempted_urls = set()
     failed_urls = set()
+    unique_article_urls = set()
     
     all_articles = []
     stats = {
@@ -573,6 +613,10 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
                 logger.error(f"Error processing source {source_name}: {e}")
                 stats['failed_sources'] += 1
                 stats['sources'][source_name] = 0
+                
+                # Update metrics for exceptions
+                if source_name not in FETCH_METRICS['failed_sources']:
+                    FETCH_METRICS['failed_sources'].append(source_name)
     
     # Fetch full content in parallel if requested
     if fetch_content and all_articles:
@@ -680,13 +724,20 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
                 logger.warning(f"Slow article: {art['title']} from {art['source']} - {art['time']:.2f}s")
     
     # Calculate processing time
-    stats['processing_time'] = time.time() - start_time
+    processing_time = time.time() - start_time
+    stats['processing_time'] = processing_time
+    
+    # Update global metrics
+    FETCH_METRICS['processing_time'] = processing_time
     
     # Log a summary of statistics
     logger.info(f"News fetching completed in {stats['processing_time']:.2f} seconds")
     logger.info(f"Sources: {stats['successful_sources']}/{stats['total_sources']} successful")
     logger.info(f"Articles: {stats['total_articles_found']} found, {stats.get('articles_with_content', 0)} with content")
     logger.info(f"Failed content fetches: {stats.get('failed_content_fetches', 0)}")
+    
+    # Print a comprehensive summary of the run
+    logger.info(print_metrics_summary())
     
     # Clean up WebDriver if it was created
     if _driver is not None:
@@ -746,10 +797,12 @@ def fetch_articles_from_all_feeds(max_articles_per_source=5):
         # Now call fetch_news_articles with the flattened dictionary
         # Use improved parameters: limit articles per feed, use parallel processing
         max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 8)
+        max_articles = SYSTEM_SETTINGS.get("max_articles_per_feed", max_articles_per_source)
+        
         result = fetch_news_articles(
             flat_feeds, 
             fetch_content=True,
-            max_articles_per_feed=max_articles_per_source,
+            max_articles_per_feed=max_articles,
             max_workers=max_workers
         )
         
