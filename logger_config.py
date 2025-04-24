@@ -33,14 +33,38 @@ FETCH_METRICS = {
     },
     'content_statistics': {
         'total_length': 0,
-        'average_length': 0,
-        'articles_with_content': 0,
-        'articles_without_content': 0
+        'average_length': 0
+    },
+    'error_counts': {
+        'parse_errors': 0,
+        'fetch_errors': 0,
+        'timeout_errors': 0
     }
 }
 
-def reset_metrics():
-    """Reset metrics for a new run."""
+def update_metrics(metric_name: str, value: Any) -> None:
+    """Update the metrics dictionary with a new value."""
+    if isinstance(value, (int, float)):
+        if metric_name not in FETCH_METRICS:
+            FETCH_METRICS[metric_name] = 0
+        FETCH_METRICS[metric_name] += value
+    elif isinstance(value, (list, set)):
+        if metric_name not in FETCH_METRICS:
+            FETCH_METRICS[metric_name] = []
+        FETCH_METRICS[metric_name].extend(value)
+    elif isinstance(value, dict):
+        if metric_name not in FETCH_METRICS:
+            FETCH_METRICS[metric_name] = {}
+        FETCH_METRICS[metric_name].update(value)
+    else:
+        FETCH_METRICS[metric_name] = value
+
+def get_metrics() -> Dict:
+    """Get the current metrics."""
+    return FETCH_METRICS
+
+def reset_metrics() -> None:
+    """Reset all metrics to their default values."""
     global FETCH_METRICS
     FETCH_METRICS = {
         'sources_checked': 0,
@@ -65,9 +89,12 @@ def reset_metrics():
         },
         'content_statistics': {
             'total_length': 0,
-            'average_length': 0,
-            'articles_with_content': 0,
-            'articles_without_content': 0
+            'average_length': 0
+        },
+        'error_counts': {
+            'parse_errors': 0,
+            'fetch_errors': 0,
+            'timeout_errors': 0
         }
     }
 
@@ -93,53 +120,17 @@ def categorize_article_age(publish_date: datetime) -> str:
 def print_metrics_summary() -> str:
     """Print a detailed summary of the metrics from the current run."""
     stats = []
-    stats.append("\n=== Newsletter Fetch Statistics ===\n")
     
-    # Source statistics
-    stats.append(f"Sources Processed: {FETCH_METRICS['sources_checked']}")
-    stats.append(f"├─ Successful: {FETCH_METRICS['successful_sources']}")
-    stats.append(f"├─ Failed: {len(FETCH_METRICS['failed_sources'])}")
-    stats.append(f"└─ Empty: {len(FETCH_METRICS['empty_sources'])}")
+    # Add core metrics
+    stats.append("📊 Newsletter Generation Summary:")
+    stats.append(f"├─ Sources checked: {FETCH_METRICS['sources_checked']}")
+    stats.append(f"├─ Successful sources: {FETCH_METRICS['successful_sources']}")
+    stats.append(f"├─ Total articles processed: {FETCH_METRICS['total_articles']}")
+    stats.append(f"├─ Processing time: {FETCH_METRICS['processing_time']:.2f}s")
     
-    # Article statistics
-    stats.append(f"\nArticles:")
-    stats.append(f"├─ Total found: {FETCH_METRICS['total_articles']}")
-    stats.append(f"├─ Duplicates removed: {FETCH_METRICS['duplicate_articles']}")
-    stats.append(f"├─ With content: {FETCH_METRICS['content_statistics']['articles_with_content']}")
-    stats.append(f"└─ Without content: {FETCH_METRICS['content_statistics']['articles_without_content']}")
-    
-    # Content statistics
-    if FETCH_METRICS['content_statistics']['articles_with_content'] > 0:
-        avg_length = FETCH_METRICS['content_statistics']['average_length']
-        stats.append(f"\nContent Statistics:")
-        stats.append(f"├─ Average length: {avg_length:.0f} characters")
-        stats.append(f"└─ Total content: {FETCH_METRICS['content_statistics']['total_length']/1000:.1f}K characters")
-    
-    # Age distribution
-    stats.append("\nArticle Age Distribution:")
-    age_stats = FETCH_METRICS['article_ages']
-    total_aged = sum(age_stats.values())
-    if total_aged > 0:
-        for age, count in age_stats.items():
-            percentage = (count / total_aged) * 100
-            stats.append(f"├─ {age.replace('_', ' ').title()}: {count} ({percentage:.1f}%)")
-    
-    # Performance metrics
-    stats.append(f"\nPerformance:")
-    stats.append(f"├─ Total processing time: {FETCH_METRICS['processing_time']:.1f}s")
-    stats.append(f"├─ Average fetch time: {FETCH_METRICS['average_article_fetch_time']:.2f}s")
-    stats.append(f"├─ Browser instances created: {FETCH_METRICS['browser_instances']}")
-    stats.append(f"└─ Browser reuse count: {FETCH_METRICS['driver_reuse_count']}")
-    
-    # Slow sources
-    if FETCH_METRICS['slow_sources']:
-        stats.append("\nSlow Sources (>5s):")
-        for source in FETCH_METRICS['slow_sources'][:5]:  # Show top 5
-            stats.append(f"├─ {source['source']}: {source['time']:.1f}s")
-    
-    # Failed sources
+    # Add error statistics if any
     if FETCH_METRICS['failed_sources']:
-        stats.append("\nFailed Sources:")
+        stats.append(f"\n❌ Failed Sources ({len(FETCH_METRICS['failed_sources'])}):")
         for source in FETCH_METRICS['failed_sources'][:5]:  # Show top 5
             stats.append(f"├─ {source}")
     
@@ -148,6 +139,7 @@ def print_metrics_summary() -> str:
 def setup_logger(name='ai_newsletter', level=None):
     """
     Set up and configure the logger with both console and file handlers.
+    Ensures consistent timezone handling across the application.
     
     Args:
         name (str): Logger name
@@ -175,8 +167,19 @@ def setup_logger(name='ai_newsletter', level=None):
     
     logger.setLevel(level)
     
-    # Create a formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # Create a formatter with timezone-aware timestamps
+    class TimeZoneFormatter(logging.Formatter):
+        def converter(self, timestamp):
+            dt = datetime.fromtimestamp(timestamp)
+            return dt.replace(tzinfo=pytz.UTC).astimezone(DEFAULT_TZ)
+            
+        def formatTime(self, record, datefmt=None):
+            dt = self.converter(record.created)
+            if datefmt:
+                return dt.strftime(datefmt)
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+    
+    formatter = TimeZoneFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
     # Create and add console handler
     console_handler = logging.StreamHandler(sys.stdout)
