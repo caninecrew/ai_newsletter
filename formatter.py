@@ -6,7 +6,7 @@ import hashlib
 import pytz
 from dateutil import parser
 import pandas as pd
-from logger_config import setup_logger
+from logger_config import setup_logger, DEFAULT_TZ
 from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 
 # Set up logger
@@ -119,7 +119,7 @@ def identify_tags(article: Dict) -> List[str]:
         "AI": ["ai", "artificial intelligence", "machine learning", "neural network", "deep learning", "chatgpt", "llm"],
         "Technology": ["tech", "technology", "software", "hardware", "digital", "computer", "programming"],
         "Business": ["business", "company", "corporate", "industry", "market", "economy", "startup"],
-        "Civic Affairs": ["civic", "community", "local government", "municipal", "city council", "town hall"],
+        "Civic Affairs": ["civic", "community", "local government", "municipal", "city council"],
         "Tennessee": ["tennessee", "nashville", "memphis", "knoxville", "chattanooga"],
         "Global Missions": ["mission", "missionary", "global mission", "church mission", "outreach"],
         "Outdoor": ["outdoor", "nature", "hiking", "camping", "wildlife", "conservation", "environment"],
@@ -155,63 +155,47 @@ def identify_tags(article: Dict) -> List[str]:
     return list(set(matched_tags))  # Remove duplicates
 
 def format_date(date_str: str) -> str:
-    """
-    Format a date string into a clean, human-readable format.
-    Handles various input date formats and simplifies them.
-    
-    Args:
-        date_str: Original date string
-        
-    Returns:
-        Formatted date in "April 23, 2025" or similar format
-    """
+    """Format a date string into a human-readable format"""
     if not date_str:
-        return "Date unavailable"
-    
+        return "Unknown Date"
+        
     try:
-        # Try different parsing strategies
-        parsed_date = None
-        try:
-            # Common format in feedparser: Tue, 23 Apr 2025 14:23:45 +0000
-            parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z")
-        except ValueError:
+        if isinstance(date_str, datetime):
+            parsed_date = date_str
+        else:
+            # Try parsing with dateutil first
             try:
-                # ISO format: 2025-04-23T14:23:45Z or 2025-04-23T14:23:45+00:00
-                if 'T' in date_str:
-                    if date_str.endswith('Z'):
-                        parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-                    elif '+' in date_str or '-' in date_str[10:]:  # Has timezone
-                        try:
-                            parsed_date = datetime.fromisoformat(date_str)
-                        except:
-                            parsed_date = datetime.strptime(date_str[:19], "%Y-%m-%dT%H:%M:%S")
-                    else:
-                        parsed_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-                else:
-                    # Basic format: 2025-04-23 14:23:45
-                    parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                try:
-                    # Another common format: Wed, 23 Apr 2025 14:23:45 GMT
-                    parsed_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
-                except ValueError:
+                parsed_date = parser.parse(date_str)
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
+            except:
+                # Fall back to manual parsing if dateutil fails
+                formats = [
+                    '%Y-%m-%dT%H:%M:%S%z',  # ISO format with timezone
+                    '%Y-%m-%d %H:%M:%S%z',   # Similar but with space
+                    '%a, %d %b %Y %H:%M:%S %z',  # RFC format
+                    '%Y-%m-%d %H:%M:%S',     # Without timezone
+                    '%Y-%m-%d',              # Just date
+                ]
+                
+                for fmt in formats:
                     try:
-                        # Try format with abbreviated month: 23 Apr 2025 14:23:45
-                        parsed_date = datetime.strptime(date_str, "%d %b %Y %H:%M:%S")
+                        parsed_date = datetime.strptime(date_str, fmt)
+                        if parsed_date.tzinfo is None:
+                            parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
+                        break
                     except ValueError:
-                        try:
-                            # Last attempt - try to handle any format with dateutil
-                            from dateutil import parser
-                            parsed_date = parser.parse(date_str)
-                        except:
-                            # If all parsing attempts fail, return the original string
-                            return date_str
-                            
-        # Format the date nicely
+                        continue
+                else:
+                    # If all formats fail, return original
+                    return date_str
+
+        # Convert to DEFAULT_TZ for display
+        parsed_date = parsed_date.astimezone(DEFAULT_TZ)
         return parsed_date.strftime("%B %d, %Y")
         
-    except Exception:
-        # Fall back to original if any error occurs
+    except Exception as e:
+        logger.warning(f"Date parsing error: {e}")
         return date_str
 
 def format_article(article: Dict, html: bool = False) -> str:
@@ -773,11 +757,11 @@ def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional
     Returns:
         List of filtered articles
     """
-    # Calculate cutoff time
+    # Calculate cutoff time in DEFAULT_TZ
     if hours is not None:
-        cutoff_time = datetime.now(pytz.UTC) - timedelta(hours=hours)
+        cutoff_time = datetime.now(DEFAULT_TZ) - timedelta(hours=hours)
     else:
-        cutoff_time = datetime.now(pytz.UTC) - timedelta(days=days)
+        cutoff_time = datetime.now(DEFAULT_TZ) - timedelta(days=days)
     
     filtered = []
     skipped_count = 0
@@ -819,14 +803,14 @@ def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional
                     
                 # Ensure timezone awareness
                 if parsed_date.tzinfo is None:
-                    parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+                    parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
             else:
                 # Handle string dates
                 try:
                     # Try dateutil parser first
                     parsed_date = parser.parse(str(pub_date))
                     if parsed_date.tzinfo is None:
-                        parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
+                        parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
                 except Exception as e:
                     logger.warning(f"Could not parse date: {pub_date} for article: {article.get('title', 'No title')}: {e}")
                     # Include article with unparseable date rather than dropping it
@@ -834,8 +818,8 @@ def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional
                     parsing_errors += 1
                     continue
             
-            # Standardize to UTC for comparison
-            parsed_date = parsed_date.astimezone(pytz.UTC)
+            # Convert to DEFAULT_TZ for comparison
+            parsed_date = parsed_date.astimezone(DEFAULT_TZ)
             
             # Compare dates and add to filtered list if recent enough
             if parsed_date >= cutoff_time:
