@@ -4,6 +4,10 @@ import sys
 from concurrent_log_handler import ConcurrentRotatingFileHandler
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
+import pytz
+
+# Define default timezone constant
+DEFAULT_TZ = pytz.timezone('America/Chicago')  # From SYSTEM_SETTINGS['default_timezone']
 
 # Expand metrics tracking
 FETCH_METRICS = {
@@ -180,7 +184,7 @@ def setup_logger(name='ai_newsletter', level=None):
     logger.addHandler(console_handler)
     
     # Create and add file handler with rotation
-    today = datetime.now().strftime('%Y%m%d')
+    today = datetime.now(DEFAULT_TZ).strftime('%Y%m%d')
     log_filename = f'logs/newsletter_{today}.log'
     
     # Use ConcurrentRotatingFileHandler to handle concurrent writes
