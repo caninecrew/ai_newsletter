@@ -10,7 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
-import datetime
+from datetime import datetime, timezone, timedelta
 import dateutil.parser
 import pytz
 import re
@@ -18,7 +18,7 @@ import time
 import random
 import logging
 import concurrent.futures
-from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
+from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary, DEFAULT_TZ
 from urllib.parse import urlparse, parse_qs, urlunparse
 from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS, USER_INTERESTS
 from collections import defaultdict
@@ -308,7 +308,6 @@ def parse_date(date_str, url=None):
             unit = time_ago_match.group(2).lower()
             
             now = datetime.now(DEFAULT_TZ)
-            
             if unit == 'minute':
                 return now - timedelta(minutes=value)
             elif unit == 'hour':
@@ -321,75 +320,46 @@ def parse_date(date_str, url=None):
                 return now - timedelta(days=value*30)  # Approximation
             elif unit == 'year':
                 return now - timedelta(days=value*365)  # Approximation
-        
-        # Remove timezone abbreviations in parentheses
-        date_str = re.sub(r'\s*\([A-Z]{1,5}\)\s*', ' ', date_str)
-        
-        # Replace month abbreviations with full names
-        month_mappings = {
-            'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
-            'Apr': 'April', 'Jun': 'June', 'Jul': 'July',
-            'Aug': 'August', 'Sep': 'September', 'Oct': 'October',
-            'Nov': 'November', 'Dec': 'December'
-        }
-        for abbr, full in month_mappings.items():
-            date_str = re.sub(fr'\b{abbr}\b', full, date_str)
-        
-        # Try to extract date from HTML meta tags if URL is provided
-        if url and not time_ago_match:
+
+        # Try parsing with dateutil first
+        try:
+            parsed_date = dateutil.parser.parse(date_str)
+            # If naive, assume UTC
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+            # Convert to configured timezone
+            return parsed_date.astimezone(DEFAULT_TZ)
+        except Exception as e:
+            logger.debug(f"dateutil.parser failed: {e}")
+            
+            # Fall back to manual datetime parsing
             try:
-                response = secure_session.get(url, timeout=5)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Check common meta tag formats
-                meta_tags = [
-                    ('meta[property="article:published_time"]', 'content'),
-                    ('meta[property="og:article:published_time"]', 'content'),
-                    ('meta[name="date"]', 'content'),
-                    ('meta[name="pubdate"]', 'content'),
-                    ('time[datetime]', 'datetime'),
-                    ('time[pubdate]', 'datetime')
+                # Try common formats
+                formats = [
+                    '%Y-%m-%dT%H:%M:%S%z',  # ISO format with timezone
+                    '%Y-%m-%d %H:%M:%S%z',   # Similar but with space
+                    '%a, %d %b %Y %H:%M:%S %z',  # RFC format
+                    '%Y-%m-%d %H:%M:%S',     # Without timezone
+                    '%Y-%m-%d',              # Just date
                 ]
                 
-                for selector, attr in meta_tags:
-                    element = soup.select_one(selector)
-                    if element and element.get(attr):
-                        try:
-                            parsed_date = dateutil.parser.parse(element[attr])
-                            return normalize_datetime(parsed_date)
-                        except:
-                            continue
-                            
-            except Exception as e:
-                logger.debug(f"Failed to extract date from HTML: {str(e)}")
-        
-        # Try parsing with dateutil
-        parsed_date = dateutil.parser.parse(date_str)
-        
-        # Normalize timezone
-        return normalize_datetime(parsed_date)
-        
+                for fmt in formats:
+                    try:
+                        parsed_date = datetime.strptime(date_str, fmt)
+                        if parsed_date.tzinfo is None:
+                            parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                        return parsed_date.astimezone(DEFAULT_TZ)
+                    except ValueError:
+                        continue
+                        
+                raise ValueError("No manual format matched")
+                
+            except Exception as e2:
+                logger.debug(f"Manual parsing failed: {e2}")
+                raise
+                
     except Exception as e:
         logger.warning(f"Failed to parse date '{original_date_str}'{' for ' + url if url else ''}: {e}")
-        
-        # Try alternate date formats
-        date_formats = [
-            '%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y',
-            '%b %d, %Y', '%B %d, %Y', '%d %b %Y', '%d %B %Y',
-            '%m-%d-%Y', '%m/%d/%Y', '%Y-%m-%dT%H:%M:%S',
-            '%Y-%m-%d %H:%M:%S'
-        ]
-        
-        for fmt in date_formats:
-            try:
-                parsed_date = datetime.strptime(date_str, fmt)
-                # Normalize timezone
-                return normalize_datetime(parsed_date)
-            except ValueError:
-                continue
-        
-        # If all parsing attempts fail, use current time
-        logger.error(f"Could not parse date '{original_date_str}' in any format{' for ' + url if url else ''}")
         return datetime.now(DEFAULT_TZ)
 
 def normalize_datetime(dt):
