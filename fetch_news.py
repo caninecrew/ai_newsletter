@@ -308,6 +308,7 @@ def parse_date(date_str, url=None):
             unit = time_ago_match.group(2).lower()
             
             now = datetime.now(DEFAULT_TZ)
+            
             if unit == 'minute':
                 return now - timedelta(minutes=value)
             elif unit == 'hour':
@@ -326,7 +327,7 @@ def parse_date(date_str, url=None):
             parsed_date = dateutil.parser.parse(date_str)
             # If naive, assume UTC
             if parsed_date.tzinfo is None:
-                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
             # Convert to configured timezone
             return parsed_date.astimezone(DEFAULT_TZ)
         except Exception as e:
@@ -347,7 +348,7 @@ def parse_date(date_str, url=None):
                     try:
                         parsed_date = datetime.strptime(date_str, fmt)
                         if parsed_date.tzinfo is None:
-                            parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                            parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
                         return parsed_date.astimezone(DEFAULT_TZ)
                     except ValueError:
                         continue
