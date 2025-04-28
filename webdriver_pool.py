@@ -21,8 +21,8 @@ except ImportError:
     logger = logging.getLogger('webdriver_pool')
 
 
-# Pool settings
-_POOL_SIZE = 4  # Adjust based on memory/CPU resources
+# Pool settings - Adjusted for GitHub Actions Runner (4 vCPU)
+_POOL_SIZE = 3  # Keep slightly below vCPU count
 _pool = Queue(maxsize=_POOL_SIZE)
 
 # User Agents to rotate
@@ -34,45 +34,58 @@ USER_AGENTS = [
 ]
 
 def _create_driver() -> webdriver.Chrome:
-    """Creates a new WebDriver instance with specified options."""
+    """Creates a new WebDriver instance with specified options for GitHub Actions."""
     attempt = 0
     max_attempts = 3
     while attempt < max_attempts:
         try:
             opts = webdriver.ChromeOptions()
-            opts.add_argument("--headless=new")
-            opts.add_argument("--no-sandbox")
-            opts.add_argument("--disable-dev-shm-usage")
-            opts.add_argument("--disable-gpu") # Often needed for headless mode
-            opts.add_argument("--window-size=1920,1080") # Set a common window size
+            # --- GitHub Actions Specific Flags ---
+            opts.add_argument("--headless=new")      # Modern headless
+            opts.add_argument("--disable-dev-shm-usage") # Overcome limited resource problems
+            opts.add_argument("--no-sandbox")        # Runner is already sandboxed
+            # opts.add_argument("--single-process") # May help on low-resource, test if needed
+            opts.page_load_strategy = "eager"       # Don't wait for full page load (ads, trackers)
+            # -------------------------------------
+            opts.add_argument("--disable-gpu")
+            opts.add_argument("--window-size=1920,1080")
 
-            # Masking options
+            # --- Masking & Performance Flags ---
             user_agent = random.choice(USER_AGENTS)
             opts.add_argument(f"--user-agent={user_agent}")
-            opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+            opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
             opts.add_experimental_option('useAutomationExtension', False)
-            opts.add_argument("--disable-blink-features=AutomationControlled") # More robust way to disable automation detection
+            opts.add_argument("--disable-blink-features=AutomationControlled")
+            opts.add_argument('--log-level=3')
+            opts.add_argument("--blink-settings=imagesEnabled=false") # Disable images
+            opts.add_argument("--disable-extensions")             # Disable extensions
+            # -----------------------------------
 
-            # Suppress console logs from Chrome/WebDriver
-            opts.add_experimental_option('excludeSwitches', ['enable-logging'])
-            opts.add_argument('--log-level=3') # Suppress logs further
-
-            # Service configuration (optional, WebDriverManager usually handles this)
+            # Service configuration
             try:
-                # Ensure WebDriver Manager logs are suppressed or managed if needed
-                # Example: Redirect stderr temporarily if it's too noisy
-                # Note: This might require more complex handling depending on the environment
                 os.environ['WDM_LOG_LEVEL'] = '0' # Suppress WebDriver Manager logs
+                # Check if chromedriver is already available in PATH (common in GH Actions)
+                chromedriver_path = os.getenv("CHROMEWEBDRIVER") # GH Actions often sets this
+                if chromedriver_path and os.path.exists(os.path.join(chromedriver_path, 'chromedriver')):
+                     logger.info("Using chromedriver from environment variable CHROMEWEBDRIVER")
+                     service = Service(executable_path=os.path.join(chromedriver_path, 'chromedriver'))
+                else:
+                     logger.info("CHROMEWEBDRIVER not found or invalid, using WebDriverManager to install.")
+                     service = Service(ChromeDriverManager().install())
 
-                service = Service(ChromeDriverManager().install())
                 driver = webdriver.Chrome(service=service, options=opts)
                 logger.info("WebDriver instance created successfully.")
-                # Optional: Execute script to further hide automation state
+
+                # --- Set Timeouts --- 
+                driver.set_page_load_timeout(30) # Increased timeout
+                driver.set_script_timeout(30)  # Increased timeout
+                # --------------------
+
                 driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 return driver
             except Exception as driver_exc:
                  logger.error(f"Error creating WebDriver service or instance: {driver_exc}")
-                 raise # Re-raise after logging
+                 raise
 
         except Exception as e:
             attempt += 1
