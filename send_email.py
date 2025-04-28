@@ -4,14 +4,14 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr, formatdate
 import os
 from dotenv import load_dotenv
-from logger_config import setup_logger, DEFAULT_TZ
+from logger_config import setup_logger
 import ssl
 import certifi
 from config import EMAIL_SETTINGS
 import time
 from socket import error as socket_error
 from datetime import datetime
-import pytz
+from dateutil import tz as dateutil_tz
 
 # Set up logger
 logger = setup_logger()
@@ -24,6 +24,9 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5
 KEEPALIVE_INTERVAL = 60
 SMTP_TIMEOUT = 30
+
+# Define Central timezone
+CENTRAL = dateutil_tz.gettz("America/Chicago")
 
 def setup_email_settings():
     """Initialize email settings from environment variables"""
@@ -61,7 +64,7 @@ def create_smtp_connection(smtp_settings):
 
 def send_email(subject, body, recipients, smtp_settings, retry_count=0):
     """
-    Send an email with proper timezone handling for headers.
+    Send an email with proper timezone handling for headers using CENTRAL.
     
     Args:
         subject: Email subject
@@ -81,9 +84,9 @@ def send_email(subject, body, recipients, smtp_settings, retry_count=0):
         msg['From'] = formataddr(('AI Newsletter', smtp_settings['sender']))
         msg['To'] = ', '.join(recipients)
         
-        # Set timezone-aware Date header
-        now = datetime.now(DEFAULT_TZ)
-        msg['Date'] = formatdate(float(now.timestamp()), localtime=True)
+        # Set timezone-aware Date header using CENTRAL
+        now = datetime.now(CENTRAL)
+        msg['Date'] = formatdate(now.timestamp(), localtime=True)
         
         # Add body
         msg.attach(MIMEText(body, 'html'))
