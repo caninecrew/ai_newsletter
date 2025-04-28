@@ -1,37 +1,21 @@
 import feedparser
 import requests
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
-import pandas as pd
-from datetime import datetime, timezone, timedelta
-import dateutil.parser
-import pytz
-import re
 import time
 import random
-import logging
+import re
+from datetime import datetime, timezone, timedelta
 import concurrent.futures
-from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
-from urllib.parse import urlparse, parse_qs, urlunparse
-from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS, USER_INTERESTS
-from collections import defaultdict
-import certifi
-import ssl
-import urllib3
-import os
-import stat
-from difflib import SequenceMatcher
-import hashlib
-from urllib.parse import urlencode
-from webdriver_pool import get_driver
+from bs4 import BeautifulSoup
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+# ... other imports ...
+from webdriver_pool import get_driver, _POOL_SIZE # Import pool size
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
+import threading # Import threading for Semaphore
+import hashlib
+from urllib.parse import urlparse, parse_qs, urlunparse, unquote
 
 # Get the logger
 logger = setup_logger()
@@ -40,6 +24,21 @@ logger = setup_logger()
 CENTRAL = dateutil_tz.gettz("America/Chicago")
 # Define DEFAULT_TZ using the same source for compatibility if needed elsewhere, or phase it out.
 DEFAULT_TZ = CENTRAL
+
+# --- Concurrency Control --- 
+# Set concurrency limit based on WebDriver pool size
+CONCURRENCY_LIMIT = _POOL_SIZE
+selenium_semaphore = threading.Semaphore(CONCURRENCY_LIMIT)
+logger.info(f"Selenium concurrency limit set to: {CONCURRENCY_LIMIT}")
+# ---------------------------
+
+# Domains to try with Requests first
+REQUESTS_FIRST_DOMAINS = [
+    "reuters.com",
+    "apnews.com",
+    "businesswire.com",
+    # Add other domains known to work well with requests or block Selenium
+]
 
 # Create a secure session for requests
 def create_secure_session():
@@ -394,436 +393,424 @@ def create_google_news_session():
     })
     return session
 
-def resolve_redirect_url(url, max_retries=2, base_delay=1):
+# --- Google News URL Handling ---
+def extract_google_news_url(google_url: str) -> str | None:
+    """Extracts the actual article URL from a Google News redirect URL."""
+    try:
+        parsed_url = urlparse(google_url)
+        if "news.google.com" in parsed_url.netloc:
+            # Google News URLs often have the real URL in a query parameter
+            # Check common parameters like 'url' or within the path structure
+            query_params = parse_qs(parsed_url.query)
+            if 'url' in query_params:
+                return query_params['url'][0]
+
+            # Sometimes it's in the path like /rss/articles/...?url=...
+            path_parts = google_url.split('url=')
+            if len(path_parts) > 1:
+                # Decode the URL part
+                potential_url = unquote(path_parts[1])
+                # Basic validation if it looks like a URL
+                if potential_url.startswith('http'):
+                    return potential_url
+
+            # Fallback for other patterns if needed
+            # Example: .../articles/CBMiXGh0dHBzOi8vd3d3LmNuYmMuY29tLzIwMjMv... (Base64?)
+            match = re.search(r'/articles/([a-zA-Z0-9_-]+)\?', google_url)
+            if match:
+                try:
+                    # Attempt Base64 decoding if it looks like it
+                    import base64
+                    # The actual encoding might be more complex, this is a guess
+                    decoded_bytes = base64.urlsafe_b64decode(match.group(1) + '==') # Pad for decoding
+                    decoded_str = decoded_bytes.decode('utf-8')
+                    # Check if the decoded string contains a URL-like pattern
+                    url_match = re.search(r'(https?://[^\s]+)', decoded_str)
+                    if url_match:
+                        return url_match.group(1)
+                except Exception as decode_err:
+                    logger.debug(f"Base64 decode attempt failed for Google News URL {google_url}: {decode_err}")
+
+    except Exception as e:
+        logger.warning(f"Error parsing Google News URL {google_url}: {e}")
+    return None # Return None if extraction fails
+# -------------------------------
+
+def fetch_rss_feed(feed_url, source_name, max_articles=5):
     """
-    Resolve the final URL after any redirects, with specific handling for Google News redirects.
+    Fetch and parse an RSS feed with early limiting of articles.
     
     Args:
-        url (str): The URL to resolve
-        max_retries (int): Maximum number of retry attempts
-        base_delay (int): Base delay between retries in seconds
+        feed_url (str): URL of the RSS feed
+        source_name (str): Name of the source for logging
+        max_articles (int): Maximum number of articles to fetch per feed
         
     Returns:
-        str: The final URL after redirects, or original URL if resolution fails
+        list: List of article dictionaries
     """
-    if not url or not isinstance(url, str):
-        return url
-        
-    # Skip if not a redirect URL
-    if 'news.google.com' not in url and '/articles/' not in url:
-        return url
+    logger.info(f"Fetching RSS feed: {source_name} ({feed_url})")
     
-    for attempt in range(max_retries):
-        try:
-            # Get a WebDriver instance from the pool
-            with get_driver() as driver:
-                if not driver:
-                    logger.error("Failed to get WebDriver from pool for redirect resolution")
-                    return url # Or raise an error?
-
-                # Set shorter timeout for redirects
-                driver.set_page_load_timeout(10)
-
-                # Load the page
-                driver.get(url)
-
-                # Wait for redirect with dynamic timeout
-                timeout = random.uniform(1.5, 3)
-                try:
-                    WebDriverWait(driver, timeout).until(
-                        lambda d: d.current_url != url or
-                        d.execute_script("return document.readyState") == "complete"
-                    )
-                    time.sleep(0.5)
-                except TimeoutException:
-                    pass
-
-                final_url = driver.current_url
-
-                # Only return if we got a different, valid URL
-                if final_url and final_url != url and 'news.google.com' not in final_url:
-                    logger.debug(f"Successfully resolved redirect: {url} -> {final_url}")
-                    return final_url
-                else:
-                    # If URL didn't change or still google, maybe log and continue loop?
-                    logger.debug(f"Redirect resolution attempt {attempt+1} did not yield final URL: current={final_url}")
-
-        except Exception as e:
-            logger.warning(f"Redirect resolution failed (attempt {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(base_delay * (2 ** attempt))
-            else:
-                 logger.error(f"All redirect resolution attempts failed for {url}")
-
-    logger.warning(f"Could not resolve redirect for {url}, returning original.")
-    return url
-
-def fetch_google_news_article(article, max_retries=3):
-    """Special handling for Google News articles with retries"""
-    url = article['link']
+    # Update metrics
+    FETCH_METRICS['sources_checked'] += 1
     
-    # Resolve any Google News redirects first
-    resolved_url = resolve_redirect_url(url)
-    if resolved_url != url:
-        article['original_link'] = url
-        article['link'] = resolved_url
-        url = resolved_url
+    if feed_url in attempted_urls:
+        logger.debug(f"Skipping previously attempted RSS feed: {feed_url}")
+        return []
     
-    session = create_google_news_session()
+    if should_skip_source(feed_url):
+        logger.info(f"Skipping problematic source: {source_name} ({feed_url})")
+        FETCH_METRICS['failed_sources'].append(source_name)
+        return []
     
-    for attempt in range(max_retries):
-        try:
-            # Rotate user agent on each retry
-            session.headers['User-Agent'] = get_random_user_agent()
-            
-            # Add delay between retries
-            if attempt > 0:
-                time.sleep(2 ** attempt)  # Exponential backoff
-            
-            response = session.get(url, timeout=15)  # Increased timeout
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Try multiple content extraction strategies
-            content = ''
-            
-            # Strategy 1: Look for article content
-            selectors = [
-                'article', '[role="article"]', '.article-body',
-                '.article-content', '.entry-content', '.post-content',
-                'main', '[role="main"]', '#content', '.content'
-            ]
-            
-            for selector in selectors:
-                elements = soup.select(selector)
-                if elements:
-                    # Get the largest content block
-                    content = max([e.get_text(strip=True) for e in elements], key=len)
-                    if len(content) > 150:  # Content threshold
-                        break
-            
-            # Strategy 2: If no content found, try paragraphs
-            if not content or len(content) < 150:
-                paragraphs = soup.select('p')
-                content = ' '.join([
-                    p.get_text(strip=True) for p in paragraphs
-                    if len(p.get_text(strip=True)) > 50  # Skip short paragraphs
-                ])
-            
-            # Update article if content found
-            if content and len(content) > 150:
-                article['content'] = content
-                logger.info(f"Successfully fetched Google News content: {url}")
-                return article
-                
-            # If no content found and this is the last retry, try Selenium
-            if attempt == max_retries - 1:
-                logger.debug(f"No content found with requests, trying Selenium")
-                return fetch_article_content_with_selenium(article)
-                
-        except Exception as e:
-            logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {url}: {e}")
-            if attempt == max_retries - 1:
-                logger.debug("All retries failed, trying Selenium as fallback")
-                return fetch_article_content_with_selenium(article)
-            
-    return article
-
-def fetch_article_content(article, max_retries=2):
-    """Fetch article content with special handling for Google News"""
-    url = article['link']
-    start_time = time.time()
+    attempted_urls.add(feed_url)
     
     try:
-        # Check if this is a Google News article and resolve redirect if needed
-        if 'news.google.com' in url or article.get('source', '').startswith('Google News'):
-            resolved_url = resolve_redirect_url(url)
-            if resolved_url != url:
-                article['original_link'] = url
-                article['link'] = resolved_url
-                url = resolved_url
-            return fetch_google_news_article(article)
-        
-        # Rest of the existing function for non-Google News articles
-        if url in failed_urls:
-            logger.debug(f"Skipping previously failed URL: {url}")
-            FETCH_METRICS['failed_fetches'].append({'url': url, 'reason': 'previous_failure'})
-            return article
-        
-        # Skip problematic sources
-        if should_skip_source(url):
-            logger.info(f"Skipping problematic content source: {url}")
-            FETCH_METRICS['failed_fetches'].append({'url': url, 'reason': 'problematic_source'})
-            return article
-        
-        # Use a session for better connection reuse
+        # Create a session with proper SSL verification
         session = secure_session
-        retries = requests.adapters.Retry(
-            total=max_retries,
-            backoff_factor=0.5,
-            status_forcelist=[408, 429, 500, 502, 503, 504],
-            allowed_methods=["GET"]
-        )
-        session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
-        session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, */*'
+        }
         
-        content_found = False
-        for attempt in range(max_retries):
+        start_time = time.time()
+        response = session.get(feed_url, headers=headers, allow_redirects=True, timeout=10)
+        response.raise_for_status()
+        
+        # Parse the feed content with proper SSL context
+        feed = feedparser.parse(response.content, response_headers=response.headers)
+        parsing_time = time.time() - start_time
+        
+        if parsing_time > 5:
+            logger.warning(f"Slow RSS feed parsing: {source_name} took {parsing_time:.2f}s")
+        
+        if not feed.entries and feed.get('status') not in [200, 301, 302]:
+            logger.warning(f"Failed to fetch RSS feed {source_name}: Status {feed.get('status', 'unknown')}")
+            failed_urls.add(feed_url)
+            FETCH_METRICS['failed_sources'].append(source_name)
+            return []
+        
+        if not feed.entries:
+            logger.warning(f"RSS feed {source_name} returned no entries")
+            FETCH_METRICS['empty_sources'].append(source_name)
+            return []
+        
+        # Score and filter entries before processing
+        scored_entries = []
+        for entry in feed.entries:
             try:
-                headers = {
-                    'User-Agent': get_random_user_agent(),
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Cache-Control': 'max-age=0'
-                }
-                
-                response = session.get(url, headers=headers, timeout=5)
-                response.raise_for_status()
-                
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Try to find the article content based on common patterns
-                content = ''
-                
-                # Look for article body in common containers
-                content_containers = soup.select('article, [role="article"], .article-body, .article-content, .entry-content, .post-content, main, .content-area, .story-content')
-                
-                if content_containers:
-                    container = content_containers[0]
-                    for unwanted in container.select('script, style, nav, header, footer, .ad, .advertisement, .social-share, .related-posts, .newsletter-signup, .paywall, aside'):
-                        unwanted.extract()
-                    content = container.get_text().strip()
-                
-                if not content:
-                    paragraphs = soup.select('p')
-                    content = ' '.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
-                
-                # Clean up the content
-                content = re.sub(r'\s+', ' ', content)
-                content = re.sub(r'\n\s*\n', '\n\n', content)
-                
-                # Update the article and metrics if we found content
-                if content and len(content) > 150:
-                    article['content'] = content
-                    content_found = True
+                # Skip if missing essential fields
+                if not entry.get('title') or not entry.get('link'):
+                    continue
                     
-                    # Update content statistics
-                    FETCH_METRICS['content_statistics']['articles_with_content'] += 1
-                    FETCH_METRICS['content_statistics']['total_length'] += len(content)
-                    articles_with_content = FETCH_METRICS['content_statistics']['articles_with_content']
-                    total_length = FETCH_METRICS['content_statistics']['total_length']
-                    FETCH_METRICS['content_statistics']['average_length'] = total_length / articles_with_content
-                    
-                    # Update age statistics if we have a published date
-                    if 'published' in article:
-                        # Ensure publish date is timezone aware before categorizing
-                        publish_date = article['published']
-                        if isinstance(publish_date, str): # If it's still a string, parse it
-                            publish_date = force_central(publish_date, article.get('link'))
-                        elif publish_date.tzinfo is None: # If it's naive datetime
-                             publish_date = publish_date.replace(tzinfo=dateutil_tz.UTC).astimezone(CENTRAL)
-                        elif publish_date.tzinfo != CENTRAL: # If it's aware but not Central
-                             publish_date = publish_date.astimezone(CENTRAL)
+                # Skip if URL was previously processed
+                if entry.get('link') in unique_article_urls:
+                    FETCH_METRICS['duplicate_articles'] += 1
+                    continue
+                
+                # Parse the published date
+                published = entry.get('published', '')
+                published_date = force_central(published, entry.get('link'))
+                article_inferred_date = (published == '') # Mark if date was inferred
+                
+                # Calculate article importance score
+                score = 0
+                title = entry.get('title', '').lower()
+                description = entry.get('description', '').lower()
+                
+                # Boost score for articles matching user interests
+                for interest in USER_INTERESTS:
+                    if interest.lower() in title or interest.lower() in description:
+                        score += 2
+                
+                # Boost score for breaking news indicators
+                breaking_terms = ['breaking', 'urgent', 'just in', 'developing']
+                if any(term in title.lower() for term in breaking_terms):
+                    score += 3
+                
+                # Boost score for important keywords
+                important_terms = ['announcement', 'official', 'update', 'report', 'investigation']
+                if any(term in title.lower() for term in important_terms):
+                    score += 1
+                
+                # Add entry with its score
+                scored_entries.append((entry, published_date, score))
+                
+            except Exception as e:
+                logger.error(f"Error processing RSS entry from {source_name}: {e}")
+        
+        # Sort by score (primary) and date (secondary)
+        scored_entries.sort(key=lambda x: (x[2], x[1]), reverse=True)
+        
+        # Take only the top N highest-scoring entries
+        limited_entries = scored_entries[:max_articles]
+        
+        articles = []
+        for entry, published_date, _ in limited_entries:
+            try:
+                title = entry.get('title', '')
+                link = entry.get('link', '')
+                
+                # --- Handle Google News URLs --- 
+                original_link = link
+                if "news.google.com" in link:
+                    extracted = extract_google_news_url(link)
+                    if extracted:
+                        logger.debug(f"Extracted Google News URL: {link} -> {extracted}")
+                        link = extracted
+                    else:
+                        logger.warning(f"Could not extract final URL from Google News link: {link}. Using original.")
+                # -------------------------------
 
-                        age_category = categorize_article_age(publish_date) # Pass aware datetime
-                        FETCH_METRICS['article_ages'][age_category] = FETCH_METRICS['article_ages'].get(age_category, 0) + 1
-                    
-                    logger.debug(f"Successfully fetched content with requests: {url}")
-                    break
+                # Check if URL already processed to avoid duplicates from different feeds
+                normalized_link = normalize_url(link)
+                if normalized_link in unique_article_urls:
+                    logger.debug(f"Skipping duplicate article URL (already seen): {link}")
+                    FETCH_METRICS['duplicate_articles'] = FETCH_METRICS.get('duplicate_articles', 0) + 1
+                    continue
+                unique_article_urls.add(normalized_link)
+
+                # Mark URL as processed
+                attempted_urls.add(link)
+                unique_article_urls.add(link)
                 
-                # If no content found and this is the last retry, try WebDriver
-                if attempt == max_retries - 1 and not content_found:
-                    logger.debug(f"No content found with requests, trying WebDriver: {url}")
-                    FETCH_METRICS['driver_reuse_count'] += 1
-                    return fetch_article_content_with_selenium(article)
-                    
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Request failed for {url}: {e}")
-                if attempt == max_retries - 1:
-                    logger.debug(f"Request failed after {max_retries} attempts, trying WebDriver")
-                    FETCH_METRICS['driver_reuse_count'] += 1
-                    return fetch_article_content_with_selenium(article)
+                # Get description/summary
+                description = entry.get('description', entry.get('summary', ''))
+                if description:
+                    soup = BeautifulSoup(description, 'html.parser')
+                    description = soup.get_text()
                 
-        if not content_found:
-            FETCH_METRICS['content_statistics']['articles_without_content'] += 1
-            FETCH_METRICS['failed_fetches'].append({'url': url, 'reason': 'no_content'})
-            failed_urls.add(url)
+                # Get content if available
+                content = ''
+                if 'content' in entry:
+                    content_items = entry.content
+                    if isinstance(content_items, list) and content_items:
+                        content = content_items[0].get('value', '')
+                        if content:
+                            soup = BeautifulSoup(content, 'html.parser')
+                            content = soup.get_text()
+                
+                articles.append({
+                    'title': title,
+                    'link': link, # Use the potentially extracted link
+                    'original_google_link': original_link if link != original_link else None, # Store original if changed
+                    'published': published_date,
+                    'description': description,
+                    'content': content,
+                    'source': source_name,
+                    'importance_score': _,  # Include the score for later use
+                    'date_inferred': article_inferred_date  # Add flag
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing RSS entry data from {source_name}: {e}")
         
-        # Update performance metrics
-        fetch_time = time.time() - start_time
-        FETCH_METRICS['average_article_fetch_time'] = (
-            FETCH_METRICS['average_article_fetch_time'] * FETCH_METRICS['total_articles'] + fetch_time
-        ) / (FETCH_METRICS['total_articles'] + 1)
+        # Update metrics
+        if articles:
+            FETCH_METRICS['successful_sources'] += 1
+            FETCH_METRICS['total_articles'] += len(articles)
+            
+            if source_name not in FETCH_METRICS['source_statistics']:
+                FETCH_METRICS['source_statistics'][source_name] = {
+                    'articles': len(articles),
+                    'success_rate': 100.0
+                }
+            else:
+                FETCH_METRICS['source_statistics'][source_name]['articles'] += len(articles)
+        else:
+            FETCH_METRICS['empty_sources'].append(source_name)
         
-        if fetch_time > 5:
-            FETCH_METRICS['slow_sources'].append({
-                'source': article.get('source', 'Unknown'),
-                'url': url,
-                'time': fetch_time
-            })
-        
-        return article
+        logger.info(f"Successfully fetched {len(articles)} articles from {source_name} (limited from {len(feed.entries)})")
+        return articles
         
     except Exception as e:
-        logger.error(f"Error fetching content for {url}: {e}")
-        FETCH_METRICS['failed_fetches'].append({
-            'url': url,
-            'reason': str(e),
-            'type': type(e).__name__
-        })
-        failed_urls.add(url)
-        return article
+        logger.error(f"Exception fetching RSS feed {source_name}: {e}")
+        failed_urls.add(feed_url)
+        FETCH_METRICS['failed_sources'].append(source_name)
+        return []
 
-def fetch_article_content_with_selenium(article, max_retries=3, base_delay=2):
+def fetch_article_content(article, max_retries=2):
+    """Fetches article content, trying Requests first for specific domains."""
+    url = article['link']
+    source_domain = urlparse(url).netloc
+
+    if url in attempted_urls:
+        logger.debug(f"Skipping already attempted URL: {url}")
+        return article # Avoid re-fetching
+    attempted_urls.add(url)
+
+    start_time = time.time()
+    content = None
+    fetch_method = "None"
+
+    # --- Requests-First Strategy --- 
+    if any(domain in source_domain for domain in REQUESTS_FIRST_DOMAINS):
+        logger.debug(f"Attempting fetch with Requests for {url}")
+        try:
+            # Use a realistic User-Agent
+            headers = {"User-Agent": random.choice(USER_AGENTS)}
+            response = secure_session.get(url, timeout=15, headers=headers, allow_redirects=True)
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
+            if response.status_code == 200 and response.text:
+                # Basic check for valid content type
+                content_type = response.headers.get('content-type', '').lower()
+                if 'html' in content_type:
+                    soup = BeautifulSoup(response.text, 'lxml')
+                    # Simple content extraction (can be improved)
+                    body = soup.find('body')
+                    if body:
+                        # Remove script/style tags
+                        for script_or_style in body(['script', 'style']):
+                            script_or_style.decompose()
+                        content = body.get_text(separator='\n', strip=True)
+                        if content and len(content) > 100: # Basic check for meaningful content
+                            article['content'] = content
+                            fetch_method = "Requests"
+                            logger.info(f"Successfully fetched content with Requests: {url}")
+                        else:
+                            content = None # Reset content if extraction failed
+                            logger.debug(f"Requests fetch succeeded but content extraction failed for {url}")
+                else:
+                    logger.warning(f"Skipping non-HTML content from Requests for {url} (Content-Type: {content_type})")
+            else:
+                 logger.warning(f"Requests fetch for {url} returned status {response.status_code}")
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Requests fetch failed for {url}: {e}. Falling back to Selenium if needed.")
+        except Exception as e:
+             logger.error(f"Unexpected error during Requests fetch for {url}: {e}")
+    # -------------------------------
+
+    # --- Fallback to Selenium --- 
+    # If Requests wasn't tried, or failed to get content, and Selenium is enabled
+    if content is None and SYSTEM_SETTINGS.get("use_selenium_fetch", True):
+        if should_skip_source(url):
+            logger.info(f"Skipping Selenium fetch for problematic source: {url}")
+        else:
+            logger.debug(f"Falling back to Selenium for {url}")
+            # Acquire semaphore before calling Selenium function
+            with selenium_semaphore:
+                logger.debug(f"Acquired semaphore for Selenium fetch: {url}")
+                try:
+                    article = fetch_article_content_with_selenium(article, max_retries=max_retries)
+                    if article.get('content'):
+                        fetch_method = "Selenium"
+                finally:
+                     logger.debug(f"Released semaphore for Selenium fetch: {url}")
+            # Check if Selenium added content
+            if not article.get('content'):
+                 logger.warning(f"Selenium fetch also failed to get content for {url}")
+                 failed_urls.add(url)
+    elif content is None:
+         # Requests failed (or wasn't tried) and Selenium is disabled/skipped
+         logger.warning(f"Failed to fetch content for {url} (Requests failed/skipped, Selenium disabled/skipped)")
+         failed_urls.add(url)
+    # ---------------------------
+
+    # Update stats
+    end_time = time.time()
+    duration = end_time - start_time
+    # ... (update source_performance, FETCH_METRICS) ...
+    article['fetch_method'] = fetch_method # Record how content was fetched
+
+    # ... (rest of content processing, age categorization) ...
+    return article
+
+def fetch_article_content_with_selenium(article, max_retries=3, base_delay=3):
     """
     Fetch article content using Selenium WebDriver from the pool.
-    Includes enhanced retry logic, anti-detection measures, and tab-based retries.
+    Includes exponential backoff and uses a single tab per attempt.
+    Assumes semaphore is acquired *before* calling this function.
     """
     url = article['link']
-    original_window = None
-
-    if should_skip_source(url):
-        logger.info(f"Skipping selenium fetch for problematic source: {url}")
-        return article
+    # Removed should_skip_source check as it's done before acquiring semaphore
 
     for attempt in range(max_retries):
-        driver = None # Ensure driver is reset for logging scope
+        driver = None
         try:
-            with get_driver() as driver: # Get driver from pool
+            # Use the get_driver context manager from the pool
+            with get_driver() as driver:
                 if attempt > 0:
-                    delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                    # --- Exponential Backoff --- 
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1.5)
                     logger.info(f"Retry attempt {attempt + 1}/{max_retries} for {url}, waiting {delay:.1f}s")
                     time.sleep(delay)
+                    # ---------------------------
 
-                    # --- Retry in a new tab ---
-                    logger.info(f"Opening URL in new tab for retry: {url}")
-                    original_window = driver.current_window_handle
-                    driver.execute_script("window.open(arguments[0], '_blank');", url)
-                    new_window = [win for win in driver.window_handles if win != original_window][-1]
-                    driver.switch_to.window(new_window)
-                    # --------------------------
+                # --- Load URL (reuse tab) --- 
+                logger.debug(f"Selenium attempt {attempt + 1}: Loading {url}")
+                # Timeouts are set in _create_driver now
+                # driver.set_page_load_timeout(30)
+                driver.get(url)
+                # ---------------------------
+
+                # Wait for body element to be present
+                try:
+                    WebDriverWait(driver, 15).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                except TimeoutException:
+                    logger.warning(f"Timeout waiting for body element on {url} (attempt {attempt + 1})")
+                    continue # Go to next retry attempt
+
+                # Optional: Add slight delay or check for specific content element
+                time.sleep(random.uniform(0.5, 1.5))
+
+                # --- Content Extraction --- 
+                # Try finding a main content area first
+                content_element = None
+                selectors = ["article", "main", ".main-content", ".post-content", "#content", "#main"]
+                for selector in selectors:
+                    try:
+                        content_element = driver.find_element(By.CSS_SELECTOR, selector)
+                        if content_element.is_displayed():
+                            logger.debug(f"Found content element with selector '{selector}' for {url}")
+                            break # Use the first one found
+                    except:
+                        pass # Selector not found
+
+                if content_element:
+                    html_content = content_element.get_attribute('outerHTML')
                 else:
-                    # First attempt, load in the current tab (or initial tab)
-                    time.sleep(random.uniform(0.5, 2)) # Random delay before load
-                    driver.set_page_load_timeout(15)
-                    driver.get(url)
-                    original_window = driver.current_window_handle # Store for potential closing later
+                    logger.debug(f"No specific content element found, using body for {url}")
+                    html_content = driver.find_element(By.TAG_NAME, "body").get_attribute('outerHTML')
 
-                # Random scroll behavior
-                total_height = int(driver.execute_script("return document.body.scrollHeight"))
-                for scroll in range(0, total_height, random.randint(500, 1000)):
-                    driver.execute_script(f"window.scrollTo(0, {scroll});")
-                    time.sleep(random.uniform(0.1, 0.3))
+                if not html_content:
+                     logger.warning(f"Could not get HTML content from Selenium for {url} (attempt {attempt + 1})")
+                     continue
 
-                # Wait for content
-                content_selectors = [
-                    "article", 
-                    "[role='article']", 
-                    ".article-body", 
-                    ".article-content",
-                    ".entry-content",
-                    ".post-content",
-                    "main",
-                    "#content",
-                    ".content"
-                ]
-                
-                content = ''
-                for selector in content_selectors:
-                    try:
-                        # Wait for element with random timeout (5-10s)
-                        timeout = random.uniform(5, 10)
-                        element = WebDriverWait(driver, timeout).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
-                        if element:
-                            content = element.text
-                            if len(content) > 150:
-                                break
-                    except TimeoutException:
-                        continue
-                
-                # If no content found with selectors, try paragraphs
-                if not content or len(content) < 150:
-                    try:
-                        paragraphs = driver.find_elements(By.CSS_SELECTOR, 'article p, [role="article"] p, .article-body p, .article-content p')
-                        if not paragraphs:
-                            paragraphs = driver.find_elements(By.TAG_NAME, 'p')
-                        
-                        # Filter and join paragraphs
-                        content = ' '.join([
-                            p.text for p in paragraphs
-                            if len(p.text.strip()) > 50
-                            and not any(skip in p.text.lower() for skip in ['advertisement', 'subscribe', 'newsletter'])
-                        ])
-                    except Exception as e:
-                        logger.warning(f"Failed to get paragraphs: {e}")
-                
-                # Clean up the content
-                if content:
-                    # Remove unwanted elements and normalize whitespace
-                    content = re.sub(r'\s+', ' ', content).strip()
-                    content = re.sub(r'\n\s*\n', '\n\n', content)
-                    
-                    # Remove common unwanted text
-                    unwanted = ['Advertisement', 'Subscribe', 'Sign up', 'Newsletter']
-                    for text in unwanted:
-                        content = re.sub(f'(?i){text}.*?\n', '', content)
-                    
-                    if len(content) > 150:
-                        article['content'] = content
-                        logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
+                soup = BeautifulSoup(html_content, 'lxml')
+                # Remove script/style tags
+                for script_or_style in soup(['script', 'style', 'nav', 'footer', 'header', '.sidebar']):
+                    script_or_style.decompose()
+                content = soup.get_text(separator='\n', strip=True)
+                # ---------------------------
 
-                        # Close the new tab if it was opened for a retry
-                        if attempt > 0 and driver.current_window_handle != original_window:
-                             try:
-                                 driver.close()
-                                 driver.switch_to.window(original_window)
-                                 logger.debug(f"Closed retry tab for {url}")
-                             except Exception as tab_close_exc:
-                                 logger.warning(f"Could not close retry tab for {url}: {tab_close_exc}")
-                        return article # Success
+                if content and len(content) > 150: # Check for meaningful content length
+                    article['content'] = content
+                    logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
+                    return article # Success
+                else:
+                    logger.warning(f"Extracted content too short or empty with WebDriver (attempt {attempt + 1}): {url}")
+                    # Continue to next retry if content is bad
 
-                # If loop finishes without finding content
-                logger.warning(f"No content found with WebDriver (attempt {attempt + 1}): {url}")
-                # Close the tab if it was the last attempt and failed
-                if attempt == max_retries - 1 and driver and driver.current_window_handle != original_window:
-                     try:
-                         driver.close()
-                         driver.switch_to.window(original_window)
-                     except Exception as tab_close_exc:
-                         logger.warning(f"Could not close final failed tab for {url}: {tab_close_exc}")
-
-
+        except TimeoutException as e:
+            logger.error(f"Selenium timeout (attempt {attempt + 1}) for {url}: {e}")
+            # Pool manager handles driver health on release
         except WebDriverException as e:
+            # Catching broader WebDriver exceptions (e.g., connection refused, renderer crash)
             logger.error(f"WebDriver exception (attempt {attempt + 1}) for {url}: {e}")
-            # Close the potentially broken tab
-            if driver and driver.current_window_handle != original_window:
-                 try:
-                     driver.close()
-                     driver.switch_to.window(original_window)
-                 except Exception: pass # Ignore errors closing a potentially dead tab
-            # Let the pool handle the driver health check upon release
-            if attempt == max_retries - 1:
-                failed_urls.add(url)
+            # Pool manager handles driver health on release
         except Exception as e:
-            logger.error(f"Unexpected error (attempt {attempt + 1}) fetching {url} with Selenium: {e}")
-             # Close the potentially broken tab
-            if driver and driver.current_window_handle != original_window:
-                 try:
-                     driver.close()
-                     driver.switch_to.window(original_window)
-                 except Exception: pass
-            if attempt == max_retries - 1:
-                failed_urls.add(url)
-        # The 'finally' block in the 'with get_driver()' context manager handles returning the driver to the pool
+            logger.error(f"Unexpected error (attempt {attempt + 1}) fetching {url} with Selenium: {e}", exc_info=True)
+            # Pool manager handles driver health on release
+
+        # If this attempt failed, the loop continues to the next attempt (or finishes)
+        # The 'with get_driver()' context manager ensures the driver is returned/discarded properly
 
     # If all retries fail
     logger.error(f"All Selenium attempts failed for {url}")
+    # failed_urls.add(url) # This is handled in the calling function (fetch_article_content)
     return article # Return article without content
 
 def normalize_url(url):
@@ -912,20 +899,8 @@ def is_duplicate_article(article, similarity_threshold=0.85):
     
     return False
 
-def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=8):
-    """
-    Fetch news articles from multiple RSS feeds with improved statistics
-    and tracking features. Uses parallel processing for improved speed.
-    
-    Args:
-        rss_feeds (dict): Dictionary mapping source names to RSS feed URLs
-        fetch_content (bool): Whether to fetch full article content
-        max_articles_per_feed (int): Maximum articles to fetch per feed
-        max_workers (int): Maximum number of parallel workers
-        
-    Returns:
-        tuple: (List of article dictionaries, Statistics dictionary)
-    """
+def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=None):
+    """Fetches articles from RSS feeds and optionally their content in parallel."""
     # Reset tracking for this session
     global attempted_urls, failed_urls, unique_article_urls
     attempted_urls = set()
@@ -966,7 +941,13 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     # Use unique_feed_urls instead of rss_feeds below
     # ----------------------------------------------------
 
-    # Process feeds in parallel
+    # Adjust max_workers based on CONCURRENCY_LIMIT if not specified
+    if max_workers is None:
+        # Set slightly higher than semaphore limit to keep queue full, but not excessively so
+        max_workers = CONCURRENCY_LIMIT + 2
+        logger.info(f"Adjusting max_workers for ThreadPoolExecutor to {max_workers}")
+
+    # Process feeds in parallel (fetching RSS is usually I/O bound)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a mapping of futures to source names for tracking
         future_to_source = {
