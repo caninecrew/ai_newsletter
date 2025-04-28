@@ -129,27 +129,44 @@ class WebDriverPool:
         """Get a driver from the pool with domain-aware rate limiting."""
         self._enforce_rate_limit(domain)
         
-        try:
-            driver = self.available_drivers.get(timeout=timeout)
-            
-            # Health check and replacement if needed
-            if not driver.is_healthy():
-                logger.warning("Unhealthy driver detected, creating replacement")
-                try:
-                    driver.driver.quit()
-                except Exception:
-                    pass
-                driver = self._create_driver()
-                if driver is None:
-                    raise WebDriverException("Failed to create replacement driver")
-            
-            driver.last_used = time.time()
-            driver.total_requests += 1
-            return driver
-            
-        except Empty:
-            logger.error("WebDriver pool exhausted")
-            raise WebDriverException("WebDriver pool exhausted")
+        end_time = time.time() + timeout
+        while True:
+            try:
+                remaining = max(0, end_time - time.time())
+                driver = self.available_drivers.get(timeout=remaining)
+                
+                # Health check and replacement if needed
+                if not driver.is_healthy():
+                    logger.warning("Unhealthy driver detected, creating replacement")
+                    try:
+                        driver.driver.quit()
+                    except Exception:
+                        pass
+                    driver = self._create_driver()
+                    if driver is None:
+                        if time.time() < end_time:
+                            continue  # Try again if there's time left
+                        raise WebDriverException("Failed to create replacement driver")
+                
+                driver.last_used = time.time()
+                driver.total_requests += 1
+                return driver
+                
+            except Empty:
+                if time.time() < end_time:
+                    # Try to create a new driver if there's time left
+                    driver = self._create_driver()
+                    if driver is not None:
+                        return driver
+                    time.sleep(0.1)  # Short sleep before retry
+                    continue
+                logger.error("WebDriver pool exhausted")
+                raise WebDriverException("WebDriver pool exhausted")
+            except Exception as e:
+                if time.time() < end_time:
+                    time.sleep(0.1)  # Short sleep before retry
+                    continue
+                raise
 
     def return_driver(self, driver: DriverWrapper):
         """Return a driver to the pool."""
