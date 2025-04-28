@@ -62,8 +62,8 @@ jobs:
           touch logs.txt
           # Set default news source if not provided
           NEWS_SOURCE=${NEWS_SOURCE:-rss}
-          # Update config.py with the specified news source
-          sed -i "s/PRIMARY_NEWS_SOURCE = \".*\"/PRIMARY_NEWS_SOURCE = \"$NEWS_SOURCE\"/" config.py
+          # Update ai_newsletter/config/settings.py with the specified news source
+          sed -i "s/PRIMARY_NEWS_SOURCE = \".*\"/PRIMARY_NEWS_SOURCE = \"$NEWS_SOURCE\"/" ai_newsletter/config/settings.py
           # Run with error handling
           python main.py || { echo "Script failed with exit code $?"; exit 1; }
           
