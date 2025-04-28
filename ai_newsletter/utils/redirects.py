@@ -141,86 +141,163 @@ def resolve_google_redirect(url, max_retries=2, timeout=10):
     
     return url
 
-def extract_article_content(url, timeout=15):
+def extract_article_content(url, timeout=15, max_retries=2):
     """
     Extract article content using newspaper3k with fallback to requests-html.
     
     Args:
         url (str): The article URL to process
         timeout (int): Request timeout in seconds
+        max_retries (int): Maximum number of retry attempts
         
     Returns:
         dict: Article data including title, text, and metadata
     """
-    try:
-        # Try newspaper3k first
-        article = Article(url)
-        article.download()
-        article.parse()
-        
-        # Basic validation of extracted content
-        if article.text and len(article.text.strip()) > 150:
-            return {
-                'title': article.title,
-                'text': article.text,
-                'authors': article.authors,
-                'publish_date': article.publish_date,
-                'top_image': article.top_image,
-                'meta_description': article.meta_description,
-                'fetch_method': 'newspaper'
-            }
-    except ArticleException as e:
-        logger.warning(f"newspaper3k extraction failed for {url}: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error during newspaper3k extraction: {e}")
+    for attempt in range(max_retries):
+        try:
+            # Try newspaper3k first
+            article = Article(url)
+            article.download(timeout=timeout)
+            article.parse()
+            
+            # Basic validation of extracted content
+            if article.text and len(article.text.strip()) > 150:
+                return {
+                    'title': article.title,
+                    'text': article.text,
+                    'authors': article.authors,
+                    'publish_date': article.publish_date,
+                    'top_image': article.top_image,
+                    'meta_description': article.meta_description,
+                    'keywords': article.keywords if hasattr(article, 'keywords') else None,
+                    'fetch_method': 'newspaper'
+                }
+                
+        except ArticleException as e:
+            logger.warning(f"newspaper3k extraction attempt {attempt + 1} failed for {url}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+        except Exception as e:
+            logger.warning(f"Unexpected error during newspaper3k extraction attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
     
     # Fallback to requests-html
     try:
-        session = HTMLSession()
+        session = create_html_session()
         r = session.get(url, timeout=timeout)
         
-        # Try to find article content
-        content = ""
+        # Try to find article content with different strategies
+        content = None
+        
+        # Strategy 1: Try common article selectors
         selectors = [
-            'article', 'main', '[role="article"]', '.article-content',
-            '.post-content', '.entry-content', '#article-body'
+            'article', 
+            'main article',
+            '[role="article"]', 
+            '.article-content',
+            '.post-content', 
+            '.entry-content', 
+            '#article-body',
+            '.story-content',
+            '.article-body',
+            '.content-body'
         ]
         
         for selector in selectors:
             elements = r.html.find(selector)
             if elements:
+                # Extract text from the first matching element
                 content = elements[0].text
                 if len(content.strip()) > 150:
                     break
         
-        # Fallback to p tags if no content found
+        # Strategy 2: Look for article content inside main element
         if not content:
-            paragraphs = r.html.find('p')
-            content = '\n'.join(p.text for p in paragraphs if len(p.text.strip()) > 50)
+            main_elements = r.html.find('main')
+            if main_elements:
+                content = main_elements[0].text
         
+        # Strategy 3: Fallback to intelligent paragraph aggregation
+        if not content or len(content.strip()) < 150:
+            paragraphs = r.html.find('p')
+            content_paragraphs = []
+            
+            for p in paragraphs:
+                text = p.text.strip()
+                # Only include substantive paragraphs
+                if len(text) > 50 and not any(skip in text.lower() for skip in [
+                    'cookie', 'privacy policy', 'terms of service', 'advertisement',
+                    'subscribe to our newsletter', 'sign up for our'
+                ]):
+                    content_paragraphs.append(text)
+            
+            if content_paragraphs:
+                content = '\n\n'.join(content_paragraphs)
+        
+        # Validate and return content if found
         if content and len(content.strip()) > 150:
+            # Extract additional metadata
+            title = None
+            meta_description = None
+            authors = []
+            publish_date = None
+            
+            # Try to get title
+            title_elements = r.html.find('title')
+            if title_elements:
+                title = title_elements[0].text
+            
+            # Try to get meta description
+            meta_elements = r.html.find('meta[name="description"]')
+            if meta_elements:
+                meta_description = meta_elements[0].attrs.get('content')
+            
+            # Try to find author information
+            author_selectors = [
+                '[rel="author"]',
+                '.author',
+                '.byline',
+                '[itemprop="author"]'
+            ]
+            for selector in author_selectors:
+                author_elements = r.html.find(selector)
+                if author_elements:
+                    authors.extend([el.text.strip() for el in author_elements if el.text])
+            
+            # Try to find publish date
+            date_selectors = [
+                '[itemprop="datePublished"]',
+                'time',
+                '.published',
+                '.post-date',
+                '[property="article:published_time"]'
+            ]
+            for selector in date_selectors:
+                date_elements = r.html.find(selector)
+                if date_elements:
+                    # Try to get date from content or datetime attribute
+                    for el in date_elements:
+                        if 'datetime' in el.attrs:
+                            publish_date = el.attrs['datetime']
+                            break
+                        elif el.text:
+                            publish_date = el.text
+                            break
+                    if publish_date:
+                        break
+            
             return {
-                'title': r.html.find('title')[0].text if r.html.find('title') else None,
+                'title': title,
                 'text': content,
-                'authors': None,  # Could extract but would need custom selectors
-                'publish_date': None,  # Could extract but would need custom parsing
-                'meta_description': r.html.find('meta[name="description"]')[0].attrs['content'] 
-                                 if r.html.find('meta[name="description"]') else None,
+                'authors': authors if authors else None,
+                'publish_date': publish_date,
+                'meta_description': meta_description,
                 'fetch_method': 'requests-html'
             }
             
     except Exception as e:
         logger.warning(f"requests-html extraction failed for {url}: {e}")
     
-    return None
-
-def cleanup():
-    """Clean up resources when done"""
-    global _driver
-    if _driver is not None:
-        try:
-            _driver.quit()
-        except:
-            pass
-        _driver = None
-
