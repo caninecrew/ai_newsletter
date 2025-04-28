@@ -86,21 +86,30 @@ if SYSTEM_SETTINGS.get("use_secondary_feeds", True):
     for category, feeds in SECONDARY_FEEDS.items():
         if category not in RSS_FEEDS:
             RSS_FEEDS[category] = {}
-        RSS_FEEDS[category].update(feeds)
+        if isinstance(feeds, dict):
+            RSS_FEEDS[category].update(feeds)
+        else:
+            logger.warning(f"Invalid feed structure in SECONDARY_FEEDS for category '{category}': {feeds}")
 
 # Include SUPPLEMENTAL_FEEDS if enabled
 if SYSTEM_SETTINGS.get("use_supplemental_feeds", False):
     for category, feeds in SUPPLEMENTAL_FEEDS.items():
         if category not in RSS_FEEDS:
             RSS_FEEDS[category] = {}
-        RSS_FEEDS[category].update(feeds)
+        if isinstance(feeds, dict):
+            RSS_FEEDS[category].update(feeds)
+        else:
+            logger.warning(f"Invalid feed structure in SUPPLEMENTAL_FEEDS for category '{category}': {feeds}")
 
 # Include BACKUP_RSS_FEEDS if primary sources fail
 if SYSTEM_SETTINGS.get("use_backup_feeds", True):
     for category, feeds in BACKUP_RSS_FEEDS.items():
         if category not in RSS_FEEDS:
             RSS_FEEDS[category] = {}
-        RSS_FEEDS[category].update(feeds)
+        if isinstance(feeds, dict):
+            RSS_FEEDS[category].update(feeds)
+        else:
+            logger.warning(f"Invalid feed structure in BACKUP_RSS_FEEDS for category '{category}': {feeds}")
 
 def process_article_with_newspaper(url, retries=3, delay=2):
     """
