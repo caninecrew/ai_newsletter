@@ -84,15 +84,15 @@ def normalize_datetime(dt: Optional[datetime]) -> datetime:
     """
     if dt is None:
         return datetime.now(DEFAULT_TZ)
-        
+    
     # If naive, assume UTC
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=pytz.UTC)
     
     # Convert to configured timezone
     if SYSTEM_SETTINGS.get('use_central_timezone', True):
         return dt.astimezone(DEFAULT_TZ)
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(pytz.UTC)
 
 # Initialize NLTK resources
 ensure_nltk_resources()
