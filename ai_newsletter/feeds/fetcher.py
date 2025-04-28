@@ -23,7 +23,7 @@ from ai_newsletter.utils.redirects import resolve_google_redirect_selenium  # Co
 
 # --- Local Imports ---
 from ai_newsletter.logging_cfg.logger import setup_logger  # Corrected import for logger_config
-from config import ( # Import config settings and feed lists
+from ai_newsletter.config.settings import ( # Fix import path to use correct package structure
     SYSTEM_SETTINGS,
     USER_INTERESTS,
     PRIMARY_NEWS_FEEDS,
