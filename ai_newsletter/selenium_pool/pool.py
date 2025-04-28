@@ -8,6 +8,9 @@ from contextlib import contextmanager
 from queue import Queue, Empty
 from typing import Optional, Dict
 import psutil
+from filelock import FileLock
+import tempfile
+import random
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -28,6 +31,10 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 ]
+
+# Lock file for chromedriver access
+_LOCK_FILE = os.path.join(tempfile.gettempdir(), 'chromedriver.lock')
+_file_lock = FileLock(_LOCK_FILE, timeout=30)
 
 class DriverWrapper:
     def __init__(self, driver: webdriver.Chrome):
@@ -92,41 +99,108 @@ class WebDriverPool:
         return cls._instance
 
     def _create_driver(self) -> Optional[DriverWrapper]:
-        try:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--disable-software-rasterizer')
-            chrome_options.add_argument('--disable-infobars')
-            chrome_options.add_argument('--disable-extensions')
-            chrome_options.add_argument('--disable-logging')
-            chrome_options.add_argument('--single-process')
-            chrome_options.add_argument('--ignore-certificate-errors')
-            chrome_options.add_argument('--log-level=3')
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-            
-            # Add random user agent
-            import random
-            user_agent = random.choice(USER_AGENTS)
-            chrome_options.add_argument(f'--user-agent={user_agent}')
-            
-            # Set resource limits
-            chrome_options.add_argument('--memory-pressure-off')
-            chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
+        """Create a new WebDriver instance with retries and proper cleanup."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Acquire file lock before accessing chromedriver
+                with _file_lock:
+                    chrome_options = Options()
+                    chrome_options.add_argument('--headless=new')
+                    chrome_options.add_argument('--no-sandbox')
+                    chrome_options.add_argument('--disable-dev-shm-usage')
+                    chrome_options.add_argument('--disable-gpu')
+                    chrome_options.add_argument('--disable-software-rasterizer')
+                    chrome_options.add_argument('--disable-infobars')
+                    chrome_options.add_argument('--disable-extensions')
+                    chrome_options.add_argument('--disable-logging')
+                    chrome_options.add_argument('--log-level=3')
+                    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+                    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+                    chrome_options.add_experimental_option('useAutomationExtension', False)
+                    
+                    # Add random user agent
+                    user_agent = random.choice(USER_AGENTS)
+                    chrome_options.add_argument(f'--user-agent={user_agent}')
+                    
+                    # Set resource limits
+                    chrome_options.add_argument('--memory-pressure-off')
+                    chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
 
-            service = Service(executable_path=os.getenv('CHROMEWEBDRIVER'), log_output=os.devnull)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Set reasonable timeouts
-            driver.set_page_load_timeout(30)
-            driver.set_script_timeout(30)
-            
-            return DriverWrapper(driver)
+                    # Create service with explicit executable path and error handling
+                    chrome_path = os.getenv('CHROMEWEBDRIVER')
+                    if not chrome_path:
+                        chrome_path = 'chromedriver'  # Use PATH if env var not set
+                    
+                    # Add stagger to prevent concurrent file access
+                    time.sleep(random.uniform(0.1, 0.5))
+                    
+                    service = Service(
+                        executable_path=chrome_path,
+                        log_output=os.devnull
+                    )
+
+                    # Create driver with explicit waits and timeouts
+                    driver = webdriver.Chrome(
+                        service=service,
+                        options=chrome_options
+                    )
+                    
+                    # Set reasonable timeouts
+                    driver.set_page_load_timeout(30)
+                    driver.set_script_timeout(30)
+                    driver.implicitly_wait(10)
+                    
+                    # Verify driver is working
+                    driver.get("about:blank")
+                    
+                    wrapper = DriverWrapper(driver)
+                    logger.info(f"Successfully created new WebDriver instance (attempt {attempt + 1})")
+                    return wrapper
+
+            except Exception as e:
+                logger.error(f"Failed to create WebDriver (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1 * (attempt + 1))  # Exponential backoff
+                    continue
+                    
+                # Try to clean up on final failure
+                try:
+                    if 'driver' in locals():
+                        self._quit_driver_safely(driver)
+                except Exception:
+                    pass
+                    
+                return None
+
+        return None  # All retries failed
+
+    def _quit_driver_safely(self, driver):
+        """Safely quit a driver and cleanup resources."""
+        try:
+            # Close all windows first
+            try:
+                for handle in driver.window_handles:
+                    driver.switch_to.window(handle)
+                    driver.close()
+            except Exception:
+                pass
+                
+            # Quit the driver
+            try:
+                driver.quit()
+            except Exception:
+                pass
+                
+            # Kill chromedriver process if still running
+            if hasattr(driver.service, 'process'):
+                try:
+                    driver.service.process.kill()
+                except Exception:
+                    pass
+                    
         except Exception as e:
-            logger.error(f"Failed to create new WebDriver: {e}")
-            return None
+            logger.error(f"Error during safe driver quit: {e}")
 
     def _initialize_pool(self):
         """Initialize the pool with the specified number of drivers."""
@@ -193,25 +267,42 @@ class WebDriverPool:
         """Return a driver to the pool."""
         try:
             if driver.is_healthy():
-                # Clear any previous timeouts
-                driver.driver.set_page_load_timeout(30)
-                driver.driver.set_script_timeout(30)
-                self.available_drivers.put(driver)
-            else:
-                logger.info("Replacing unhealthy driver")
                 try:
-                    driver.driver.quit()
+                    # Clear browser data
+                    driver.driver.execute_script("window.localStorage.clear();")
+                    driver.driver.execute_script("window.sessionStorage.clear();")
+                    driver.driver.delete_all_cookies()
+                    
+                    # Reset to about:blank
+                    driver.driver.get("about:blank")
+                    
+                    # Reset timeouts
+                    driver.driver.set_page_load_timeout(30)
+                    driver.driver.set_script_timeout(30)
+                    
+                    self.available_drivers.put(driver)
                 except Exception:
-                    pass
-                new_driver = self._create_driver()
-                if new_driver is not None:
-                    self.available_drivers.put(new_driver)
+                    # If cleanup fails, treat as unhealthy
+                    logger.warning("Failed to clean driver state, treating as unhealthy")
+                    self._replace_driver(driver)
+            else:
+                self._replace_driver(driver)
+                
         except Exception as e:
             logger.error(f"Error returning driver to pool: {e}")
-            # Create a new driver if return failed
-            new_driver = self._create_driver()
-            if new_driver is not None:
-                self.available_drivers.put(new_driver)
+            self._replace_driver(driver)
+
+    def _replace_driver(self, old_driver: DriverWrapper):
+        """Replace an unhealthy driver with a new one."""
+        logger.info("Replacing unhealthy driver")
+        try:
+            self._quit_driver_safely(old_driver.driver)
+        except Exception:
+            pass
+            
+        new_driver = self._create_driver()
+        if new_driver is not None:
+            self.available_drivers.put(new_driver)
 
     def cleanup(self):
         """Clean up all drivers in the pool."""
