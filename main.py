@@ -7,7 +7,7 @@ from fetch_news import fetch_articles_from_all_feeds
 from summarize import summarize_articles
 from formatter import format_articles, filter_articles_by_date, deduplicate_articles
 from send_email import send_email
-from logger_config import setup_logger
+from logger_config import setup_logger, DEFAULT_TZ
 from config import EMAIL_SETTINGS, SYSTEM_SETTINGS, FEED_SETTINGS
 from dotenv import load_dotenv
 
@@ -82,8 +82,8 @@ def send_newsletter(content):
             logger.error("No content to send")
             return False
             
-        # Prepare email parameters
-        now = datetime.now()
+        # Prepare email parameters with proper timezone awareness
+        now = datetime.now(DEFAULT_TZ)
         yesterday = now - timedelta(days=1)
         subject = f"Newsletter for {yesterday.strftime('%B %d')} - {now.strftime('%B %d')}, {now.year}"
         
