@@ -1,189 +1,205 @@
-# webdriver_pool.py
+import atexit
 import logging
-from queue import Queue, Empty, Full
+import os
+import threading
+import time
+from collections import defaultdict
 from contextlib import contextmanager
+from queue import Queue, Empty
+from typing import Optional, Dict
+import psutil
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import random
-import time
-import os
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import WebDriverException, TimeoutException
 
-# Configure logger for the pool
-# Use the main logger setup from logger_config
-# Assuming logger_config.py sets up a root logger or a specific one we can get
-try:
-    from logger_config import setup_logger
-    logger = setup_logger('webdriver_pool') # Get a logger specific to this module
-except ImportError:
-    # Fallback basic logging if logger_config is not available initially
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger('webdriver_pool')
+logger = logging.getLogger(__name__)
 
+class DriverWrapper:
+    def __init__(self, driver: webdriver.Chrome):
+        self.driver = driver
+        self.last_used = time.time()
+        self.total_requests = 0
+        self.errors = 0
+        self.creation_time = time.time()
 
-# Pool settings - Adjusted for GitHub Actions Runner (4 vCPU)
-_POOL_SIZE = 3  # Keep slightly below vCPU count
-_pool = Queue(maxsize=_POOL_SIZE)
+    def increment_errors(self):
+        self.errors += 1
 
-# User Agents to rotate
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0", # Example Firefox UA
-]
+    def is_healthy(self) -> bool:
+        # Check various health indicators
+        if self.errors >= 3:
+            return False
+        
+        if time.time() - self.creation_time > 1800:  # 30 minutes max lifetime
+            return False
 
-def _create_driver() -> webdriver.Chrome:
-    """Creates a new WebDriver instance with specified options for GitHub Actions."""
-    attempt = 0
-    max_attempts = 3
-    while attempt < max_attempts:
         try:
-            opts = webdriver.ChromeOptions()
-            # --- GitHub Actions Specific Flags ---
-            opts.add_argument("--headless=new")      # Modern headless
-            opts.add_argument("--disable-dev-shm-usage") # Overcome limited resource problems
-            opts.add_argument("--no-sandbox")        # Runner is already sandboxed
-            # opts.add_argument("--single-process") # May help on low-resource, test if needed
-            opts.page_load_strategy = "eager"       # Don't wait for full page load (ads, trackers)
-            # -------------------------------------
-            opts.add_argument("--disable-gpu")
-            opts.add_argument("--window-size=1920,1080")
+            # Basic health check
+            self.driver.current_url
+            handles = self.driver.window_handles
+            
+            # Memory check (if process still exists)
+            if hasattr(self.driver.service.process, 'pid'):
+                try:
+                    process = psutil.Process(self.driver.service.process.pid)
+                    mem_usage = process.memory_percent()
+                    if mem_usage > 10.0:  # If using more than 10% of system memory
+                        return False
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    return False
+            
+            return len(handles) > 0
+        except Exception:
+            return False
 
-            # --- Masking & Performance Flags ---
-            user_agent = random.choice(USER_AGENTS)
-            opts.add_argument(f"--user-agent={user_agent}")
-            opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-            opts.add_experimental_option('useAutomationExtension', False)
-            opts.add_argument("--disable-blink-features=AutomationControlled")
-            opts.add_argument('--log-level=3')
-            opts.add_argument("--blink-settings=imagesEnabled=false") # Disable images
-            opts.add_argument("--disable-extensions")             # Disable extensions
-            # -----------------------------------
+class WebDriverPool:
+    _instance = None
+    _lock = threading.Lock()
 
-            # Service configuration
+    def __init__(self, pool_size: int = 3):
+        self.pool_size = pool_size
+        self.available_drivers: Queue = Queue()
+        self.active_drivers: Dict[int, DriverWrapper] = {}
+        self.domain_last_access: Dict[str, float] = defaultdict(float)
+        self.domain_lock = threading.Lock()
+        self.rate_limit_delay = 2.0  # Seconds between requests to same domain
+        self._initialize_pool()
+        atexit.register(self.cleanup)
+
+    @classmethod
+    def get_instance(cls, pool_size: int = 3) -> 'WebDriverPool':
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls(pool_size)
+        return cls._instance
+
+    def _create_driver(self) -> Optional[DriverWrapper]:
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-software-rasterizer')
+            chrome_options.add_argument('--disable-infobars')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-logging')
+            chrome_options.add_argument('--single-process')
+            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_argument('--log-level=3')
+            
+            # Set resource limits
+            chrome_options.add_argument('--memory-pressure-off')
+            chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
+
+            service = Service(executable_path=os.getenv('CHROMEWEBDRIVER'))
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            # Set reasonable timeouts
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            return DriverWrapper(driver)
+        except Exception as e:
+            logger.error(f"Failed to create new WebDriver: {e}")
+            return None
+
+    def _initialize_pool(self):
+        """Initialize the pool with the specified number of drivers."""
+        for _ in range(self.pool_size):
+            driver = self._create_driver()
+            if driver is not None:
+                self.available_drivers.put(driver)
+
+    def _enforce_rate_limit(self, domain: Optional[str]):
+        """Enforce rate limiting for specific domains."""
+        if domain:
+            with self.domain_lock:
+                last_access = self.domain_last_access[domain]
+                current_time = time.time()
+                if current_time - last_access < self.rate_limit_delay:
+                    sleep_time = self.rate_limit_delay - (current_time - last_access)
+                    time.sleep(sleep_time)
+                self.domain_last_access[domain] = time.time()
+
+    def get_driver(self, timeout: int = 30, domain: Optional[str] = None) -> Optional[DriverWrapper]:
+        """Get a driver from the pool with domain-aware rate limiting."""
+        self._enforce_rate_limit(domain)
+        
+        try:
+            driver = self.available_drivers.get(timeout=timeout)
+            
+            # Health check and replacement if needed
+            if not driver.is_healthy():
+                logger.warning("Unhealthy driver detected, creating replacement")
+                try:
+                    driver.driver.quit()
+                except Exception:
+                    pass
+                driver = self._create_driver()
+                if driver is None:
+                    raise WebDriverException("Failed to create replacement driver")
+            
+            driver.last_used = time.time()
+            driver.total_requests += 1
+            return driver
+            
+        except Empty:
+            logger.error("WebDriver pool exhausted")
+            raise WebDriverException("WebDriver pool exhausted")
+
+    def return_driver(self, driver: DriverWrapper):
+        """Return a driver to the pool."""
+        if driver.is_healthy():
+            self.available_drivers.put(driver)
+        else:
+            logger.info("Replacing unhealthy driver")
             try:
-                os.environ['WDM_LOG_LEVEL'] = '0' # Suppress WebDriver Manager logs
-                # Check if chromedriver is already available in PATH (common in GH Actions)
-                chromedriver_path = os.getenv("CHROMEWEBDRIVER") # GH Actions often sets this
-                if chromedriver_path and os.path.exists(os.path.join(chromedriver_path, 'chromedriver')):
-                     logger.info("Using chromedriver from environment variable CHROMEWEBDRIVER")
-                     service = Service(executable_path=os.path.join(chromedriver_path, 'chromedriver'))
-                else:
-                     logger.info("CHROMEWEBDRIVER not found or invalid, using WebDriverManager to install.")
-                     service = Service(ChromeDriverManager().install())
+                driver.driver.quit()
+            except Exception:
+                pass
+            new_driver = self._create_driver()
+            if new_driver is not None:
+                self.available_drivers.put(new_driver)
 
-                driver = webdriver.Chrome(service=service, options=opts)
-                logger.info("WebDriver instance created successfully.")
+    def cleanup(self):
+        """Clean up all drivers in the pool."""
+        logger.info("Cleaning up WebDriver pool")
+        while not self.available_drivers.empty():
+            try:
+                driver = self.available_drivers.get_nowait()
+                driver.driver.quit()
+            except Exception as e:
+                logger.error(f"Error cleaning up driver: {e}")
 
-                # --- Set Timeouts --- 
-                driver.set_page_load_timeout(30) # Increased timeout
-                driver.set_script_timeout(30)  # Increased timeout
-                # --------------------
+# Module-level interface
+_pool: Optional[WebDriverPool] = None
 
-                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                return driver
-            except Exception as driver_exc:
-                 logger.error(f"Error creating WebDriver service or instance: {driver_exc}")
-                 raise
+def initialize_pool(pool_size: int = 3):
+    """Initialize the WebDriver pool with the specified size."""
+    global _pool
+    _pool = WebDriverPool.get_instance(pool_size)
 
-        except Exception as e:
-            attempt += 1
-            logger.error(f"Attempt {attempt}/{max_attempts} failed to create WebDriver: {e}")
-            if attempt >= max_attempts:
-                logger.critical("Max attempts reached. Failed to create WebDriver.")
-                raise  # Re-raise the last exception
-            time.sleep(2 * attempt) # Exponential backoff
-
-# --- Pool Management ---
-def _initialize_pool():
-    """Fills the pool with WebDriver instances."""
-    logger.info(f"Initializing WebDriver pool with size {_POOL_SIZE}...")
-    drivers_added = 0
-    for _ in range(_POOL_SIZE):
-        try:
-            driver = _create_driver()
-            if driver:
-                _pool.put(driver)
-                drivers_added += 1
-        except Exception as e:
-            logger.error(f"Failed to add driver to pool during initialization: {e}")
-            # If initialization fails critically for one driver, maybe stop? Or log and continue?
-            # For now, log and continue trying to fill the pool.
-    logger.info(f"WebDriver pool initialized with {drivers_added} instances.")
+def close_pool():
+    """Close all drivers in the pool."""
+    global _pool
+    if _pool is not None:
+        _pool.cleanup()
+        _pool = None
 
 @contextmanager
-def get_driver():
-    """Provides a WebDriver instance from the pool."""
+def get_driver(timeout: int = 30, domain: Optional[str] = None):
+    """Context manager for getting and returning a driver from the pool."""
+    if _pool is None:
+        initialize_pool()
+    
     driver = None
     try:
-        driver = _pool.get(timeout=60) # Wait up to 60 seconds for a driver
-        logger.debug(f"Acquired driver. Pool size: {_pool.qsize()}")
-        yield driver
-    except Empty:
-        logger.error("Timeout waiting for available WebDriver instance from the pool.")
-        # Decide how to handle pool exhaustion. Raising an error might be best.
-        raise TimeoutError("WebDriver pool exhausted or initialization failed.")
-    except Exception as e:
-        logger.error(f"Error getting driver from pool: {e}")
-        # If the driver instance itself caused an error upon retrieval, discard it
-        if driver:
-            _discard_driver(driver)
-            driver = None # Ensure it's not put back
-        raise # Re-raise the exception
+        driver = _pool.get_driver(timeout, domain)
+        yield driver.driver
     finally:
-        if driver:
-            try:
-                # Basic health check: Check if browser is still running
-                _ = driver.window_handles # Accessing this property checks if the browser is still responsive
-                _pool.put(driver)
-                logger.debug(f"Returned driver to pool. Pool size: {_pool.qsize()}")
-            except Exception as e:
-                logger.warning(f"WebDriver instance seems unhealthy, discarding: {e}")
-                _discard_driver(driver)
-
-
-def _discard_driver(driver):
-    """Safely quits a driver and attempts to replace it in the pool."""
-    try:
-        driver.quit()
-        logger.info("Quit unhealthy WebDriver instance.")
-    except Exception as e:
-        logger.error(f"Error quitting WebDriver instance: {e}")
-    finally:
-        # Try to replenish the pool asynchronously or in a separate thread/process
-        # to avoid blocking the main flow. For simplicity here, doing it synchronously.
-        try:
-            logger.info("Attempting to replenish WebDriver pool...")
-            new_driver = _create_driver()
-            if new_driver:
-                _pool.put(new_driver, block=False) # Add without blocking if pool is full
-                logger.info("Replenished pool with a new WebDriver instance.")
-        except Full:
-             logger.warning("Pool is full, cannot replenish discarded driver immediately.")
-        except Exception as e:
-            logger.error(f"Failed to replenish WebDriver pool: {e}")
-
-
-def shutdown_pool():
-    """Shuts down all WebDriver instances in the pool."""
-    logger.info("Shutting down WebDriver pool...")
-    drained_drivers = 0
-    while not _pool.empty():
-        try:
-            driver = _pool.get_nowait()
-            driver.quit()
-            drained_drivers += 1
-        except Empty:
-            break # Pool is empty
-        except Exception as e:
-            logger.error(f"Error quitting driver during shutdown: {e}")
-            # Continue draining even if one driver fails to quit
-    logger.info(f"WebDriver pool shut down. {drained_drivers} instances quit.")
-
-# Initialize the pool when the module is imported
-_initialize_pool()
-
-# Optional: Register shutdown function to be called on exit
-import atexit
-atexit.register(shutdown_pool)
+        if driver is not None:
+            _pool.return_driver(driver)
