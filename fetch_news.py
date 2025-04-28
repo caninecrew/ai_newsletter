@@ -18,7 +18,7 @@ import time
 import random
 import logging
 import concurrent.futures
-from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary, DEFAULT_TZ
+from logger_config import setup_logger, FETCH_METRICS, print_metrics_summary
 from urllib.parse import urlparse, parse_qs, urlunparse
 from config import PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, SYSTEM_SETTINGS, USER_INTERESTS
 from collections import defaultdict
@@ -30,28 +30,16 @@ import stat
 from difflib import SequenceMatcher
 import hashlib
 from urllib.parse import urlencode
-
-# Define a pool of realistic user agents
-USER_AGENTS = [
-    # Windows Chrome
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    # Windows Firefox
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    # Windows Edge
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-    # Mac Chrome
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    # Mac Safari
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
-    # Mobile Chrome (Android)
-    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    # Mobile Safari (iOS)
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
-]
+from webdriver_pool import get_driver
+from dateutil import parser as dateutil_parser, tz as dateutil_tz
 
 # Get the logger
 logger = setup_logger()
+
+# Define the central timezone
+CENTRAL = dateutil_tz.gettz("America/Chicago")
+# Define DEFAULT_TZ using the same source for compatibility if needed elsewhere, or phase it out.
+DEFAULT_TZ = CENTRAL
 
 # Create a secure session for requests
 def create_secure_session():
@@ -114,11 +102,6 @@ failed_urls = set()
 # Track unique article URLs to prevent duplicates across feeds
 unique_article_urls = set()
 
-# Global WebDriver instance for reuse
-_driver = None
-_driver_creation_time = None
-_driver_request_count = 0
-
 # List of problematic sources/domains that should be skipped or handled with extra care
 PROBLEMATIC_SOURCES = [
     "nytimes.com/section/politics",  # New York Times Politics section
@@ -167,223 +150,53 @@ def should_skip_source(url):
             return True
     return False
 
-def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50, retries=3, delay=5):
+def force_central(dt_str: str, url: str = None) -> datetime:
     """
-    Get or create a WebDriver instance with anti-detection measures and retry logic
-    
-    Args:
-        force_new (bool): Force creation of a new instance
-        max_age_minutes (int): Maximum age of driver instance in minutes
-        max_requests (int): Maximum requests before recycling driver
-        retries (int): Number of retries for WebDriver creation
-        delay (int): Delay between retries in seconds
-    """
-    global _driver, _driver_creation_time, _driver_request_count
-    
-    current_time = time.time()
-    create_new = (
-        _driver is None or
-        force_new or
-        (_driver_creation_time and (current_time - _driver_creation_time) / 60 > max_age_minutes) or
-        (_driver_request_count >= max_requests)
-    )
-    
-    if create_new:
-        if _driver is not None:
-            try:
-                _driver.quit()
-            except Exception as e:
-                logger.warning(f"Error closing existing WebDriver: {e}")
-        
-        for attempt in range(retries):
-            try:
-                # Configure ChromeOptions with anti-detection measures
-                options = Options()
-                
-                # Random user agent
-                user_agent = random.choice(USER_AGENTS)
-                options.add_argument(f'--user-agent={user_agent}')
-                
-                # Basic configuration
-                options.add_argument("--no-sandbox")
-                options.add_argument("--disable-dev-shm-usage")
-                options.add_argument("--ignore-certificate-errors")
-                options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
-                
-                # Anti-detection measures
-                options.add_argument("--disable-blink-features=AutomationControlled")
-                options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                options.add_experimental_option('useAutomationExtension', False)
-                
-                # Additional anti-bot measures
-                options.add_argument("--disable-infobars")
-                options.add_argument("--disable-browser-side-navigation")
-                options.add_argument('--disable-features=IsolateOrigins,site-per-process')
-                
-                # Performance optimizations
-                options.add_argument("--disable-gpu")
-                options.add_argument("--disable-extensions")
-                options.add_argument("--disable-dev-tools")
-                options.add_argument('--ignore-ssl-errors=yes')
-                options.add_argument("--disable-web-security")
-                options.add_argument("--disable-logging")
-                options.add_argument("--disable-translate")
-                options.add_argument("--disable-notifications")
-                
-                # Random window size to appear more natural
-                window_sizes = [(1920, 1080), (1366, 768), (1536, 864), (1440, 900), (1280, 720)]
-                width, height = random.choice(window_sizes)
-                options.add_argument(f"--window-size={width},{height}")
-                
-                # Headless mode (can be disabled for testing)
-                if SYSTEM_SETTINGS.get("use_headless_browser", True):
-                    options.add_argument("--headless=new")  # Using new headless mode
-                
-                # Create service with proper configuration
-                service = Service()
-                if os.name == 'nt':  # Windows check
-                    service.creation_flags = 0x08000000  # No console window
-                
-                # Create and configure the driver
-                _driver = webdriver.Chrome(service=service, options=options)
-                
-                # Additional anti-detection JavaScript
-                _driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-                    "userAgent": user_agent,
-                    "platform": "Windows",  # or random choice of platform
-                    "acceptLanguage": "en-US,en;q=0.9"
-                })
-                
-                # Execute stealth JS
-                _driver.execute_script("""
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                """)
-                
-                _driver_creation_time = current_time
-                _driver_request_count = 0
-                logger.info("Successfully created new WebDriver instance")
-                return _driver
-                
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1}/{retries} to create WebDriver failed: {e}")
-                if attempt < retries - 1:
-                    time.sleep(delay * (attempt + 1))  # Exponential backoff
-                else:
-                    logger.error("All attempts to create WebDriver failed")
-                    _driver = None
-                    raise
-    
-    if _driver is not None:
-        _driver_request_count += 1
-    
-    return _driver
+    Parse a date string into a timezone-aware datetime object in Central Time.
+    Falls back to current Central Time if parsing fails.
 
-def parse_date(date_str, url=None):
-    """
-    Parse a date string into a datetime object with improved timezone and fallback handling.
-    
     Args:
-        date_str (str): The date string to parse
-        url (str): Optional URL for debugging purposes
-        
+        dt_str (str): The date string to parse.
+        url (str): Optional URL for logging context.
+
     Returns:
-        datetime: A datetime object representing the parsed date, or current time if parsing fails
+        datetime: A timezone-aware datetime object in Central Time.
     """
-    if not date_str:
-        logger.warning(f"Empty date string received{' for ' + url if url else ''}")
-        return datetime.now(DEFAULT_TZ)
-    
-    original_date_str = date_str
-    
+    if not dt_str:
+        logger.warning(f"Empty date string received{' for ' + url if url else ''}. Using current time.")
+        return datetime.now(tz=CENTRAL)
+
+    original_date_str = dt_str
     try:
-        # Common preprocessing for problematic date formats
-        date_str = date_str.strip()
-        
-        # Handle "X time ago" format with more variations
-        time_ago_match = re.search(r'(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago', date_str, re.IGNORECASE)
+        # Handle "X time ago" format first
+        time_ago_match = re.search(r'(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago', dt_str, re.IGNORECASE)
         if time_ago_match:
             value = int(time_ago_match.group(1))
             unit = time_ago_match.group(2).lower()
-            
-            now = datetime.now(DEFAULT_TZ)
-            
-            if unit == 'minute':
-                return now - timedelta(minutes=value)
-            elif unit == 'hour':
-                return now - timedelta(hours=value)
-            elif unit == 'day':
-                return now - timedelta(days=value)
-            elif unit == 'week':
-                return now - timedelta(weeks=value)
-            elif unit == 'month':
-                return now - timedelta(days=value*30)  # Approximation
-            elif unit == 'year':
-                return now - timedelta(days=value*365)  # Approximation
+            now = datetime.now(tz=CENTRAL)
+            if unit == 'minute': return now - timedelta(minutes=value)
+            if unit == 'hour':   return now - timedelta(hours=value)
+            if unit == 'day':    return now - timedelta(days=value)
+            if unit == 'week':   return now - timedelta(weeks=value)
+            if unit == 'month':  return now - timedelta(days=value*30) # Approximation
+            if unit == 'year':   return now - timedelta(days=value*365) # Approximation
 
-        # Try parsing with dateutil first
-        try:
-            parsed_date = dateutil.parser.parse(date_str)
-            # If naive, assume UTC
-            if parsed_date.tzinfo is None:
-                parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
-            # Convert to configured timezone
-            return parsed_date.astimezone(DEFAULT_TZ)
-        except Exception as e:
-            logger.debug(f"dateutil.parser failed: {e}")
-            
-            # Fall back to manual datetime parsing
-            try:
-                # Try common formats
-                formats = [
-                    '%Y-%m-%dT%H:%M:%S%z',  # ISO format with timezone
-                    '%Y-%m-%d %H:%M:%S%z',   # Similar but with space
-                    '%a, %d %b %Y %H:%M:%S %z',  # RFC format
-                    '%Y-%m-%d %H:%M:%S',     # Without timezone
-                    '%Y-%m-%d',              # Just date
-                ]
-                
-                for fmt in formats:
-                    try:
-                        parsed_date = datetime.strptime(date_str, fmt)
-                        if parsed_date.tzinfo is None:
-                            parsed_date = parsed_date.replace(tzinfo=pytz.UTC)
-                        return parsed_date.astimezone(DEFAULT_TZ)
-                    except ValueError:
-                        continue
-                        
-                raise ValueError("No manual format matched")
-                
-            except Exception as e2:
-                logger.debug(f"Manual parsing failed: {e2}")
-                raise
-                
+        # Use dateutil.parser which handles many formats and timezones
+        dt = dateutil_parser.parse(dt_str)
+
+        # If naive, assume it's Central Time already (or UTC, depending on source convention)
+        # Let's assume UTC if naive, then convert to Central.
+        if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+             # logger.debug(f"Parsed naive datetime '{original_date_str}' for {url}. Assuming UTC.")
+             dt = dt.replace(tzinfo=dateutil_tz.UTC) # Make it aware, assuming UTC
+
+        # Convert to Central Time
+        return dt.astimezone(CENTRAL)
+
     except Exception as e:
-        logger.warning(f"Failed to parse date '{original_date_str}'{' for ' + url if url else ''}: {e}")
-        return datetime.now(DEFAULT_TZ)
-
-def normalize_datetime(dt):
-    """
-    Normalize a datetime object to the configured timezone
-    
-    Args:
-        dt: datetime object to normalize, can be naive or timezone-aware
-        
-    Returns:
-        datetime: Timezone-aware datetime in the configured timezone
-    """
-    if dt is None:
-        return datetime.now(DEFAULT_TZ)
-    
-    # If naive, assume UTC
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    
-    # Convert to configured timezone
-    if SYSTEM_SETTINGS.get('use_central_timezone', True):
-        return dt.astimezone(DEFAULT_TZ)
-    return dt.astimezone(timezone.utc)
+        logger.warning(f"Failed to parse date '{original_date_str}'{' for ' + url if url else ''}: {e}. Using current time.")
+        # Mark article as date_inferred=True later if needed
+        return datetime.now(tz=CENTRAL)
 
 def fetch_rss_feed(feed_url, source_name, max_articles=5):
     """
@@ -458,7 +271,8 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                 
                 # Parse the published date
                 published = entry.get('published', '')
-                published_date = parse_date(published, entry.get('link'))
+                published_date = force_central(published, entry.get('link'))
+                article_inferred_date = (published == '') # Mark if date was inferred
                 
                 # Calculate article importance score
                 score = 0
@@ -525,7 +339,8 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                     'description': description,
                     'content': content,
                     'source': source_name,
-                    'importance_score': _  # Include the score for later use
+                    'importance_score': _,  # Include the score for later use
+                    'date_inferred': article_inferred_date  # Add flag
                 })
                 
             except Exception as e:
@@ -600,50 +415,47 @@ def resolve_redirect_url(url, max_retries=2, base_delay=1):
     
     for attempt in range(max_retries):
         try:
-            # Get a WebDriver instance
-            driver = get_webdriver(force_new=True)
-            if not driver:
-                logger.error("Failed to create WebDriver for redirect resolution")
-                return url
-            
-            try:
+            # Get a WebDriver instance from the pool
+            with get_driver() as driver:
+                if not driver:
+                    logger.error("Failed to get WebDriver from pool for redirect resolution")
+                    return url # Or raise an error?
+
                 # Set shorter timeout for redirects
                 driver.set_page_load_timeout(10)
-                
+
                 # Load the page
                 driver.get(url)
-                
+
                 # Wait for redirect with dynamic timeout
                 timeout = random.uniform(1.5, 3)
                 try:
-                    # Wait for URL to change or page to stabilize
                     WebDriverWait(driver, timeout).until(
                         lambda d: d.current_url != url or
                         d.execute_script("return document.readyState") == "complete"
                     )
-                    # Small additional wait for any final redirects
                     time.sleep(0.5)
                 except TimeoutException:
-                    pass  # URL might not change if there's no redirect
-                
+                    pass
+
                 final_url = driver.current_url
-                
+
                 # Only return if we got a different, valid URL
-                if final_url and final_url != url and not 'news.google.com' in final_url:
+                if final_url and final_url != url and 'news.google.com' not in final_url:
                     logger.debug(f"Successfully resolved redirect: {url} -> {final_url}")
                     return final_url
-                    
-            finally:
-                try:
-                    driver.quit()
-                except:
-                    pass
-                    
+                else:
+                    # If URL didn't change or still google, maybe log and continue loop?
+                    logger.debug(f"Redirect resolution attempt {attempt+1} did not yield final URL: current={final_url}")
+
         except Exception as e:
             logger.warning(f"Redirect resolution failed (attempt {attempt + 1}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(base_delay * (2 ** attempt))
-    
+            else:
+                 logger.error(f"All redirect resolution attempts failed for {url}")
+
+    logger.warning(f"Could not resolve redirect for {url}, returning original.")
     return url
 
 def fetch_google_news_article(article, max_retries=3):
@@ -808,7 +620,16 @@ def fetch_article_content(article, max_retries=2):
                     
                     # Update age statistics if we have a published date
                     if 'published' in article:
-                        age_category = categorize_article_age(article['published'])
+                        # Ensure publish date is timezone aware before categorizing
+                        publish_date = article['published']
+                        if isinstance(publish_date, str): # If it's still a string, parse it
+                            publish_date = force_central(publish_date, article.get('link'))
+                        elif publish_date.tzinfo is None: # If it's naive datetime
+                             publish_date = publish_date.replace(tzinfo=dateutil_tz.UTC).astimezone(CENTRAL)
+                        elif publish_date.tzinfo != CENTRAL: # If it's aware but not Central
+                             publish_date = publish_date.astimezone(CENTRAL)
+
+                        age_category = categorize_article_age(publish_date) # Pass aware datetime
                         FETCH_METRICS['article_ages'][age_category] = FETCH_METRICS['article_ages'].get(age_category, 0) + 1
                     
                     logger.debug(f"Successfully fetched content with requests: {url}")
@@ -859,133 +680,151 @@ def fetch_article_content(article, max_retries=2):
 
 def fetch_article_content_with_selenium(article, max_retries=3, base_delay=2):
     """
-    Fetch article content using Selenium WebDriver for JavaScript-heavy sites.
-    Includes enhanced retry logic and anti-detection measures.
-    
-    Args:
-        article (dict): Article dictionary containing link
-        max_retries (int): Maximum number of retry attempts
-        base_delay (int): Base delay between retries in seconds
-        
-    Returns:
-        dict: Updated article dictionary with content
+    Fetch article content using Selenium WebDriver from the pool.
+    Includes enhanced retry logic, anti-detection measures, and tab-based retries.
     """
     url = article['link']
-    
-    # Skip if this is a known problematic source
+    original_window = None
+
     if should_skip_source(url):
         logger.info(f"Skipping selenium fetch for problematic source: {url}")
         return article
-    
+
     for attempt in range(max_retries):
+        driver = None # Ensure driver is reset for logging scope
         try:
-            # Add random delay between attempts with exponential backoff
-            if attempt > 0:
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
-                logger.info(f"Retry attempt {attempt + 1}/{max_retries} for {url}, waiting {delay:.1f}s")
-                time.sleep(delay)
-            
-            # Get a fresh WebDriver instance for each retry to avoid stale sessions
-            driver = get_webdriver(force_new=(attempt > 0))
-            
-            # Random delay before page load (0.5-2s) to appear more natural
-            time.sleep(random.uniform(0.5, 2))
-            
-            # Load the page with increased timeout
-            driver.set_page_load_timeout(15)
-            driver.get(url)
-            
-            # Random scroll behavior to mimic human interaction
-            try:
+            with get_driver() as driver: # Get driver from pool
+                if attempt > 0:
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                    logger.info(f"Retry attempt {attempt + 1}/{max_retries} for {url}, waiting {delay:.1f}s")
+                    time.sleep(delay)
+
+                    # --- Retry in a new tab ---
+                    logger.info(f"Opening URL in new tab for retry: {url}")
+                    original_window = driver.current_window_handle
+                    driver.execute_script("window.open(arguments[0], '_blank');", url)
+                    new_window = [win for win in driver.window_handles if win != original_window][-1]
+                    driver.switch_to.window(new_window)
+                    # --------------------------
+                else:
+                    # First attempt, load in the current tab (or initial tab)
+                    time.sleep(random.uniform(0.5, 2)) # Random delay before load
+                    driver.set_page_load_timeout(15)
+                    driver.get(url)
+                    original_window = driver.current_window_handle # Store for potential closing later
+
+                # Random scroll behavior
                 total_height = int(driver.execute_script("return document.body.scrollHeight"))
                 for scroll in range(0, total_height, random.randint(500, 1000)):
                     driver.execute_script(f"window.scrollTo(0, {scroll});")
                     time.sleep(random.uniform(0.1, 0.3))
-            except Exception as e:
-                logger.debug(f"Non-critical scroll simulation error: {e}")
-            
-            # Wait for content with dynamic timeout
-            content_selectors = [
-                "article", 
-                "[role='article']", 
-                ".article-body", 
-                ".article-content",
-                ".entry-content",
-                ".post-content",
-                "main",
-                "#content",
-                ".content"
-            ]
-            
-            content = ''
-            for selector in content_selectors:
-                try:
-                    # Wait for element with random timeout (5-10s)
-                    timeout = random.uniform(5, 10)
-                    element = WebDriverWait(driver, timeout).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    if element:
-                        content = element.text
-                        if len(content) > 150:
-                            break
-                except TimeoutException:
-                    continue
-            
-            # If no content found with selectors, try paragraphs
-            if not content or len(content) < 150:
-                try:
-                    paragraphs = driver.find_elements(By.CSS_SELECTOR, 'article p, [role="article"] p, .article-body p, .article-content p')
-                    if not paragraphs:
-                        paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+
+                # Wait for content
+                content_selectors = [
+                    "article", 
+                    "[role='article']", 
+                    ".article-body", 
+                    ".article-content",
+                    ".entry-content",
+                    ".post-content",
+                    "main",
+                    "#content",
+                    ".content"
+                ]
+                
+                content = ''
+                for selector in content_selectors:
+                    try:
+                        # Wait for element with random timeout (5-10s)
+                        timeout = random.uniform(5, 10)
+                        element = WebDriverWait(driver, timeout).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                        if element:
+                            content = element.text
+                            if len(content) > 150:
+                                break
+                    except TimeoutException:
+                        continue
+                
+                # If no content found with selectors, try paragraphs
+                if not content or len(content) < 150:
+                    try:
+                        paragraphs = driver.find_elements(By.CSS_SELECTOR, 'article p, [role="article"] p, .article-body p, .article-content p')
+                        if not paragraphs:
+                            paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+                        
+                        # Filter and join paragraphs
+                        content = ' '.join([
+                            p.text for p in paragraphs
+                            if len(p.text.strip()) > 50
+                            and not any(skip in p.text.lower() for skip in ['advertisement', 'subscribe', 'newsletter'])
+                        ])
+                    except Exception as e:
+                        logger.warning(f"Failed to get paragraphs: {e}")
+                
+                # Clean up the content
+                if content:
+                    # Remove unwanted elements and normalize whitespace
+                    content = re.sub(r'\s+', ' ', content).strip()
+                    content = re.sub(r'\n\s*\n', '\n\n', content)
                     
-                    # Filter and join paragraphs
-                    content = ' '.join([
-                        p.text for p in paragraphs
-                        if len(p.text.strip()) > 50
-                        and not any(skip in p.text.lower() for skip in ['advertisement', 'subscribe', 'newsletter'])
-                    ])
-                except Exception as e:
-                    logger.warning(f"Failed to get paragraphs: {e}")
-            
-            # Clean up the content
-            if content:
-                # Remove unwanted elements and normalize whitespace
-                content = re.sub(r'\s+', ' ', content).strip()
-                content = re.sub(r'\n\s*\n', '\n\n', content)
-                
-                # Remove common unwanted text
-                unwanted = ['Advertisement', 'Subscribe', 'Sign up', 'Newsletter']
-                for text in unwanted:
-                    content = re.sub(f'(?i){text}.*?\n', '', content)
-                
-                if len(content) > 150:
-                    article['content'] = content
-                    logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
-                    return article
-            
-            logger.warning(f"No content found with WebDriver (attempt {attempt + 1}): {url}")
-            
+                    # Remove common unwanted text
+                    unwanted = ['Advertisement', 'Subscribe', 'Sign up', 'Newsletter']
+                    for text in unwanted:
+                        content = re.sub(f'(?i){text}.*?\n', '', content)
+                    
+                    if len(content) > 150:
+                        article['content'] = content
+                        logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
+
+                        # Close the new tab if it was opened for a retry
+                        if attempt > 0 and driver.current_window_handle != original_window:
+                             try:
+                                 driver.close()
+                                 driver.switch_to.window(original_window)
+                                 logger.debug(f"Closed retry tab for {url}")
+                             except Exception as tab_close_exc:
+                                 logger.warning(f"Could not close retry tab for {url}: {tab_close_exc}")
+                        return article # Success
+
+                # If loop finishes without finding content
+                logger.warning(f"No content found with WebDriver (attempt {attempt + 1}): {url}")
+                # Close the tab if it was the last attempt and failed
+                if attempt == max_retries - 1 and driver and driver.current_window_handle != original_window:
+                     try:
+                         driver.close()
+                         driver.switch_to.window(original_window)
+                     except Exception as tab_close_exc:
+                         logger.warning(f"Could not close final failed tab for {url}: {tab_close_exc}")
+
+
         except WebDriverException as e:
             logger.error(f"WebDriver exception (attempt {attempt + 1}) for {url}: {e}")
+            # Close the potentially broken tab
+            if driver and driver.current_window_handle != original_window:
+                 try:
+                     driver.close()
+                     driver.switch_to.window(original_window)
+                 except Exception: pass # Ignore errors closing a potentially dead tab
+            # Let the pool handle the driver health check upon release
             if attempt == max_retries - 1:
                 failed_urls.add(url)
         except Exception as e:
-            logger.error(f"Unexpected error (attempt {attempt + 1}) fetching {url}: {e}")
+            logger.error(f"Unexpected error (attempt {attempt + 1}) fetching {url} with Selenium: {e}")
+             # Close the potentially broken tab
+            if driver and driver.current_window_handle != original_window:
+                 try:
+                     driver.close()
+                     driver.switch_to.window(original_window)
+                 except Exception: pass
             if attempt == max_retries - 1:
                 failed_urls.add(url)
-        finally:
-            # Clean up the driver on failure or last attempt
-            if attempt == max_retries - 1:
-                global _driver
-                if _driver is not None:
-                    try:
-                        _driver.quit()
-                    except:
-                        pass
-                    _driver = None
-    
-    return article
+        # The 'finally' block in the 'with get_driver()' context manager handles returning the driver to the pool
+
+    # If all retries fail
+    logger.error(f"All Selenium attempts failed for {url}")
+    return article # Return article without content
 
 def normalize_url(url):
     """Normalize a URL by removing common tracking parameters and fragments"""
@@ -1110,19 +949,36 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     
     start_time = time.time()
     
+    # --- Bonus: Deduplicate feed URLs before fetching ---
+    logger.info(f"Deduplicating {len(rss_feeds)} provided feed URLs...")
+    unique_feed_urls = {}
+    seen_urls = set()
+    duplicates_found = 0
+    for source_name, feed_url in rss_feeds.items():
+        normalized = normalize_url(feed_url) # Normalize for better matching
+        if normalized not in seen_urls:
+            unique_feed_urls[source_name] = feed_url
+            seen_urls.add(normalized)
+        else:
+            logger.debug(f"Skipping duplicate feed URL: {source_name} ({feed_url})")
+            duplicates_found += 1
+    logger.info(f"Found {duplicates_found} duplicate feed URLs. Processing {len(unique_feed_urls)} unique feeds.")
+    # Use unique_feed_urls instead of rss_feeds below
+    # ----------------------------------------------------
+
     # Process feeds in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a mapping of futures to source names for tracking
         future_to_source = {
             executor.submit(fetch_rss_feed, feed_url, source_name, max_articles_per_feed): source_name
-            for source_name, feed_url in rss_feeds.items()
+            for source_name, feed_url in unique_feed_urls.items()
             if not should_skip_source(feed_url)
         }
         
         # Process completed futures as they come in
         for future in concurrent.futures.as_completed(future_to_source):
             source_name = future_to_source[future]
-            feed_url = next((url for name, url in rss_feeds.items() if name == source_name), None)
+            feed_url = next((url for name, url in unique_feed_urls.items() if name == source_name), None)
             
             try:
                 source_start_time = time.time()
@@ -1300,14 +1156,6 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     # Print a comprehensive summary of the run
     logger.info(print_metrics_summary())
     
-    # Clean up WebDriver if it was created
-    if _driver is not None:
-        try:
-            _driver.quit()
-            logger.debug("WebDriver closed successfully")
-        except Exception as e:
-            logger.warning(f"Error closing WebDriver: {e}")
-    
     return all_articles, stats
 
 def combine_feed_sources():
@@ -1391,42 +1239,6 @@ def fetch_articles_from_all_feeds(max_articles_per_source=5):
     else:
         return result  # Return whatever we got
 
-def setup_webdriver():
-    """Set up WebDriver with proper permissions and configuration"""
-    # Get the ChromeDriver path
-    driver_path = ChromeDriverManager().install()
-    
-    # Fix permissions if on Windows
-    if os.name == 'nt':
-        # Add executable permission
-        try:
-            os.chmod(driver_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
-        except Exception as e:
-            logger.warning(f"Could not set ChromeDriver permissions: {e}")
-    
-    # Configure ChromeOptions
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--ignore-certificate-errors')
-    options.add_argument('--ignore-ssl-errors')
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    
-    # Add user agent
-    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    
-    try:
-        # Create service with configured driver path
-        service = Service(driver_path)
-        # Create driver with service and options
-        driver = webdriver.Chrome(service=service, options=options)
-        return driver
-    except Exception as e:
-        logger.error(f"Failed to create WebDriver: {e}")
-        return None
-
 def fetch_feed_with_redirects(feed_url):
     """Fetch RSS feed with proper redirect handling"""
     try:
@@ -1445,6 +1257,28 @@ def fetch_feed_with_redirects(feed_url):
         logger.error(f"Failed to fetch RSS feed {feed_url}: {e}")
         return None
 
+def categorize_article_age(publish_date: datetime) -> str:
+    """Categorize article age based on a timezone-aware datetime."""
+    now = datetime.now(CENTRAL) # Use CENTRAL timezone
+    if not publish_date or not isinstance(publish_date, datetime):
+        return 'unknown'
+
+    # Ensure publish_date is aware and in CENTRAL timezone
+    if publish_date.tzinfo is None:
+        # This case should ideally not happen if force_central is used everywhere
+        logger.warning("Categorizing age for a naive datetime. Assuming UTC.")
+        publish_date = publish_date.replace(tzinfo=dateutil_tz.UTC).astimezone(CENTRAL)
+    elif publish_date.tzinfo != CENTRAL:
+         publish_date = publish_date.astimezone(CENTRAL)
+
+    delta = now - publish_date
+
+    if delta < timedelta(hours=1): return 'last_hour'
+    if delta < timedelta(days=1): return 'today'
+    if delta < timedelta(days=2): return 'yesterday'
+    if delta < timedelta(days=7): return 'this_week'
+    return 'older'
+
 # --- Test Execution ---
 
 if __name__ == "__main__":
@@ -1453,5 +1287,5 @@ if __name__ == "__main__":
     for i, article in enumerate(articles, 1):
         logger.info(f"Article {i}: {article['title']} - {article['source']} ({article['category']})")
         logger.debug(f"URL: {article['url']}")
-        logger.debug(f"Published: {article['published']}")
+        logger.debug(f"Published: {article['published'].strftime('%Y-%m-%d %H:%M:%S %Z') if article.get('published') else 'N/A'}")
         logger.debug(f"Content Preview: {article['content'][:150]}...")
