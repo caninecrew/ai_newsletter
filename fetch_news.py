@@ -46,7 +46,8 @@ FETCH_METRICS['pool_timeouts'] = 0
 
 # --- Concurrency Control ---
 # Set concurrency limit based on WebDriver pool size
-CONCURRENCY_LIMIT = WebDriverPool._POOL_SIZE  # Access _POOL_SIZE through the class
+from webdriver_pool import WebDriverPool, _POOL_SIZE  # Import _POOL_SIZE directly
+CONCURRENCY_LIMIT = _POOL_SIZE
 selenium_semaphore = threading.Semaphore(CONCURRENCY_LIMIT)
 logger.info(f"Selenium concurrency limit set to: {CONCURRENCY_LIMIT}")
 # ---------------------------
