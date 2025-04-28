@@ -110,16 +110,16 @@ def send_email(subject, body, recipients, smtp_settings, retry_count=0):
         else:
             raise
             
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}", exc_info=True)
+        return False
+            
     finally:
         if server:
             try:
                 server.quit()
             except Exception as e:
                 logger.warning(f"Error closing SMTP connection: {e}")
-
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}", exc_info=True)
-        return False
 
 def test_send_email():
     """
