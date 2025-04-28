@@ -65,7 +65,7 @@ def fetch_article_content(article, max_retries=2):
 
     try:
         # Extract content using our new methods
-        content_data = extract_article_content(url, timeout=15)
+        content_data = extract_article_content(url, timeout=SYSTEM_SETTINGS.get('http_timeout', 15))
         
         if content_data and content_data.get('text'):
             article['content'] = content_data['text']
@@ -73,7 +73,7 @@ def fetch_article_content(article, max_retries=2):
             article['authors'] = content_data.get('authors')
             article['meta_description'] = content_data.get('meta_description')
             
-            # Update article title if newspaper3k found a better one
+            # Update article title if we found a better one
             if content_data['title'] and len(content_data['title']) > len(article.get('title', '')):
                 article['title'] = content_data['title']
                 
@@ -220,30 +220,15 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
 def create_secure_session():
     """Creates a requests session with updated TLS settings and certifi."""
     session = requests.Session()
-    # Use certifi's CA bundle
     session.verify = certifi.where()
-    # Optional: Configure adapters with specific SSL context if needed,
-    # but session.verify usually suffices for CA verification.
-    # adapter = requests.adapters.HTTPAdapter()
-    # session.mount('https://', adapter)
     return session
 
 def configure_feedparser():
     """Configures feedparser to use certifi for SSL verification."""
-    # Create an SSL context using certifi's CA bundle
     ssl_context = ssl.create_default_context(cafile=certifi.where())
-    ssl_context.check_hostname = True # Ensure hostname checking is enabled
+    ssl_context.check_hostname = True
     ssl_context.verify_mode = ssl.CERT_REQUIRED
-    # Enforce TLS 1.2 or higher if necessary (usually default context is good)
-    # ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-
-    # Set feedparser's global handlers to use this context
-    # Note: feedparser might not directly expose easy SSL context injection globally.
-    # If direct fetching within feedparser fails due to SSL, consider fetching
-    # the feed content with 'requests' first, then parsing the string content.
-    # For now, rely on system/requests handling unless specific errors arise.
     logger.info("Feedparser configured to use system/requests SSL handling with certifi.")
-    # feedparser.RESOLVE_RELATIVE_URIS = False # Example configuration if needed
 
 # Initialize session and configure feedparser
 secure_session = create_secure_session()
@@ -266,25 +251,57 @@ def should_skip_source(url: str) -> bool:
 
 def force_central(dt_obj, url_for_logging=""):
     """Converts aware or naive datetime to Central Time (CT), handling errors."""
-    # ... (rest of force_central function - no changes needed based on errors) ...
-    pass
+    if not dt_obj:
+        return None
+        
+    try:
+        # Convert time tuple to datetime
+        if isinstance(dt_obj, time.struct_time):
+            dt_obj = datetime.fromtimestamp(time.mktime(dt_obj))
+            
+        # Make naive datetime aware (assume UTC)
+        if dt_obj.tzinfo is None:
+            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+            
+        # Convert to Central Time
+        central_time = dt_obj.astimezone(CENTRAL)
+        return central_time
+        
+    except Exception as e:
+        logger.warning(f"Error converting datetime for {url_for_logging}: {e}")
+        return None
 
 def normalize_url(url: str) -> str:
     """Normalizes a URL by removing common tracking parameters and fragments."""
     try:
+        # Basic cleanup
         url = url.strip()
+        
+        # Parse URL
         parsed = urlparse(url)
-        # Common tracking parameters (add more as needed)
-        tracking_params = {'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-                           'fbclid', 'gclid', 'mc_cid', 'mc_eid', '_ga', 'ICID', 'ncid', 'ref'}
-        # Filter query parameters
-        query_params = parse_qs(parsed.query, keep_blank_values=True)
-        filtered_params = {k: v for k, v in query_params.items() if k.lower() not in tracking_params}
-        # Rebuild query string
-        clean_query = urlencode(filtered_params, doseq=True)
-        # Reconstruct URL without fragment and with cleaned query
-        normalized = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, clean_query, ''))
-        return normalized.lower() # Lowercase for consistency
+        
+        # Remove tracking parameters
+        query_dict = parse_qs(parsed.query, keep_blank_values=True)
+        filtered_params = {
+            k: v for k, v in query_dict.items()
+            if not any(track in k.lower() for track in [
+                'utm_', 'ref_', 'source', 'medium', 'campaign',
+                'mc_', 'affiliate', 'fbclid', 'gclid', 'msclkid'
+            ])
+        }
+        
+        # Reconstruct URL without tracking params and fragment
+        clean_url = urlunparse((
+            parsed.scheme,
+            parsed.netloc.lower(),
+            parsed.path,
+            parsed.params,
+            urlencode(filtered_params, doseq=True),
+            None  # Remove fragment
+        ))
+        
+        return clean_url
+        
     except Exception as e:
         logger.warning(f"Failed to normalize URL {url}: {e}")
         return url.strip().lower() # Fallback to simple strip and lower
@@ -292,35 +309,37 @@ def normalize_url(url: str) -> str:
 def is_duplicate_article(title, link, existing_articles, similarity_threshold=0.9):
     """Checks for duplicate articles based on URL or title similarity."""
     normalized_link = normalize_url(link)
-    for existing in existing_articles:
-        if normalize_url(existing['link']) == normalized_link:
+    
+    for article in existing_articles:
+        # Check URL first (exact match)
+        if normalize_url(article['link']) == normalized_link:
             return True
-        # Check title similarity if links differ slightly (e.g., http vs https)
-        cached_title = existing.get('title', '')
-        if title and cached_title:
-             # Use SequenceMatcher for title comparison
-            if SequenceMatcher(None, title.lower(), cached_title.lower()).ratio() > similarity_threshold:
-                logger.debug(f"Potential duplicate detected based on title similarity ({link} vs {existing['link']})")
-                return True # Consider it a duplicate if titles are very similar
+            
+        # Then check title similarity
+        if title and article.get('title'):
+            similarity = SequenceMatcher(None, title.lower(), article['title'].lower()).ratio()
+            if similarity >= similarity_threshold:
+                return True
+                
     return False
 
 def print_metrics_summary():
     """Generates a string summary of the fetch metrics."""
-    summary = ["\n--- Fetch Metrics Summary ---"]
-    summary.append(f"Sources Checked: {FETCH_METRICS['sources_checked']}")
+    summary = []
+    summary.append("\nFetch Metrics Summary:")
+    summary.append(f"Total Sources Checked: {FETCH_METRICS['sources_checked']}")
     summary.append(f"Successful Sources: {FETCH_METRICS['successful_sources']}")
-    summary.append(f"Empty Sources: {len(FETCH_METRICS['empty_sources'])}")
     summary.append(f"Failed Sources: {len(FETCH_METRICS['failed_sources'])}")
-    if FETCH_METRICS['failed_sources']:
-        summary.append(f"  Failed List: {', '.join(FETCH_METRICS['failed_sources'])}")
-    summary.append(f"Total Articles Found (Initial): {FETCH_METRICS['total_articles']}")
-    summary.append(f"Duplicate Articles Skipped: {FETCH_METRICS['duplicate_articles']}")
-    summary.append(f"Content Fetch Attempts: {FETCH_METRICS.get('content_attempts', 0)}")
-    summary.append(f"Content Fetch Success (Requests): {FETCH_METRICS.get('content_success_requests', 0)}")
-    summary.append(f"Content Fetch Failures: {len(failed_urls)}")
-    summary.append(f"Total Processing Time: {FETCH_METRICS.get('processing_time', 0):.2f} seconds")
-    summary.append("---------------------------")
-    return "\n".join(summary)
+    summary.append(f"Empty Sources: {len(FETCH_METRICS['empty_sources'])}")
+    summary.append(f"Total Articles Found: {FETCH_METRICS['total_articles']}")
+    summary.append(f"Total Processing Time: {FETCH_METRICS['processing_time']:.2f}s")
+    
+    if FETCH_METRICS.get('content_attempts'):
+        success_rate = (FETCH_METRICS.get('content_success_requests', 0) / 
+                       FETCH_METRICS['content_attempts'] * 100)
+        summary.append(f"\nContent Fetch Success Rate: {success_rate:.1f}%")
+        
+    return '\n'.join(summary)
 
 # --- Core Fetching Logic ---
 
@@ -372,25 +391,6 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
 
     # Process feeds in parallel (fetching RSS is usually I/O bound)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_feed = {executor.submit(fetch_rss_feed, url, name, max_articles_per_feed): name 
-                         for name, url in unique_feeds.items()}
-        
-        for future in concurrent.futures.as_completed(future_to_feed):
-            source_name = future_to_feed[future]
-            try:
-                articles_from_feed = future.result()
-                if articles_from_feed:
-                    new_articles = [a for a in articles_from_feed 
-                                  if not is_duplicate_article(a['title'], a['link'], all_articles)]
-                    all_articles.extend(new_articles)
-                    duplicates_filtered = len(articles_from_feed) - len(new_articles)
-                    if duplicates_filtered > 0:
-                        FETCH_METRICS['duplicate_articles'] += duplicates_filtered
-                        logger.debug(f"Filtered {duplicates_filtered} duplicates from {source_name}")
-
-            except Exception as exc:
-                logger.error(f"Feed fetch task for {source_name} generated an exception: {exc}")
-                if source_name not in FETCH_METRICS['failed_sources']:
                     FETCH_METRICS['failed_sources'].append(f"{source_name} (Task Error)")
 
     logger.info(f"Found {len(all_articles)} unique articles from feeds.")
