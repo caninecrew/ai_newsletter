@@ -8,9 +8,9 @@ import os
 from dotenv import load_dotenv
 import openai
 import time
-from datetime import datetime, timezone
-import pytz
-from typing import Optional
+from datetime import datetime, timezone, timedelta
+from dateutil import tz as dateutil_tz
+from typing import Optional, List, Dict
 from logger_config import setup_logger
 from config import (
     PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, 
@@ -26,8 +26,9 @@ logger = setup_logger()
 # Load environment variables
 load_dotenv()
 
-# Configure default timezone
-DEFAULT_TZ = pytz.timezone(SYSTEM_SETTINGS.get('default_timezone', 'America/Chicago'))
+# Configure default timezone using dateutil
+CENTRAL = dateutil_tz.gettz("America/Chicago")
+DEFAULT_TZ = CENTRAL
 
 # Configure newspaper
 config = Config()
@@ -71,28 +72,6 @@ def ensure_nltk_resources():
             except Exception as e:
                 logger.error(f"Failed to download NLTK resource {resource}: {e}")
                 raise
-
-def normalize_datetime(dt: Optional[datetime]) -> datetime:
-    """
-    Normalize a datetime object to the configured timezone
-    
-    Args:
-        dt: datetime object to normalize, can be naive or timezone-aware
-        
-    Returns:
-        datetime: Timezone-aware datetime in the configured timezone
-    """
-    if dt is None:
-        return datetime.now(DEFAULT_TZ)
-    
-    # If naive, assume UTC
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=pytz.UTC)
-    
-    # Convert to configured timezone
-    if SYSTEM_SETTINGS.get('use_central_timezone', True):
-        return dt.astimezone(DEFAULT_TZ)
-    return dt.astimezone(pytz.UTC)
 
 # Initialize NLTK resources
 ensure_nltk_resources()
@@ -275,7 +254,7 @@ def fetch_articles_from_all_feeds(max_articles_per_source=3):
 
     return all_articles
 
-def summarize_articles(articles):
+def summarize_articles(articles: List[Dict], max_summary_length=150, min_summary_length=50) -> List[Dict]:
     """
     Summarize articles with OpenAI, focusing on the most important ones.
     
