@@ -502,10 +502,31 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     FETCH_METRICS['source_statistics'] = defaultdict(lambda: {'articles': 0, 'fetch_time': 0.0, 'success': 0, 'failures': 0})
     FETCH_METRICS['pool_timeouts'] = 0
 
+    # Validate feed URLs and create mapping with source names
+    unique_feeds = {}
+    invalid_feeds = []
+    for name, url in rss_feeds.items():
+        if not isinstance(url, str):
+            logger.error(f"Invalid feed URL for {name}: URL must be a string")
+            invalid_feeds.append(name)
+            continue
+            
+        # Basic URL validation
+        if not url.startswith(('http://', 'https://')):
+            logger.error(f"Invalid feed URL for {name}: {url} (must start with http:// or https://)")
+            invalid_feeds.append(name)
+            continue
+            
+        unique_feeds[name] = url
 
-    # Deduplicate feed URLs (using url as key, keep first source_name)
-    unique_feeds = {url: name for name, url in reversed(rss_feeds.items())}
-    logger.info(f"Processing {len(unique_feeds)} unique feed URLs from {len(rss_feeds)} initial sources.")
+    if invalid_feeds:
+        logger.warning(f"Skipping invalid feeds: {', '.join(invalid_feeds)}")
+
+    if not unique_feeds:
+        logger.error("No valid feeds to process")
+        return []
+
+    logger.info(f"Processing {len(unique_feeds)} valid feed URLs from {len(rss_feeds)} initial sources.")
 
     # Adjust max_workers based on CONCURRENCY_LIMIT if not specified
     if max_workers is None:
@@ -515,7 +536,10 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
 
     # Process feeds in parallel (fetching RSS is usually I/O bound)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='FeedFetcher') as executor:
-        future_to_feed = {executor.submit(fetch_rss_feed, url, name, max_articles_per_feed): name for name, url in unique_feeds.items()}
+        # Create futures with correct parameter order (URL, name)
+        future_to_feed = {executor.submit(fetch_rss_feed, url, name, max_articles_per_feed): name 
+                         for name, url in unique_feeds.items()}
+        
         for future in concurrent.futures.as_completed(future_to_feed):
             source_name = future_to_feed[future]
             try:
@@ -527,14 +551,13 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
                     # Update duplicate count based on filtering
                     duplicates_filtered = len(articles_from_feed) - len(new_articles)
                     if duplicates_filtered > 0:
-                         FETCH_METRICS['duplicate_articles'] += duplicates_filtered
-                         logger.debug(f"Filtered {duplicates_filtered} duplicates from {source_name} after fetch.")
+                        FETCH_METRICS['duplicate_articles'] += duplicates_filtered
+                        logger.debug(f"Filtered {duplicates_filtered} duplicates from {source_name} after fetch.")
 
             except Exception as exc:
                 logger.error(f"Feed fetch task for {source_name} generated an exception: {exc}", exc_info=True)
                 if source_name not in FETCH_METRICS['failed_sources']: # Ensure it's marked as failed
                     FETCH_METRICS['failed_sources'].append(f"{source_name} (Task Error)")
-
 
     logger.info(f"Found {len(all_articles)} unique articles from feeds.")
 
@@ -561,25 +584,15 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
         logger.info(f"Finished content fetching. {FETCH_METRICS.get('content_success_requests', 0)} via Requests, {FETCH_METRICS.get('content_success_selenium', 0)} via Selenium.")
 
     elif not all_articles:
-         logger.info("No articles found from feeds, skipping content fetch.")
-
+        logger.info("No articles found from feeds, skipping content fetch.")
 
     end_time = time.time()
     processing_time = end_time - start_time
     FETCH_METRICS['processing_time'] = processing_time
 
-    # --- Final Stats Calculation (Example) ---
-    # Calculate overall success rate, average times etc. from FETCH_METRICS['source_statistics'] if needed
-    # stats = {
-    #     'total_articles_final': len([a for a in all_articles if a.get('content')]),
-    #     'metrics': dict(FETCH_METRICS) # Convert defaultdicts for easier serialization if needed
-    # }
-    # -----------------------------------------
-
     logger.info(f"Total fetch process completed in {processing_time:.2f} seconds.")
     logger.info(print_metrics_summary()) # Print summary at the end
 
-    # Return only the list of articles (stats are logged)
     return all_articles # Return the final list
 
 
