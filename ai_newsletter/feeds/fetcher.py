@@ -46,7 +46,7 @@ FETCH_METRICS['pool_timeouts'] = 0
 
 # --- Concurrency Control ---
 # Set concurrency limit based on WebDriver pool size
-from webdriver_pool import WebDriverPool, _POOL_SIZE  # Import _POOL_SIZE directly
+from ai_newsletter.selenium_pool.pool import WebDriverPool, _POOL_SIZE  # Import _POOL_SIZE directly
 CONCURRENCY_LIMIT = _POOL_SIZE
 selenium_semaphore = threading.Semaphore(CONCURRENCY_LIMIT)
 logger.info(f"Selenium concurrency limit set to: {CONCURRENCY_LIMIT}")
@@ -676,7 +676,7 @@ if __name__ == "__main__":
     logger.info("--- Starting Standalone Fetch Test ---")
 
     # Ensure pool is initialized for standalone test
-    from webdriver_pool import initialize_pool, close_pool
+    from ai_newsletter.selenium_pool.pool import initialize_pool, close_pool
     initialize_pool()
 
     # Example: Fetch articles with content
