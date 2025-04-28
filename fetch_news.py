@@ -193,17 +193,17 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
         # Check content type - feedparser might handle non-XML, but good practice
         content_type = response.headers.get('content-type', '').lower()
         if 'xml' not in content_type and 'rss' not in content_type and 'atom' not in content_type:
-             logger.warning(f"Unexpected content type '{content_type}' for feed {source_name}. Attempting parse anyway.")
+            logger.warning(f"Unexpected content type '{content_type}' for feed {source_name}. Attempting parse anyway.")
 
-        # Parse the content
-        feed = feedparser.parse(response.content) # Parse bytes content
+        # Parse the feed URL itself, not the title
+        feed = feedparser.parse(feed_url)
 
         if feed.bozo:
             logger.warning(f"Feedparser encountered issues (bozo=1) for {source_name}: {feed.bozo_exception}")
             # Still try to process entries if available
             if not feed.entries:
-                 FETCH_METRICS['failed_sources'].append(f"{source_name} (Bozo/No Entries)")
-                 return [] # Return empty if parsing truly failed
+                FETCH_METRICS['failed_sources'].append(f"{source_name} (Bozo/No Entries)")
+                return [] # Return empty if parsing truly failed
 
         if not feed.entries:
             logger.warning(f"No entries found in feed: {source_name}")
