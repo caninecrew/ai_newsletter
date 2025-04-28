@@ -489,6 +489,16 @@ def fetch_article_content_with_selenium(article, max_retries=3, base_delay=3):
 def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=None):
     """Fetches articles from RSS feeds and optionally their content in parallel."""
     start_time = time.time()
+    
+    # Use configured pool size if not specified
+    if max_workers is None:
+        max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", CONCURRENCY_LIMIT + 2)
+        
+    # Initialize WebDriver pool with configured size
+    pool_size = SYSTEM_SETTINGS.get("webdriver_pool_size", 3)
+    from ai_newsletter.selenium_pool.pool import initialize_pool
+    initialize_pool(pool_size)
+    
     all_articles = []
     unique_article_urls.clear() # Reset global set for this run
     attempted_urls.clear() # Reset attempted URLs for this run
@@ -633,8 +643,31 @@ def combine_feed_sources():
     return combined_feeds
 
 
+_last_cleanup = time.time()
+_cleanup_lock = threading.Lock()
+
+def _check_cleanup_needed():
+    """Check if periodic cleanup is needed and perform it if so."""
+    global _last_cleanup
+    cleanup_interval = SYSTEM_SETTINGS.get("webdriver_cleanup_interval", 300)
+    
+    with _cleanup_lock:
+        current_time = time.time()
+        if current_time - _last_cleanup >= cleanup_interval:
+            logger.info("Performing periodic WebDriver pool cleanup")
+            try:
+                from ai_newsletter.selenium_pool.pool import _pool
+                if _pool is not None:
+                    _pool.cleanup()
+            except Exception as e:
+                logger.error(f"Error during periodic cleanup: {e}")
+            _last_cleanup = current_time
+
 def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5):
     """Combines feeds and fetches articles."""
+    # Check for cleanup before starting new fetch
+    _check_cleanup_needed()
+    
     all_feeds = combine_feed_sources()
     if not all_feeds:
         logger.warning("No feed sources defined or loaded. Cannot fetch articles.")
