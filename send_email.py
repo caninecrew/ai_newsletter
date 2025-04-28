@@ -4,12 +4,14 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr, formatdate
 import os
 from dotenv import load_dotenv
-from logger_config import setup_logger
+from logger_config import setup_logger, DEFAULT_TZ
 import ssl
 import certifi
 from config import EMAIL_SETTINGS
 import time
 from socket import error as socket_error
+from datetime import datetime
+import pytz
 
 # Set up logger
 logger = setup_logger()
@@ -59,56 +61,61 @@ def create_smtp_connection(smtp_settings):
 
 def send_email(subject, body, recipients, smtp_settings, retry_count=0):
     """
-    Send email with secure SSL configuration, retry logic, and connection management
+    Send an email with proper timezone handling for headers.
     
     Args:
-        subject (str): Email subject
-        body (str): Email body content
-        recipients (list): List of recipient email addresses
-        smtp_settings (dict): SMTP server configuration
-        retry_count (int): Current retry attempt number
+        subject: Email subject
+        body: Email body (HTML)
+        recipients: List of recipient email addresses
+        smtp_settings: Dictionary containing SMTP configuration
+        retry_count: Current retry attempt number
+    
+    Returns:
+        bool: True if email was sent successfully, False otherwise
     """
+    server = None
     try:
-        # Prepare email message
-        msg = MIMEMultipart()
+        # Create message
+        msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = formataddr(("Newsletter", smtp_settings['sender']))
+        msg['From'] = formataddr(('AI Newsletter', smtp_settings['sender']))
         msg['To'] = ', '.join(recipients)
-        msg['Date'] = formatdate(localtime=True)
+        
+        # Set timezone-aware Date header
+        now = datetime.now(DEFAULT_TZ)
+        msg['Date'] = formatdate(float(now.timestamp()), localtime=True)
+        
+        # Add body
         msg.attach(MIMEText(body, 'html'))
 
-        server = None
-        try:
-            # Create SMTP connection
-            server = create_smtp_connection(smtp_settings)
+        # Create SMTP connection and send
+        server = create_smtp_connection(smtp_settings)
+        server.send_message(msg)
+        
+        return True
+        
+    except (smtplib.SMTPServerDisconnected, socket_error) as e:
+        if retry_count < MAX_RETRIES:
+            logger.warning(f"SMTP connection lost: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
+            time.sleep(RETRY_DELAY * (retry_count + 1))
+            return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
+        else:
+            raise
             
-            # Send the message
-            server.send_message(msg)
-            logger.info(f"Successfully sent email to {len(recipients)} recipients")
-            return True
+    except smtplib.SMTPException as e:
+        if retry_count < MAX_RETRIES:
+            logger.warning(f"SMTP error: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
+            time.sleep(RETRY_DELAY * (retry_count + 1))
+            return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
+        else:
+            raise
             
-        except (smtplib.SMTPServerDisconnected, socket_error) as e:
-            if retry_count < MAX_RETRIES:
-                logger.warning(f"SMTP connection lost: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
-                time.sleep(RETRY_DELAY * (retry_count + 1))
-                return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
-            else:
-                raise
-                
-        except smtplib.SMTPException as e:
-            if retry_count < MAX_RETRIES:
-                logger.warning(f"SMTP error: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
-                time.sleep(RETRY_DELAY * (retry_count + 1))
-                return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
-            else:
-                raise
-                
-        finally:
-            if server:
-                try:
-                    server.quit()
-                except Exception as e:
-                    logger.warning(f"Error closing SMTP connection: {e}")
+    finally:
+        if server:
+            try:
+                server.quit()
+            except Exception as e:
+                logger.warning(f"Error closing SMTP connection: {e}")
 
     except Exception as e:
         logger.error(f"Failed to send email: {e}", exc_info=True)
