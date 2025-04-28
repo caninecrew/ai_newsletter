@@ -5,9 +5,12 @@ from concurrent_log_handler import ConcurrentRotatingFileHandler
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import pytz
+from dateutil import tz as dateutil_tz # Import dateutil timezone tools
 
-# Define default timezone constant
-DEFAULT_TZ = pytz.timezone('America/Chicago')  # From SYSTEM_SETTINGS['default_timezone']
+# Define default timezone constant using dateutil
+# DEFAULT_TZ = pytz.timezone('America/Chicago') # Old way
+CENTRAL = dateutil_tz.gettz("America/Chicago")
+DEFAULT_TZ = CENTRAL # Assign for compatibility if needed, prefer using CENTRAL directly
 
 # Expand metrics tracking
 FETCH_METRICS = {
@@ -98,30 +101,6 @@ def reset_metrics() -> None:
         }
     }
 
-def categorize_article_age(publish_date: datetime) -> str:
-    """Categorize article age for statistics"""
-    now = datetime.now(DEFAULT_TZ)
-    if not publish_date:
-        return 'unknown'
-    
-    # Ensure publish_date is timezone-aware
-    if publish_date.tzinfo is None:
-        publish_date = publish_date.replace(tzinfo=pytz.UTC)
-    publish_date = publish_date.astimezone(DEFAULT_TZ)
-    
-    delta = now - publish_date
-    
-    if delta < timedelta(hours=1):
-        return 'last_hour'
-    elif delta < timedelta(days=1):
-        return 'today'
-    elif delta < timedelta(days=2):
-        return 'yesterday'
-    elif delta < timedelta(days=7):
-        return 'this_week'
-    else:
-        return 'older'
-
 def print_metrics_summary() -> str:
     """Print a detailed summary of the metrics from the current run."""
     stats = []
@@ -172,18 +151,19 @@ def setup_logger(name='ai_newsletter', level=None):
     
     logger.setLevel(level)
     
-    # Create a formatter with timezone-aware timestamps
+    # Create a formatter with timezone-aware timestamps using CENTRAL
     class TimeZoneFormatter(logging.Formatter):
         def converter(self, timestamp):
-            # Convert timestamp to datetime and ensure it's timezone-aware
-            dt = datetime.fromtimestamp(timestamp, pytz.UTC)
-            return dt.astimezone(DEFAULT_TZ)
-            
+            # Convert timestamp to datetime UTC, then to CENTRAL
+            dt = datetime.fromtimestamp(timestamp, dateutil_tz.UTC)
+            return dt.astimezone(CENTRAL) # Use CENTRAL
+
         def formatTime(self, record, datefmt=None):
             dt = self.converter(record.created)
             if datefmt:
                 return dt.strftime(datefmt)
-            return dt.strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+            # Ensure format includes timezone info if desired
+            return dt.strftime('%Y-%m-%d %H:%M:%S,%f %Z')[:-3] # Example with timezone name
     
     formatter = TimeZoneFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
@@ -193,7 +173,7 @@ def setup_logger(name='ai_newsletter', level=None):
     logger.addHandler(console_handler)
     
     # Create and add file handler with rotation
-    today = datetime.now(DEFAULT_TZ).strftime('%Y%m%d')
+    today = datetime.now(CENTRAL).strftime('%Y%m%d') # Use CENTRAL
     log_filename = f'logs/newsletter_{today}.log'
     
     # Use ConcurrentRotatingFileHandler to handle concurrent writes
