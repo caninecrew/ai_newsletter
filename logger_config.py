@@ -100,9 +100,14 @@ def reset_metrics() -> None:
 
 def categorize_article_age(publish_date: datetime) -> str:
     """Categorize article age for statistics"""
-    now = datetime.now()
+    now = datetime.now(DEFAULT_TZ)
     if not publish_date:
         return 'unknown'
+    
+    # Ensure publish_date is timezone-aware
+    if publish_date.tzinfo is None:
+        publish_date = publish_date.replace(tzinfo=pytz.UTC)
+    publish_date = publish_date.astimezone(DEFAULT_TZ)
     
     delta = now - publish_date
     
@@ -170,14 +175,15 @@ def setup_logger(name='ai_newsletter', level=None):
     # Create a formatter with timezone-aware timestamps
     class TimeZoneFormatter(logging.Formatter):
         def converter(self, timestamp):
-            dt = datetime.fromtimestamp(timestamp)
-            return dt.replace(tzinfo=pytz.UTC).astimezone(DEFAULT_TZ)
+            # Convert timestamp to datetime and ensure it's timezone-aware
+            dt = datetime.fromtimestamp(timestamp, pytz.UTC)
+            return dt.astimezone(DEFAULT_TZ)
             
         def formatTime(self, record, datefmt=None):
             dt = self.converter(record.created)
             if datefmt:
                 return dt.strftime(datefmt)
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
+            return dt.strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
     
     formatter = TimeZoneFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
