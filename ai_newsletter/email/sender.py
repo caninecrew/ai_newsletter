@@ -4,10 +4,10 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr, formatdate
 import os
 from dotenv import load_dotenv
-from logger_config import setup_logger
+from ai_newsletter.logging_cfg.logger import setup_logger
 import ssl
 import certifi
-from config import EMAIL_SETTINGS
+from ai_newsletter.config.settings import EMAIL_SETTINGS
 import time
 from socket import error as socket_error
 from datetime import datetime
