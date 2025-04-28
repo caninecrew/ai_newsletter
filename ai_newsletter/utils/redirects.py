@@ -6,6 +6,7 @@ import random
 import time
 import logging
 from ai_newsletter.logging_cfg.logger import setup_logger, FETCH_METRICS
+import certifi
 
 # Get the logger
 logger = setup_logger()
@@ -19,8 +20,33 @@ USER_AGENTS = [
 ]
 
 def create_session():
-    """Create a requests session with rotating user agents and proper settings."""
+    """Create a requests session with rotating user agents, proper security, and retry settings."""
     session = requests.Session()
+    
+    # Use certifi's CA bundle for SSL verification
+    session.verify = certifi.where()
+    
+    # Configure retry strategy with exponential backoff
+    retry_strategy = requests.adapters.Retry(
+        total=3,  # total number of retries
+        backoff_factor=0.5,  # wait 0.5s * (2 ** retry) between retries
+        status_forcelist=[429, 500, 502, 503, 504],  # retry on these status codes
+        allowed_methods=["GET", "HEAD"]  # only retry safe methods
+    )
+    
+    # Configure connection pooling and timeouts
+    adapter = requests.adapters.HTTPAdapter(
+        max_retries=retry_strategy,
+        pool_connections=20,  # number of urllib3 connection pools to cache
+        pool_maxsize=20,  # maximum number of connections to save in the pool
+        pool_block=False  # don't block when pool is depleted, raise error instead
+    )
+    
+    # Mount adapter for both HTTP and HTTPS
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # Set secure headers with rotating user agent
     session.headers.update({
         'User-Agent': random.choice(USER_AGENTS),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -28,8 +54,29 @@ def create_session():
         'Accept-Encoding': 'gzip, deflate',
         'DNT': '1',
         'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'cross-site',
+        'Sec-Fetch-User': '?1'
     })
+    
+    return session
+
+def create_html_session():
+    """Create a requests-html session with same security settings as regular session."""
+    session = HTMLSession()
+    
+    # Configure the underlying requests.Session with same settings
+    base_session = create_session()
+    session.headers = base_session.headers
+    session.verify = base_session.verify
+    
+    # Add specific headers for JavaScript-enabled requests
+    session.headers.update({
+        'Sec-Fetch-Mode': 'no-cors',  # Different for JS requests
+    })
+    
     return session
 
 def resolve_google_redirect(url, max_retries=2, timeout=10):
