@@ -37,7 +37,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # --- Global variables for summary ---
 all_articles_global = [] # To store articles for summary
 failed_articles_global = [] # To store failed articles for summary
-selenium_retry_count_global = 0 # To track selenium retries
 
 def parse_feed_args():
     """Parse command line arguments for feed configuration"""
@@ -98,7 +97,7 @@ def run_newsletter(args):
 
 def generate_newsletter(start_date=None, end_date=None):
     """Fetches, summarizes, formats, and sends the newsletter."""
-    global all_articles_global, failed_articles_global, selenium_retry_count_global # Use global vars
+    global all_articles_global, failed_articles_global # Use global vars
 
     try:
         logger.info("--- Starting Newsletter Generation ---")
@@ -108,10 +107,8 @@ def generate_newsletter(start_date=None, end_date=None):
         # Assuming fetch_articles_from_all_feeds returns articles and stats
         articles, fetch_stats = fetch_articles_from_all_feeds()
         all_articles_global = articles # Store for summary
-        # Extract failed articles and selenium retries from stats if available
+        # Extract failed articles from stats if available
         # This requires fetch_news_articles to return detailed stats
-        # For now, let's assume fetch_stats might contain relevant info or we track failures separately
-        # selenium_retry_count_global = fetch_stats.get('selenium_retries', 0) # Example
 
         if not articles:
             logger.warning("No articles fetched. Exiting.")
@@ -223,7 +220,6 @@ def main():
             "articles_fetched_initial": len(all_articles_global), # Use global var
             # Add more stats as they become available, e.g., after filtering/summarizing
             "articles_failed_summary": len(failed_articles_global), # Use global var
-            "selenium_retries": selenium_retry_count_global, # Use global var
             "runtime_seconds": round(end_time - start_time, 2),
             "end_time_utc": datetime.utcnow().isoformat() + "Z"
         }
