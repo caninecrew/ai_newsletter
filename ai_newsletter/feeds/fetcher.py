@@ -19,10 +19,10 @@ import hashlib
 from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode # Added urlencode, parse_qs
 from collections import defaultdict # Added import
 from difflib import SequenceMatcher # Added import
-from google_redirect import resolve_google_redirect_selenium # Import Google redirect resolver
+from ai_newsletter.utils.redirects import resolve_google_redirect_selenium  # Corrected import for google_redirect
 
 # --- Local Imports ---
-from logger_config import setup_logger # Import logger setup
+from ai_newsletter.logging_cfg.logger import setup_logger  # Corrected import for logger_config
 from config import ( # Import config settings and feed lists
     SYSTEM_SETTINGS,
     USER_INTERESTS,
