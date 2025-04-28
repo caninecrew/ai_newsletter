@@ -29,16 +29,16 @@ jobs:
         run: |
           echo "Checking for required files..."
           ls -la
-          if [ ! -f "cli.py" ]; then
-            echo "ERROR: cli.py not found!"
+          if [ ! -f "main.py" ]; then
+            echo "ERROR: main.py not found!"
             exit 1
           fi
           if [ ! -f "requirements.txt" ]; then
             echo "ERROR: requirements.txt not found!"
             exit 1
           fi
-          if [ ! -f "config.py" ]; then
-            echo "ERROR: config.py not found!"
+          if [ ! -f "ai_newsletter/config/settings.py" ]; then
+            echo "ERROR: ai_newsletter/config/settings.py not found!"
             exit 1
           fi
           echo "All required files found."
