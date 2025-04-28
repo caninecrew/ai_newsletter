@@ -1178,3 +1178,19 @@ def build_empty_newsletter() -> str:
     </body>
     </html>
     """
+
+def build_html(articles: List[Dict]) -> str:
+    """
+    Build the HTML content for the newsletter from a list of articles.
+
+    Args:
+        articles: A list of dictionaries, each containing article details.
+
+    Returns:
+        A string containing the HTML content of the newsletter.
+    """
+    if not articles:
+        return build_empty_newsletter()
+
+    # Use the format_articles function to generate the HTML content
+    return format_articles(articles, html=True)
