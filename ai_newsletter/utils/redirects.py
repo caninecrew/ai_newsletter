@@ -253,15 +253,6 @@ def extract_article_content(url, timeout=15, max_retries=2):
             if title_elements:
                 title = title_elements[0].text
             
-            meta_description = None
-            authors = []
-            publish_date = None
-            
-            # Try to get title
-            title_elements = r.html.find('title')
-            if title_elements:
-                title = title_elements[0].text
-            
             # Try to get meta description
             meta_elements = r.html.find('meta[name="description"]')
             if meta_elements:
@@ -272,7 +263,9 @@ def extract_article_content(url, timeout=15, max_retries=2):
                 '[rel="author"]',
                 '.author',
                 '.byline',
-                '[itemprop="author"]'
+                '[itemprop="author"]',
+                '.article-author',
+                '.writer'
             ]
             for selector in author_selectors:
                 author_elements = r.html.find(selector)
@@ -285,7 +278,9 @@ def extract_article_content(url, timeout=15, max_retries=2):
                 'time',
                 '.published',
                 '.post-date',
-                '[property="article:published_time"]'
+                '[property="article:published_time"]',
+                '.article-date',
+                '.timestamp'
             ]
             for selector in date_selectors:
                 date_elements = r.html.find(selector)
