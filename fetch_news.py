@@ -183,7 +183,7 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
     logger.info(f"Fetching RSS feed: {source_name} ({feed_url})")
     FETCH_METRICS['sources_checked'] += 1
     articles = []
-    unique_article_urls_in_feed = set() # Track URLs within this specific feed
+    unique_article_urls_in_feed = set()  # Track URLs within this specific feed
 
     try:
         # Use requests to fetch, then parse with feedparser for better SSL control
@@ -204,7 +204,7 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             # Still try to process entries if available
             if not feed.entries:
                 FETCH_METRICS['failed_sources'].append(f"{source_name} (Bozo/No Entries)")
-                return [] # Return empty if parsing truly failed
+                return []  # Return empty if parsing truly failed
 
         if not feed.entries:
             logger.warning(f"No entries found in feed: {source_name}")
@@ -224,7 +224,7 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                 logger.warning(f"Skipping entry with no link in {source_name}: '{title}'")
                 continue
 
-            # --- Handle Google News URLs ---
+            # Handle Google News URLs
             original_link = link
             if "news.google.com" in link:
                 extracted = resolve_google_redirect_selenium(link)
@@ -233,7 +233,6 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                     link = extracted
                 else:
                     logger.warning(f"Could not extract final URL from Google News link: {link}. Using original.")
-            # -------------------------------
 
             # Check if URL already processed globally or within this feed
             normalized_link = normalize_url(link)
@@ -241,16 +240,16 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                 logger.debug(f"Skipping duplicate article URL (already seen): {link}")
                 FETCH_METRICS['duplicate_articles'] = FETCH_METRICS.get('duplicate_articles', 0) + 1
                 continue
+
             unique_article_urls.add(normalized_link)
             unique_article_urls_in_feed.add(normalized_link)
-
 
             # Convert published time to Central Time
             published_date = force_central(published, link) if published else None
 
             # Basic interest check (optional, can be done later)
-            relevant = True # Default to relevant
-            if USER_INTERESTS: # Check only if interests are defined
+            relevant = True  # Default to relevant
+            if USER_INTERESTS:  # Check only if interests are defined
                 relevant = any(interest.lower() in title.lower() for interest in USER_INTERESTS)
 
             if relevant:
@@ -261,14 +260,13 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
                     'published': published_date,
                     'source': source_name,
                     'feed_url': feed_url,
-                    'content': None, # Content fetched later
+                    'content': None,  # Content fetched later
                     'fetch_method': None,
-                    'id': hashlib.sha256(link.encode()).hexdigest()[:16] # Generate unique ID
+                    'id': hashlib.sha256(link.encode()).hexdigest()[:16]  # Generate unique ID
                 })
                 count += 1
             else:
-                 logger.debug(f"Skipping article not matching interests: '{title}' from {source_name}")
-
+                logger.debug(f"Skipping article not matching interests: '{title}' from {source_name}")
 
         if articles:
             FETCH_METRICS['successful_sources'] += 1
@@ -277,9 +275,8 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             stats = FETCH_METRICS['source_statistics'][source_name]
             stats['articles'] += len(articles)
             logger.info(f"Successfully fetched {len(articles)} articles from {source_name}")
-        elif not feed.bozo: # Only mark as empty if not already marked as failed (bozo)
-             FETCH_METRICS['empty_sources'].append(source_name)
-
+        elif not feed.bozo:  # Only mark as empty if not already marked as failed (bozo)
+            FETCH_METRICS['empty_sources'].append(source_name)
 
     except requests.exceptions.Timeout:
         logger.error(f"Timeout fetching RSS feed: {source_name} ({feed_url})")
@@ -289,8 +286,8 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
         FETCH_METRICS['failed_sources'].append(f"{source_name} (Request Error)")
     except Exception as e:
         logger.error(f"Unexpected error processing feed {source_name} ({feed_url}): {e}", exc_info=True)
-        if source_name not in FETCH_METRICS['failed_sources']: # Avoid double counting
-             FETCH_METRICS['failed_sources'].append(f"{source_name} (Parse Error)")
+        if source_name not in FETCH_METRICS['failed_sources']:  # Avoid double counting
+            FETCH_METRICS['failed_sources'].append(f"{source_name} (Parse Error)")
 
     return articles
 
@@ -625,7 +622,7 @@ def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5)
     all_feeds = combine_feed_sources()
     if not all_feeds:
         logger.warning("No feed sources defined or loaded. Cannot fetch articles.")
-        return []
+        return [], {"error": "No feed sources available"}
 
     # Get settings from config
     max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", CONCURRENCY_LIMIT + 2) # Default based on pool size + buffer
@@ -639,7 +636,16 @@ def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5)
         max_articles_per_feed=max_articles,
         max_workers=max_workers
     )
-    return articles
+
+    # Return articles and fetch statistics
+    fetch_stats = {
+        "total_articles": len(articles),
+        "failed_sources": FETCH_METRICS.get("failed_sources", []),
+        "empty_sources": FETCH_METRICS.get("empty_sources", []),
+        "processing_time": FETCH_METRICS.get("processing_time", 0),
+    }
+
+    return articles, fetch_stats
 
 
 def categorize_article_age(published_date):
@@ -681,7 +687,7 @@ if __name__ == "__main__":
     initialize_pool()
 
     # Example: Fetch articles with content
-    fetched_articles = fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=2) # Limit articles per feed for test
+    fetched_articles, fetch_stats = fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=2) # Limit articles per feed for test
 
     logger.info(f"--- Fetch Test Completed ---")
     logger.info(f"Total articles fetched with content: {len([a for a in fetched_articles if a.get('content')])}")
