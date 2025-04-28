@@ -2,10 +2,10 @@ import os
 import sys
 import warnings
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from fetch_news import fetch_articles_from_all_feeds
 from summarize import summarize_articles
-from formatter import format_articles, filter_articles_by_date, deduplicate_articles
+from formatter import format_articles, filter_articles_by_date, deduplicate_articles, build_html, strip_html, build_empty_newsletter
 from send_email import send_email
 from logger_config import setup_logger
 from config import EMAIL_SETTINGS, SYSTEM_SETTINGS, FEED_SETTINGS
@@ -224,4 +224,52 @@ def main():
         logger.info(f"SUMMARY: {json.dumps(stats)}")
 
 if __name__ == "__main__":
-    main()
+    start_time = time.time() # Record start time for summary
+
+    parser = argparse.ArgumentParser(description="Generate and send AI Newsletter.")
+    parser.add_argument("--start_date", help="Start date for filtering articles (YYYY-MM-DD)")
+    parser.add_argument("--end_date", help="End date for filtering articles (YYYY-MM-DD)")
+    args = parser.parse_args()
+
+    start_dt = None
+    end_dt = None
+    try:
+        if (args.start_date):
+            # Parse and make timezone-aware in CENTRAL
+            start_dt = datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=CENTRAL)
+        if (args.end_date):
+            # Parse, add time component to include the whole day, make aware
+            end_dt = (datetime.strptime(args.end_date, "%Y-%m-%d") + timedelta(days=1, seconds=-1)).replace(tzinfo=CENTRAL)
+    except ValueError:
+        logger.error("Invalid date format. Please use YYYY-MM-DD.")
+        sys.exit(1)
+
+    try: # Wrap the core logic
+        generate_newsletter(start_date=start_dt, end_date=end_dt)
+    finally: # Add the summary logging block
+        end_time = time.time()
+        stats = {
+            "articles_fetched_initial": len(all_articles_global), # Use global var
+            # Add more stats as they become available, e.g., after filtering/summarizing
+            "articles_failed_summary": len(failed_articles_global), # Use global var
+            "selenium_retries": selenium_retry_count_global, # Use global var
+            "runtime_seconds": round(end_time - start_time, 2),
+            "end_time_utc": datetime.utcnow().isoformat() + "Z"
+        }
+        # Use json.dumps for structured logging
+        logger.info(f"SUMMARY: {json.dumps(stats)}")
+
+    # Summarize articles
+    articles = summarize_articles(all_articles_global)
+
+    # Always send a newsletter
+    if articles:
+        html = build_html(articles)
+        text = strip_html(html)
+        subject = f"AI Newsletter – {len(articles)} stories – {date.today():%b %d}"
+    else:
+        html = build_empty_newsletter()
+        text = "No new articles were available today."
+        subject = f"AI Newsletter – No new stories – {date.today():%b %d}"
+
+    send_email.send_newsletter(html, text, subject)
