@@ -1,6 +1,27 @@
 # Configuration file for AI Newsletter
 # This file contains configurable settings for the newsletter system
 
+import os
+from typing import Dict, Any
+from datetime import timedelta
+
+# --- API CONFIGURATION ---
+GNEWS_CONFIG = {
+    "enabled": True,  # Set to False to use RSS feeds instead
+    "language": "en",
+    "country": "us",  # Optional country filter
+    "max_articles_per_query": 10,
+    "categories": {
+        "general": True,
+        "world": True,
+        "nation": True,
+        "business": True,
+        "technology": True,
+        "health": True,
+        "science": True
+    }
+}
+
 # --- News Source Configuration ---
 # Using Google News RSS feeds as primary source for reliable aggregated content
 
