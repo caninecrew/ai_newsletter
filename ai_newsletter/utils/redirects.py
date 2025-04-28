@@ -1,12 +1,17 @@
-from newspaper import Article, ArticleException
-from requests_html import HTMLSession
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from requests_html import HTMLSession
+from newspaper import Article, ArticleException, Config
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import random
 import time
 import logging
-from ai_newsletter.logging_cfg.logger import setup_logger, FETCH_METRICS
 import certifi
+from datetime import datetime
+from bs4 import BeautifulSoup
+from typing import Optional, Dict, Any
+from ai_newsletter.logging_cfg.logger import setup_logger
 
 # Get the logger
 logger = setup_logger()
@@ -18,6 +23,13 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
 ]
+
+# Configure newspaper
+config = Config()
+config.browser_user_agent = random.choice(USER_AGENTS)
+config.request_timeout = 15
+config.fetch_images = False
+config.memoize_articles = False
 
 def create_session():
     """Create a requests session with rotating user agents, proper security, and retry settings."""
@@ -307,11 +319,6 @@ def extract_article_content(url, timeout=15, max_retries=2):
 
 def cleanup():
     """Clean up resources when done"""
-    global _driver
-    if _driver is not None:
-        try:
-            _driver.quit()
-        except:
-            pass
-        _driver = None
+    # Nothing to clean up anymore since we removed Selenium
+    pass
 
