@@ -586,21 +586,31 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
 def combine_feed_sources():
     """Combines primary, secondary, and supplemental feeds based on config."""
     combined_feeds = {}
+    
+    # Add primary feeds (already flat structure)
     combined_feeds.update(PRIMARY_NEWS_FEEDS)
     logger.info(f"Loaded {len(PRIMARY_NEWS_FEEDS)} primary feeds.")
 
-    # Add secondary feeds (always included if defined)
+    # Add secondary feeds
     if isinstance(SECONDARY_FEEDS, dict):
-        combined_feeds.update(SECONDARY_FEEDS)
-        logger.info(f"Loaded {len(SECONDARY_FEEDS)} secondary feeds.")
+        for category, feeds in SECONDARY_FEEDS.items():
+            if isinstance(feeds, dict):
+                combined_feeds.update(feeds)
+            else:
+                logger.warning(f"Invalid feed structure in SECONDARY_FEEDS for category '{category}': {feeds}")
+        logger.info(f"Loaded {sum(len(feeds) for feeds in SECONDARY_FEEDS.values() if isinstance(feeds, dict))} secondary feeds.")
     else:
         logger.warning("SECONDARY_FEEDS is not a valid dictionary.")
 
     # Add supplemental feeds only if enabled in config
     if SYSTEM_SETTINGS.get("use_supplemental_feeds", False):
         if isinstance(SUPPLEMENTAL_FEEDS, dict):
-            combined_feeds.update(SUPPLEMENTAL_FEEDS)
-            logger.info(f"Loaded {len(SUPPLEMENTAL_FEEDS)} supplemental feeds (enabled).")
+            for category, feeds in SUPPLEMENTAL_FEEDS.items():
+                if isinstance(feeds, dict):
+                    combined_feeds.update(feeds)
+                else:
+                    logger.warning(f"Invalid feed structure in SUPPLEMENTAL_FEEDS for category '{category}': {feeds}")
+            logger.info(f"Loaded {sum(len(feeds) for feeds in SUPPLEMENTAL_FEEDS.values() if isinstance(feeds, dict))} supplemental feeds (enabled).")
         else:
             logger.warning("SUPPLEMENTAL_FEEDS is not a valid dictionary.")
     else:
