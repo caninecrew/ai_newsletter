@@ -81,3 +81,17 @@ This newsletter runs automatically at 8:00 AM UTC daily through GitHub Actions. 
 - `send_email.py`: Handles email delivery via SMTP
 - `main.py`: Coordinates the entire process
 - `.github/workflows/daily-newsletter.yml`: GitHub Actions workflow for automation
+
+## Updates
+
+### Configuration
+- Added a configuration file for RSS feeds to replace hardcoded values.
+- Integrated GNews API as an alternative to RSS feeds.
+
+### Enhancements
+- Implemented OpenAI API for summarization.
+- Added caching mechanisms to reduce API calls and improve performance.
+- Improved error logging and monitoring for GitHub Actions workflows.
+
+### GitHub Actions
+- Enhanced workflow to include error notifications and retry logic for failed tasks.
