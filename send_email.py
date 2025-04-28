@@ -62,67 +62,33 @@ def create_smtp_connection(smtp_settings):
     server.login(smtp_settings['username'], smtp_settings['password'])
     return server
 
-def send_email(subject, body, recipients, smtp_settings, retry_count=0):
-    """
-    Send an email with proper timezone handling for headers using CENTRAL.
-    
-    Args:
-        subject: Email subject
-        body: Email body (HTML)
-        recipients: List of recipient email addresses
-        smtp_settings: Dictionary containing SMTP configuration
-        retry_count: Current retry attempt number
-    
-    Returns:
-        bool: True if email was sent successfully, False otherwise
-    """
-    server = None
-    try:
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = formataddr(('AI Newsletter', smtp_settings['sender']))
-        msg['To'] = ', '.join(recipients)
-        
-        # Set timezone-aware Date header using CENTRAL
-        now = datetime.now(CENTRAL)
-        msg['Date'] = formatdate(now.timestamp(), localtime=True)
-        
-        # Add body
-        msg.attach(MIMEText(body, 'html'))
+def send_newsletter(html_body: str, text_body: str, subject: str) -> bool:
+    """Send the newsletter via SMTP."""
+    smtp_host = os.getenv("SMTP_SERVER")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_EMAIL")
+    smtp_pass = os.getenv("SMTP_PASS")
 
-        # Create SMTP connection and send
-        server = create_smtp_connection(smtp_settings)
-        server.send_message(msg)
-        
+    if not all([smtp_host, smtp_port, smtp_user, smtp_pass]):
+        raise ValueError("SMTP configuration is incomplete. Check environment variables.")
+
+    # Construct the email
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = smtp_user
+    msg["To"] = os.getenv("NEWSLETTER_RECIPIENT", "recipient@example.com")
+
+    # Attach text and HTML parts
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, [msg["To"]], msg.as_string())
         return True
-        
-    except (smtplib.SMTPServerDisconnected, socket_error) as e:
-        if retry_count < MAX_RETRIES:
-            logger.warning(f"SMTP connection lost: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
-            time.sleep(RETRY_DELAY * (retry_count + 1))
-            return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
-        else:
-            raise
-            
-    except smtplib.SMTPException as e:
-        if retry_count < MAX_RETRIES:
-            logger.warning(f"SMTP error: {e}. Retrying ({retry_count + 1}/{MAX_RETRIES})")
-            time.sleep(RETRY_DELAY * (retry_count + 1))
-            return send_email(subject, body, recipients, smtp_settings, retry_count + 1)
-        else:
-            raise
-            
     except Exception as e:
-        logger.error(f"Failed to send email: {e}", exc_info=True)
-        return False
-            
-    finally:
-        if server:
-            try:
-                server.quit()
-            except Exception as e:
-                logger.warning(f"Error closing SMTP connection: {e}")
+        raise RuntimeError(f"Failed to send email: {e}")
 
 def test_send_email():
     """
@@ -137,11 +103,10 @@ def test_send_email():
 
     try:
         logger.info("Sending test email to validate configuration")
-        success = send_email(
+        success = send_newsletter(
             subject=subject,
-            body=body,
-            recipients=EMAIL_SETTINGS['recipients'],
-            smtp_settings=EMAIL_SETTINGS['smtp']
+            html_body=body,
+            text_body=body
         )
         if success:
             logger.info("✅ Test email sent successfully.")
