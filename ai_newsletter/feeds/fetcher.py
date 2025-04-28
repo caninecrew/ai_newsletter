@@ -12,7 +12,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from webdriver_pool import get_driver, USER_AGENTS, WebDriverPool # Import USER_AGENTS and WebDriverPool
+from ai_newsletter.selenium_pool.pool import get_driver, USER_AGENTS, WebDriverPool # Corrected import path
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
 import threading
 import hashlib
