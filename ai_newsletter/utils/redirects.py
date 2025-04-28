@@ -6,7 +6,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
 import time
 import random
-from logger_config import setup_logger, FETCH_METRICS
+from ai_newsletter.logging_cfg.logger import setup_logger, FETCH_METRICS  # Fix import path
 
 # Get the logger
 logger = setup_logger()
