@@ -256,12 +256,12 @@ EMAIL_SETTINGS = {
 # General system configuration options
 SYSTEM_SETTINGS = {
     "log_level": "INFO",                   # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    "article_fetch_timeout": 5,            # Timeout in seconds for article fetching
+    "article_fetch_timeout": 15,           # Timeout in seconds for article fetching
     "max_articles_to_process": 25,         # Maximum number of articles to process in one run
     "max_retries": 2,                      # Maximum number of retries for failed requests
-    "session_reuse": True,                 # Whether to reuse HTTP/browser sessions between categories
+    "session_reuse": True,                 # Whether to reuse HTTP sessions between categories
     "skip_empty_feeds": True,              # Whether to skip or flag empty feeds without spamming logs
-    "max_parallel_workers": 8,             # Number of parallel workers for concurrent processing
+    "max_parallel_workers": 5,             # Number of parallel workers for concurrent processing
     "max_primary_articles_per_feed": 2,    # Maximum number of articles to fetch per primary feed
     "max_secondary_articles_per_feed": 1,  # Maximum number of articles to fetch per secondary feed
     "report_slow_sources": True,           # Whether to report slow sources in logs
@@ -272,13 +272,12 @@ SYSTEM_SETTINGS = {
     "default_timezone": "America/Chicago", # Default timezone for date standardization
     "prioritize_primary_feeds": True,      # Whether to prioritize PRIMARY_NEWS_FEEDS over others
     "use_supplemental_feeds": False,       # Whether to use SUPPLEMENTAL_FEEDS when primary feeds are empty
-    "webdriver_pool_size": 3,              # Number of WebDriver instances in pool
-    "webdriver_timeout": 30,               # Timeout for WebDriver operations in seconds
-    "webdriver_retry_delay": 1,            # Delay between retries in seconds
-    "webdriver_max_retries": 3,            # Maximum retries for WebDriver operations
-    "webdriver_max_lifetime": 1800,        # Maximum lifetime of a WebDriver in seconds (30 mins)
-    "webdriver_max_memory": 10.0,          # Maximum memory usage percentage per WebDriver
-    "webdriver_cleanup_interval": 300      # Cleanup interval for stale WebDrivers in seconds
+    "http_request_delay": 1,               # Delay between requests to the same domain in seconds
+    "http_timeout": 15,                    # HTTP request timeout in seconds
+    "max_redirects": 5,                    # Maximum number of redirects to follow
+    "verify_ssl": True,                    # Whether to verify SSL certificates
+    "requests_html_timeout": 20,           # Timeout for requests-html rendering in seconds
+    "min_content_length": 150              # Minimum length of article content to be considered valid
 }
 
 # --- Problematic Sources ---
