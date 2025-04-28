@@ -12,7 +12,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from webdriver_pool import get_driver, _POOL_SIZE, USER_AGENTS # Import USER_AGENTS
+from webdriver_pool import get_driver, USER_AGENTS, WebDriverPool # Import USER_AGENTS and WebDriverPool
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
 import threading
 import hashlib
@@ -46,7 +46,7 @@ FETCH_METRICS['pool_timeouts'] = 0
 
 # --- Concurrency Control ---
 # Set concurrency limit based on WebDriver pool size
-CONCURRENCY_LIMIT = _POOL_SIZE
+CONCURRENCY_LIMIT = WebDriverPool._POOL_SIZE  # Access _POOL_SIZE through the class
 selenium_semaphore = threading.Semaphore(CONCURRENCY_LIMIT)
 logger.info(f"Selenium concurrency limit set to: {CONCURRENCY_LIMIT}")
 # ---------------------------
