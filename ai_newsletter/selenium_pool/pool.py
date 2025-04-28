@@ -11,6 +11,8 @@ import psutil
 from filelock import FileLock
 import tempfile
 import random
+from functools import wraps
+import backoff
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -36,6 +38,25 @@ USER_AGENTS = [
 _LOCK_FILE = os.path.join(tempfile.gettempdir(), 'chromedriver.lock')
 _file_lock = FileLock(_LOCK_FILE, timeout=30)
 
+def retry_with_backoff(retries=3, backoff_in_seconds=1):
+    """Decorator to retry functions with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            x = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if x == retries:
+                        raise
+                    sleep_time = (backoff_in_seconds * (2 ** x) + 
+                                random.uniform(0, 1))
+                    time.sleep(sleep_time)
+                    x += 1
+        return wrapper
+    return decorator
+
 class DriverWrapper:
     def __init__(self, driver: webdriver.Chrome):
         self.driver = driver
@@ -43,11 +64,14 @@ class DriverWrapper:
         self.total_requests = 0
         self.errors = 0
         self.creation_time = time.time()
+        self.id = id(self)  # Unique identifier for the wrapper
 
     def increment_errors(self):
         self.errors += 1
+        return self.errors >= 3  # Return True if error threshold exceeded
 
     def is_healthy(self) -> bool:
+        """Enhanced health check for WebDriver instances."""
         # Check various health indicators
         if self.errors >= 3:
             return False
@@ -56,22 +80,38 @@ class DriverWrapper:
             return False
 
         try:
-            # Basic health check
-            self.driver.current_url
+            # Basic health check with timeout
+            start = time.time()
+            self.driver.current_url  # Basic command to test driver responsiveness
+            if time.time() - start > 2:  # If taking >2s for basic command, consider unhealthy
+                return False
+                
             handles = self.driver.window_handles
+            if not handles:
+                return False
             
-            # Memory check (if process still exists)
+            # Memory check
             if hasattr(self.driver.service.process, 'pid'):
                 try:
                     process = psutil.Process(self.driver.service.process.pid)
-                    mem_usage = process.memory_percent()
-                    if mem_usage > 10.0:  # If using more than 10% of system memory
+                    mem_info = process.memory_info()
+                    # Check both percentage and absolute memory usage
+                    if (process.memory_percent() > 10.0 or 
+                        mem_info.rss > 500 * 1024 * 1024):  # >500MB
                         return False
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     return False
+                
+            # Check if the browser process is responsive
+            try:
+                self.driver.execute_script("return navigator.userAgent")
+            except Exception:
+                return False
+                
+            return True
             
-            return len(handles) > 0
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Health check failed for driver {self.id}: {e}")
             return False
 
 class WebDriverPool:
@@ -98,82 +138,88 @@ class WebDriverPool:
                     cls._instance = cls(pool_size)
         return cls._instance
 
+    @retry_with_backoff(retries=3, backoff_in_seconds=1)
+    def _create_driver_with_retry(self) -> Optional[webdriver.Chrome]:
+        """Create a new Chrome WebDriver with retries."""
+        chrome_options = Options()
+        chrome_options.add_argument('--headless=new')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-software-rasterizer')
+        chrome_options.add_argument('--disable-infobars')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-logging')
+        chrome_options.add_argument('--log-level=3')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        
+        # Enhanced anti-detection
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--disable-site-isolation-trials')
+        
+        # Add random user agent
+        user_agent = random.choice(USER_AGENTS)
+        chrome_options.add_argument(f'--user-agent={user_agent}')
+        
+        # Resource management
+        chrome_options.add_argument('--memory-pressure-off')
+        chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
+        chrome_options.add_argument('--aggressive-cache-discard')
+        chrome_options.add_argument('--disable-cache')
+        chrome_options.add_argument('--disable-application-cache')
+        chrome_options.add_argument('--disable-offline-load-stale-cache')
+        chrome_options.add_argument('--disk-cache-size=0')
+        
+        # Create service with explicit path
+        chrome_path = os.getenv('CHROMEWEBDRIVER')
+        if not chrome_path:
+            chrome_path = 'chromedriver'
+            
+        service = Service(
+            executable_path=chrome_path,
+            log_output=os.devnull
+        )
+        
+        return webdriver.Chrome(service=service, options=chrome_options)
+
     def _create_driver(self) -> Optional[DriverWrapper]:
         """Create a new WebDriver instance with retries and proper cleanup."""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Acquire file lock before accessing chromedriver
-                with _file_lock:
-                    chrome_options = Options()
-                    chrome_options.add_argument('--headless=new')
-                    chrome_options.add_argument('--no-sandbox')
-                    chrome_options.add_argument('--disable-dev-shm-usage')
-                    chrome_options.add_argument('--disable-gpu')
-                    chrome_options.add_argument('--disable-software-rasterizer')
-                    chrome_options.add_argument('--disable-infobars')
-                    chrome_options.add_argument('--disable-extensions')
-                    chrome_options.add_argument('--disable-logging')
-                    chrome_options.add_argument('--log-level=3')
-                    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-                    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-                    chrome_options.add_experimental_option('useAutomationExtension', False)
-                    
-                    # Add random user agent
-                    user_agent = random.choice(USER_AGENTS)
-                    chrome_options.add_argument(f'--user-agent={user_agent}')
-                    
-                    # Set resource limits
-                    chrome_options.add_argument('--memory-pressure-off')
-                    chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
-
-                    # Create service with explicit executable path and error handling
-                    chrome_path = os.getenv('CHROMEWEBDRIVER')
-                    if not chrome_path:
-                        chrome_path = 'chromedriver'  # Use PATH if env var not set
-                    
-                    # Add stagger to prevent concurrent file access
-                    time.sleep(random.uniform(0.1, 0.5))
-                    
-                    service = Service(
-                        executable_path=chrome_path,
-                        log_output=os.devnull
-                    )
-
-                    # Create driver with explicit waits and timeouts
-                    driver = webdriver.Chrome(
-                        service=service,
-                        options=chrome_options
-                    )
-                    
-                    # Set reasonable timeouts
+        try:
+            # Acquire file lock before accessing chromedriver
+            with _file_lock:
+                # Add stagger to prevent thundering herd
+                time.sleep(random.uniform(0.1, 0.5))
+                
+                # Attempt to create driver with retry logic
+                driver = self._create_driver_with_retry()
+                
+                if driver:
+                    # Configure timeouts
                     driver.set_page_load_timeout(30)
                     driver.set_script_timeout(30)
                     driver.implicitly_wait(10)
                     
-                    # Verify driver is working
-                    driver.get("about:blank")
+                    # Verify driver works
+                    try:
+                        driver.get("about:blank")
+                    except Exception as e:
+                        logger.error(f"Driver verification failed: {e}")
+                        self._quit_driver_safely(driver)
+                        return None
                     
                     wrapper = DriverWrapper(driver)
-                    logger.info(f"Successfully created new WebDriver instance (attempt {attempt + 1})")
+                    logger.info(f"Successfully created new WebDriver instance (id: {wrapper.id})")
                     return wrapper
-
-            except Exception as e:
-                logger.error(f"Failed to create WebDriver (attempt {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(1 * (attempt + 1))  # Exponential backoff
-                    continue
                     
-                # Try to clean up on final failure
-                try:
-                    if 'driver' in locals():
-                        self._quit_driver_safely(driver)
-                except Exception:
-                    pass
-                    
-                return None
-
-        return None  # All retries failed
+        except Exception as e:
+            logger.error(f"Failed to create WebDriver: {e}")
+            if 'driver' in locals():
+                self._quit_driver_safely(driver)
+                
+        return None
 
     def _quit_driver_safely(self, driver):
         """Safely quit a driver and cleanup resources."""
