@@ -273,3 +273,18 @@ SYSTEM_SETTINGS = {
     "prioritize_primary_feeds": True,      # Whether to prioritize PRIMARY_NEWS_FEEDS over others
     "use_supplemental_feeds": False        # Whether to use SUPPLEMENTAL_FEEDS when primary feeds are empty
 }
+
+# --- Problematic Sources ---
+# News sources that often block automated access or require special handling
+PROBLEM_SOURCES = {
+    "wsj.com",           # Wall Street Journal (paywall)
+    "ft.com",           # Financial Times (paywall)
+    "bloomberg.com",    # Bloomberg (paywall)
+    "nytimes.com",      # New York Times (paywall)
+    "washingtonpost.com", # Washington Post (paywall)
+    "economist.com",    # The Economist (paywall)
+    "medium.com",       # Medium (requires cookie handling)
+    "substack.com",     # Substack (requires JavaScript)
+    "forbes.com",       # Forbes (anti-bot measures)
+    "theatlantic.com"   # The Atlantic (paywall)
+}
