@@ -271,7 +271,14 @@ SYSTEM_SETTINGS = {
     "use_central_timezone": True,          # Whether to convert all dates to Central Time
     "default_timezone": "America/Chicago", # Default timezone for date standardization
     "prioritize_primary_feeds": True,      # Whether to prioritize PRIMARY_NEWS_FEEDS over others
-    "use_supplemental_feeds": False        # Whether to use SUPPLEMENTAL_FEEDS when primary feeds are empty
+    "use_supplemental_feeds": False,       # Whether to use SUPPLEMENTAL_FEEDS when primary feeds are empty
+    "webdriver_pool_size": 3,              # Number of WebDriver instances in pool
+    "webdriver_timeout": 30,               # Timeout for WebDriver operations in seconds
+    "webdriver_retry_delay": 1,            # Delay between retries in seconds
+    "webdriver_max_retries": 3,            # Maximum retries for WebDriver operations
+    "webdriver_max_lifetime": 1800,        # Maximum lifetime of a WebDriver in seconds (30 mins)
+    "webdriver_max_memory": 10.0,          # Maximum memory usage percentage per WebDriver
+    "webdriver_cleanup_interval": 300      # Cleanup interval for stale WebDrivers in seconds
 }
 
 # --- Problematic Sources ---
