@@ -14,7 +14,12 @@ import hashlib
 from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode
 from collections import defaultdict
 from difflib import SequenceMatcher
-from ai_newsletter.utils.redirects import resolve_google_redirect, extract_article_content, create_session
+from ai_newsletter.utils.redirects import (
+    resolve_google_redirect, 
+    extract_article_content, 
+    create_session,
+    USER_AGENTS
+)
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import (
     SYSTEM_SETTINGS,
