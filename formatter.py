@@ -4,7 +4,7 @@ import re
 from difflib import SequenceMatcher
 import hashlib
 import pytz
-from dateutil import parser
+from dateutil import parser, tz as dateutil_tz
 import pandas as pd
 from logger_config import setup_logger, DEFAULT_TZ
 from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
@@ -25,6 +25,9 @@ SECTION_CATEGORIES = {
     'PERSONALIZED': 'Personalized Stories',
     'LOCAL': 'Local News'
 }
+
+# Define Central timezone
+CENTRAL = dateutil_tz.gettz("America/Chicago")
 
 def categorize_article(article: Dict) -> str:
     """
@@ -745,97 +748,49 @@ def get_section_description(section_key: str) -> str:
     
     return descriptions.get(section_key, '')
 
-def filter_articles_by_date(articles: List[Dict], days: int = 1, hours: Optional[int] = None) -> List[Dict]:
-    """
-    Filter articles based on publication date
-    
-    Args:
-        articles: List of article dictionaries
-        days: Number of days back to include (default=1)
-        hours: Number of hours back to include (overrides days if provided)
-        
-    Returns:
-        List of filtered articles
-    """
-    # Calculate cutoff time in DEFAULT_TZ
-    if hours is not None:
-        cutoff_time = datetime.now(DEFAULT_TZ) - timedelta(hours=hours)
-    else:
-        cutoff_time = datetime.now(DEFAULT_TZ) - timedelta(days=days)
-    
-    filtered = []
-    skipped_count = 0
-    parsing_errors = 0
-    
-    # First ensure we're working with flat list of articles
-    flat_articles = []
-    for item in articles:
-        if isinstance(item, list):
-            flat_articles.extend(item)
-        else:
-            flat_articles.append(item)
-    
-    for article in flat_articles:
-        # Skip if article is not a dictionary
-        if not isinstance(article, dict):
-            logger.warning(f"Skipping non-dictionary article: {type(article)}")
-            skipped_count += 1
+def filter_articles_by_date(articles, start_date=None, end_date=None):
+    """Filter articles based on aware start and end dates in CENTRAL timezone."""
+    filtered_articles = []
+    if not start_date and not end_date:
+        return articles # No filtering needed
+
+    # Ensure filter dates are aware and in CENTRAL
+    if start_date and start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=CENTRAL)
+    elif start_date and start_date.tzinfo != CENTRAL:
+        start_date = start_date.astimezone(CENTRAL)
+
+    if end_date and end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=CENTRAL)
+    elif end_date and end_date.tzinfo != CENTRAL:
+         end_date = end_date.astimezone(CENTRAL)
+
+
+    for article in articles:
+        publish_date = article.get('published')
+        if not publish_date:
+            continue # Skip articles without a publish date
+
+        # Ensure article date is aware and in CENTRAL for comparison
+        if isinstance(publish_date, str):
+             # Should not happen if fetch_news worked correctly
+             logger.warning(f"Filtering received string date: {publish_date}. Skipping article.")
+             continue
+        elif publish_date.tzinfo is None:
+             logger.warning(f"Filtering received naive datetime: {publish_date}. Assuming UTC.")
+             publish_date = publish_date.replace(tzinfo=dateutil_tz.UTC).astimezone(CENTRAL)
+        elif publish_date.tzinfo != CENTRAL:
+             publish_date = publish_date.astimezone(CENTRAL)
+
+
+        # Perform date comparison
+        if start_date and publish_date < start_date:
             continue
-            
-        try:
-            # Get the published date
-            pub_date = article.get('published')
-            
-            # Skip articles with no date
-            if not pub_date:
-                logger.debug(f"Skipping article with no date: {article.get('title', 'No title')}")
-                skipped_count += 1
-                continue
-            
-            # Handle the date based on its type
-            parsed_date = None
-            if isinstance(pub_date, (datetime, pd.Timestamp)):
-                # Convert pandas Timestamp to datetime if needed
-                if isinstance(pub_date, pd.Timestamp):
-                    parsed_date = pub_date.to_pydatetime()
-                else:
-                    parsed_date = pub_date
-                    
-                # Ensure timezone awareness
-                if parsed_date.tzinfo is None:
-                    parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
-            else:
-                # Handle string dates
-                try:
-                    # Try dateutil parser first
-                    parsed_date = parser.parse(str(pub_date))
-                    if parsed_date.tzinfo is None:
-                        parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
-                except Exception as e:
-                    logger.warning(f"Could not parse date: {pub_date} for article: {article.get('title', 'No title')}: {e}")
-                    # Include article with unparseable date rather than dropping it
-                    filtered.append(article)
-                    parsing_errors += 1
-                    continue
-            
-            # Convert to DEFAULT_TZ for comparison
-            parsed_date = parsed_date.astimezone(DEFAULT_TZ)
-            
-            # Compare dates and add to filtered list if recent enough
-            if parsed_date >= cutoff_time:
-                filtered.append(article)
-            else:
-                logger.debug(f"Article too old: {article.get('title', 'No title')} - {parsed_date}")
-                skipped_count += 1
-                
-        except Exception as e:
-            logger.warning(f"Date filtering error for article '{article.get('title', 'No title')}': {str(e)}")
-            # Include articles with date errors rather than silently dropping them
-            filtered.append(article)
-            parsing_errors += 1
-    
-    logger.info(f"Date filtering: {len(filtered)} articles kept, {skipped_count} skipped, {parsing_errors} with parsing errors")
-    return filtered
+        if end_date and publish_date > end_date:
+            continue
+        filtered_articles.append(article)
+
+    return filtered_articles
 
 def is_duplicate(article1: Dict, article2: Dict, title_threshold: float = 0.8, content_threshold: float = 0.6) -> bool:
     """
