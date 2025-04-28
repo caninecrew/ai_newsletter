@@ -90,12 +90,13 @@ class WebDriverPool:
             chrome_options.add_argument('--single-process')
             chrome_options.add_argument('--ignore-certificate-errors')
             chrome_options.add_argument('--log-level=3')
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Suppress DevTools logging
             
             # Set resource limits
             chrome_options.add_argument('--memory-pressure-off')
             chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
 
-            service = Service(executable_path=os.getenv('CHROMEWEBDRIVER'))
+            service = Service(executable_path=os.getenv('CHROMEWEBDRIVER'), log_output=os.devnull)  # Suppress Selenium logging
             driver = webdriver.Chrome(service=service, options=chrome_options)
             
             # Set reasonable timeouts
