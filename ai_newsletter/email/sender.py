@@ -12,6 +12,7 @@ import time
 from socket import error as socket_error
 from datetime import datetime
 from dateutil import tz as dateutil_tz
+from bs4 import BeautifulSoup
 
 # Set up logger
 logger = setup_logger()
@@ -62,33 +63,93 @@ def create_smtp_connection(smtp_settings):
     server.login(smtp_settings['username'], smtp_settings['password'])
     return server
 
-def send_newsletter(html_body: str, text_body: str, subject: str) -> bool:
-    """Send the newsletter via SMTP."""
-    smtp_host = os.getenv("SMTP_SERVER")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_EMAIL")
-    smtp_pass = os.getenv("SMTP_PASS")
+def send_email(subject: str, body: str, recipients: list = None, smtp_settings: dict = None) -> bool:
+    """Send an email via SMTP with retry logic and secure connection.
+    
+    Args:
+        subject: Email subject line
+        body: Email body content (HTML)
+        recipients: List of recipient email addresses. If not provided, uses settings
+        smtp_settings: SMTP settings dict. If not provided, uses settings
+        
+    Returns:
+        bool: True if email was sent successfully, False otherwise
+    """
+    # Use settings from config if not provided
+    if recipients is None:
+        recipients = EMAIL_SETTINGS['recipients']
+    if smtp_settings is None:
+        smtp_settings = EMAIL_SETTINGS['smtp']
+    
+    if not recipients or not all(smtp_settings.values()):
+        logger.error("Missing required email settings")
+        return False
 
-    if not all([smtp_host, smtp_port, smtp_user, smtp_pass]):
-        raise ValueError("SMTP configuration is incomplete. Check environment variables.")
+    # Prepare the email
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = formataddr(("AI Newsletter", smtp_settings['sender']))
+    msg['Date'] = formatdate(localtime=True)
+    
+    # Add body - both text and HTML versions
+    text_part = MIMEText(strip_html(body), 'plain', 'utf-8')
+    html_part = MIMEText(body, 'html', 'utf-8')
+    msg.attach(text_part)
+    msg.attach(html_part)
 
-    # Construct the email
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = os.getenv("NEWSLETTER_RECIPIENT", "recipient@example.com")
+    # Add recipients
+    msg['To'] = ', '.join(recipients)
 
-    # Attach text and HTML parts
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
+    # Try to send email with retries
+    for attempt in range(MAX_RETRIES):
+        try:
+            with create_smtp_connection(smtp_settings) as server:
+                server.send_message(msg)
+                logger.info(f"Email sent successfully to {len(recipients)} recipients")
+                return True
+                
+        except (smtplib.SMTPException, socket_error) as e:
+            logger.error(f"SMTP error on attempt {attempt + 1}: {str(e)}")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+            else:
+                logger.error(f"Failed to send email after {MAX_RETRIES} attempts")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Unexpected error sending email: {str(e)}")
+            return False
 
-    try:
-        with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_user, [msg["To"]], msg.as_string())
-        return True
-    except Exception as e:
-        raise RuntimeError(f"Failed to send email: {e}")
+def strip_html(html_content):
+    """Convert HTML to plain text.
+    
+    Args:
+        html_content: HTML string to convert
+        
+    Returns:
+        str: Plain text version of the HTML content
+    """
+    if not html_content:
+        return ""
+        
+    # Parse HTML with BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Remove script and style elements
+    for script in soup(["script", "style"]):
+        script.decompose()
+        
+    # Get text
+    text = soup.get_text()
+    
+    # Break into lines and remove leading/trailing space
+    lines = (line.strip() for line in text.splitlines())
+    
+    # Break multi-headlines into a line each
+    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+    
+    # Drop blank lines and join
+    return '\n'.join(chunk for chunk in chunks if chunk)
 
 def test_send_email():
     """
@@ -103,10 +164,9 @@ def test_send_email():
 
     try:
         logger.info("Sending test email to validate configuration")
-        success = send_newsletter(
+        success = send_email(
             subject=subject,
-            html_body=body,
-            text_body=body
+            body=body
         )
         if success:
             logger.info("✅ Test email sent successfully.")
@@ -119,6 +179,9 @@ def test_send_email():
 
 # Initialize email settings when module is imported
 setup_email_settings()
+
+# Expose these functions as the public API
+__all__ = ['send_email', 'test_send_email', 'setup_email_settings']
 
 if __name__ == "__main__":
     test_send_email()
