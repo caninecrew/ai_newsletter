@@ -230,5 +230,8 @@ def main():
         # Use json.dumps for structured logging
         logger.info(f"SUMMARY: {json.dumps(stats)}")
 
+# Define cli as the main entry point for the module
+cli = main
+
 if __name__ == "__main__":
-    main()
+    cli()
