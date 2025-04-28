@@ -590,26 +590,19 @@ def combine_feed_sources():
     logger.info(f"Loaded {len(PRIMARY_NEWS_FEEDS)} primary feeds.")
 
     # Add secondary feeds (always included if defined)
-    if SECONDARY_FEEDS:
-        count = 0
-        for category, feeds in SECONDARY_FEEDS.items():
-            combined_feeds.update(feeds)
-            count += len(feeds)
-        logger.info(f"Loaded {count} secondary feeds.")
+    if isinstance(SECONDARY_FEEDS, dict):
+        combined_feeds.update(SECONDARY_FEEDS)
+        logger.info(f"Loaded {len(SECONDARY_FEEDS)} secondary feeds.")
     else:
-        logger.info("No secondary feeds defined.")
-
+        logger.warning("SECONDARY_FEEDS is not a valid dictionary.")
 
     # Add supplemental feeds only if enabled in config
     if SYSTEM_SETTINGS.get("use_supplemental_feeds", False):
-        if SUPPLEMENTAL_FEEDS:
-            count = 0
-            for category, feeds in SUPPLEMENTAL_FEEDS.items():
-                combined_feeds.update(feeds)
-                count += len(feeds)
-            logger.info(f"Loaded {count} supplemental feeds (enabled).")
+        if isinstance(SUPPLEMENTAL_FEEDS, dict):
+            combined_feeds.update(SUPPLEMENTAL_FEEDS)
+            logger.info(f"Loaded {len(SUPPLEMENTAL_FEEDS)} supplemental feeds (enabled).")
         else:
-             logger.info("Supplemental feeds enabled, but none defined.")
+            logger.warning("SUPPLEMENTAL_FEEDS is not a valid dictionary.")
     else:
         logger.info("Supplemental feeds are disabled in config.")
 
