@@ -65,7 +65,7 @@ jobs:
           # Update config.py with the specified news source
           sed -i "s/PRIMARY_NEWS_SOURCE = \".*\"/PRIMARY_NEWS_SOURCE = \"$NEWS_SOURCE\"/" config.py
           # Run with error handling
-          python cli.py || { echo "Script failed with exit code $?"; exit 1; }
+          python main.py || { echo "Script failed with exit code $?"; exit 1; }
           
       - name: Archive logs
         if: always()  # Run even if the newsletter script fails
