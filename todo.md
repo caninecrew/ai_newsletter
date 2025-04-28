@@ -101,3 +101,16 @@
 - [ ] Validate email formatting on different email clients
 - [ ] Time the complete process to ensure reasonable performance
 - [ ] Create test scripts for CI/CD pipeline
+
+## Updates to TODO List
+
+### Completed Tasks
+- [X] Implement OpenAI API integration for article summarization.
+- [X] Add configurable news sources (RSS vs GNews API).
+- [X] Store API keys securely in environment variables.
+
+### New Tasks
+- [ ] Implement caching mechanisms to reduce API calls and improve performance.
+- [ ] Enhance error logging and monitoring for GitHub Actions workflows.
+- [ ] Validate email formatting across different email clients.
+- [ ] Create CI/CD test scripts for automated testing.
