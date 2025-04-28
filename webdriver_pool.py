@@ -153,14 +153,24 @@ class WebDriverPool:
 
     def return_driver(self, driver: DriverWrapper):
         """Return a driver to the pool."""
-        if driver.is_healthy():
-            self.available_drivers.put(driver)
-        else:
-            logger.info("Replacing unhealthy driver")
-            try:
-                driver.driver.quit()
-            except Exception:
-                pass
+        try:
+            if driver.is_healthy():
+                # Clear any previous timeouts
+                driver.driver.set_page_load_timeout(30)
+                driver.driver.set_script_timeout(30)
+                self.available_drivers.put(driver)
+            else:
+                logger.info("Replacing unhealthy driver")
+                try:
+                    driver.driver.quit()
+                except Exception:
+                    pass
+                new_driver = self._create_driver()
+                if new_driver is not None:
+                    self.available_drivers.put(new_driver)
+        except Exception as e:
+            logger.error(f"Error returning driver to pool: {e}")
+            # Create a new driver if return failed
             new_driver = self._create_driver()
             if new_driver is not None:
                 self.available_drivers.put(new_driver)
@@ -168,12 +178,24 @@ class WebDriverPool:
     def cleanup(self):
         """Clean up all drivers in the pool."""
         logger.info("Cleaning up WebDriver pool")
-        while not self.available_drivers.empty():
+        cleaned = []
+        while True:
             try:
                 driver = self.available_drivers.get_nowait()
-                driver.driver.quit()
-            except Exception as e:
-                logger.error(f"Error cleaning up driver: {e}")
+                cleaned.append(driver)
+                try:
+                    driver.driver.quit()
+                except Exception as e:
+                    logger.error(f"Error cleaning up driver: {e}")
+            except Empty:
+                break
+        
+        # Clear the queue and domain access times
+        self.domain_last_access.clear()
+        
+        # Reinitialize the pool if needed
+        if self._instance is not None:
+            self._initialize_pool()
 
 # Module-level interface
 _pool: Optional[WebDriverPool] = None
