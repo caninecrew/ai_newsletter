@@ -12,6 +12,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any
 from ai_newsletter.logging_cfg.logger import setup_logger
+from ai_newsletter.config.settings import SYSTEM_SETTINGS
 
 # Get the logger
 logger = setup_logger()
@@ -27,7 +28,7 @@ USER_AGENTS = [
 # Configure newspaper
 config = Config()
 config.browser_user_agent = random.choice(USER_AGENTS)
-config.request_timeout = 15
+config.request_timeout = SYSTEM_SETTINGS.get('http_timeout', 15)
 config.fetch_images = False
 config.memoize_articles = False
 
@@ -35,30 +36,23 @@ def create_session():
     """Create a requests session with rotating user agents, proper security, and retry settings."""
     session = requests.Session()
     
-    # Use certifi's CA bundle for SSL verification
-    session.verify = certifi.where()
-    
-    # Configure retry strategy with exponential backoff
-    retry_strategy = requests.adapters.Retry(
-        total=3,  # total number of retries
-        backoff_factor=0.5,  # wait 0.5s * (2 ** retry) between retries
-        status_forcelist=[429, 500, 502, 503, 504],  # retry on these status codes
-        allowed_methods=["GET", "HEAD"]  # only retry safe methods
+    # Configure retry strategy
+    retries = Retry(
+        total=SYSTEM_SETTINGS.get('max_retries', 2),
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "HEAD"]
     )
     
-    # Configure connection pooling and timeouts
-    adapter = requests.adapters.HTTPAdapter(
-        max_retries=retry_strategy,
-        pool_connections=20,  # number of urllib3 connection pools to cache
-        pool_maxsize=20,  # maximum number of connections to save in the pool
-        pool_block=False  # don't block when pool is depleted, raise error instead
-    )
-    
-    # Mount adapter for both HTTP and HTTPS
+    # Configure adapter with retry strategy
+    adapter = HTTPAdapter(max_retries=retries)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     
-    # Set secure headers with rotating user agent
+    # Set SSL verification
+    session.verify = certifi.where()
+    
+    # Set headers
     session.headers.update({
         'User-Agent': random.choice(USER_AGENTS),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -66,11 +60,7 @@ def create_session():
         'Accept-Encoding': 'gzip, deflate',
         'DNT': '1',
         'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'cross-site',
-        'Sec-Fetch-User': '?1'
+        'Upgrade-Insecure-Requests': '1'
     })
     
     return session
@@ -78,17 +68,16 @@ def create_session():
 def create_html_session():
     """Create a requests-html session with same security settings as regular session."""
     session = HTMLSession()
-    
-    # Configure the underlying requests.Session with same settings
-    base_session = create_session()
-    session.headers = base_session.headers
-    session.verify = base_session.verify
-    
-    # Add specific headers for JavaScript-enabled requests
+    session.verify = certifi.where()
     session.headers.update({
-        'Sec-Fetch-Mode': 'no-cors',  # Different for JS requests
+        'User-Agent': random.choice(USER_AGENTS),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
     })
-    
     return session
 
 def resolve_google_redirect(url, max_retries=2, timeout=10):
@@ -110,38 +99,39 @@ def resolve_google_redirect(url, max_retries=2, timeout=10):
     
     for attempt in range(max_retries):
         try:
-            # First try with regular requests
+            # First try with HEAD request to check redirects
+            response = session.head(url, timeout=timeout, allow_redirects=True)
+            if response.url and response.url != url and 'news.google.com' not in response.url:
+                logger.debug(f"Successfully resolved redirect with HEAD request: {url} -> {response.url}")
+                return response.url
+            
+            # If HEAD doesn't work, try GET
             response = session.get(url, timeout=timeout, allow_redirects=True)
             response.raise_for_status()
             
             # Check if we got redirected away from Google News
             if response.url and response.url != url and 'news.google.com' not in response.url:
-                logger.debug(f"Successfully resolved redirect with requests: {url} -> {response.url}")
+                logger.debug(f"Successfully resolved redirect with GET request: {url} -> {response.url}")
                 return response.url
-                
-            # If regular requests didn't work, try with requests-html
-            if attempt == max_retries - 1:
-                try:
-                    html_session = HTMLSession()
-                    r = html_session.get(url, timeout=timeout)
-                    r.html.render(timeout=10, sleep=1)  # Short render timeout
-                    
-                    # Check for meta refresh redirects
-                    for meta in r.html.find('meta[http-equiv="refresh"]'):
-                        content = meta.attrs.get('content', '')
-                        if 'url=' in content.lower():
-                            final_url = content.split('url=', 1)[1].strip('"\'')
-                            if final_url and 'news.google.com' not in final_url:
-                                logger.debug(f"Resolved redirect via meta refresh: {url} -> {final_url}")
-                                return final_url
-                    
-                    # Check final URL after JavaScript execution
-                    if r.url and r.url != url and 'news.google.com' not in r.url:
-                        logger.debug(f"Resolved redirect with requests-html: {url} -> {r.url}")
-                        return r.url
-                        
-                except Exception as e:
-                    logger.warning(f"requests-html resolution failed: {e}")
+            
+            # Look for meta refresh redirects in the content
+            soup = BeautifulSoup(response.text, 'html.parser')
+            meta_refresh = soup.find('meta', attrs={'http-equiv': 'refresh'})
+            if meta_refresh and 'content' in meta_refresh.attrs:
+                content = meta_refresh['content'].lower()
+                if 'url=' in content:
+                    final_url = content.split('url=', 1)[1].strip('"\'')
+                    if final_url and 'news.google.com' not in final_url:
+                        logger.debug(f"Resolved redirect via meta refresh: {url} -> {final_url}")
+                        return final_url
+            
+            # Try to find the first external link in Google News HTML
+            article_links = soup.find_all('a', href=True)
+            for link in article_links:
+                href = link['href']
+                if href.startswith('http') and 'news.google.com' not in href:
+                    logger.debug(f"Found external link in Google News HTML: {url} -> {href}")
+                    return href
                     
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)  # Exponential backoff
@@ -173,7 +163,7 @@ def extract_article_content(url, timeout=15, max_retries=2):
             article.parse()
             
             # Basic validation of extracted content
-            if article.text and len(article.text.strip()) > 150:
+            if article.text and len(article.text.strip()) >= SYSTEM_SETTINGS.get('min_content_length', 150):
                 return {
                     'title': article.title,
                     'text': article.text,
@@ -184,11 +174,10 @@ def extract_article_content(url, timeout=15, max_retries=2):
                     'keywords': article.keywords if hasattr(article, 'keywords') else None,
                     'fetch_method': 'newspaper'
                 }
-                
         except ArticleException as e:
             logger.warning(f"newspaper3k extraction attempt {attempt + 1} failed for {url}: {e}")
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)  # Exponential backoff
+                time.sleep(2 ** attempt)
                 continue
         except Exception as e:
             logger.warning(f"Unexpected error during newspaper3k extraction attempt {attempt + 1}: {e}")
@@ -200,6 +189,7 @@ def extract_article_content(url, timeout=15, max_retries=2):
     try:
         session = create_html_session()
         r = session.get(url, timeout=timeout)
+        r.html.render(timeout=SYSTEM_SETTINGS.get('requests_html_timeout', 20))
         
         # Try to find article content with different strategies
         content = None
@@ -215,15 +205,15 @@ def extract_article_content(url, timeout=15, max_retries=2):
             '#article-body',
             '.story-content',
             '.article-body',
-            '.content-body'
+            '.content-body',
+            '[itemprop="articleBody"]'
         ]
         
         for selector in selectors:
             elements = r.html.find(selector)
             if elements:
-                # Extract text from the first matching element
                 content = elements[0].text
-                if len(content.strip()) > 150:
+                if len(content.strip()) >= SYSTEM_SETTINGS.get('min_content_length', 150):
                     break
         
         # Strategy 2: Look for article content inside main element
@@ -231,9 +221,9 @@ def extract_article_content(url, timeout=15, max_retries=2):
             main_elements = r.html.find('main')
             if main_elements:
                 content = main_elements[0].text
-        
+                
         # Strategy 3: Fallback to intelligent paragraph aggregation
-        if not content or len(content.strip()) < 150:
+        if not content or len(content.strip()) < SYSTEM_SETTINGS.get('min_content_length', 150):
             paragraphs = r.html.find('p')
             content_paragraphs = []
             
@@ -242,7 +232,8 @@ def extract_article_content(url, timeout=15, max_retries=2):
                 # Only include substantive paragraphs
                 if len(text) > 50 and not any(skip in text.lower() for skip in [
                     'cookie', 'privacy policy', 'terms of service', 'advertisement',
-                    'subscribe to our newsletter', 'sign up for our'
+                    'subscribe to our newsletter', 'sign up for our', 'follow us on',
+                    'share this article', 'related articles', 'popular stories'
                 ]):
                     content_paragraphs.append(text)
             
@@ -250,9 +241,18 @@ def extract_article_content(url, timeout=15, max_retries=2):
                 content = '\n\n'.join(content_paragraphs)
         
         # Validate and return content if found
-        if content and len(content.strip()) > 150:
+        if content and len(content.strip()) >= SYSTEM_SETTINGS.get('min_content_length', 150):
             # Extract additional metadata
             title = None
+            meta_description = None
+            authors = []
+            publish_date = None
+            
+            # Try to get title
+            title_elements = r.html.find('title')
+            if title_elements:
+                title = title_elements[0].text
+            
             meta_description = None
             authors = []
             publish_date = None
