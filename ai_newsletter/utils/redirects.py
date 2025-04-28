@@ -1,123 +1,45 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException
-import time
+from newspaper import Article, ArticleException
+from requests_html import HTMLSession
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+import requests
 import random
-from ai_newsletter.logging_cfg.logger import setup_logger, FETCH_METRICS  # Fix import path
+import time
+import logging
+from ai_newsletter.logging_cfg.logger import setup_logger, FETCH_METRICS
 
 # Get the logger
 logger = setup_logger()
 
-# Global WebDriver instance for reuse
-_driver = None
-_driver_creation_time = None
-_driver_request_count = 0
+# User agent rotation
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
+]
 
-def get_webdriver(force_new=False, max_age_minutes=30, max_requests=50):
-    """
-    Get or create a WebDriver instance with anti-detection measures
-    
-    Args:
-        force_new (bool): Force creation of a new instance
-        max_age_minutes (int): Maximum age of driver instance in minutes
-        max_requests (int): Maximum requests before recycling driver
-    """
-    global _driver, _driver_creation_time, _driver_request_count
-    
-    current_time = time.time()
-    create_new = (
-        _driver is None or
-        force_new or
-        (_driver_creation_time and (current_time - _driver_creation_time) / 60 > max_age_minutes) or
-        (_driver_request_count >= max_requests)
-    )
-    
-    if create_new:
-        if _driver is not None:
-            try:
-                _driver.quit()
-            except Exception as e:
-                logger.warning(f"Error closing existing WebDriver: {e}")
-        
-        # Configure ChromeOptions with anti-detection measures
-        options = Options()
-        
-        # Random user agent
-        user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
-        ]
-        user_agent = random.choice(user_agents)
-        options.add_argument(f'--user-agent={user_agent}')
-        
-        # Basic configuration
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--ignore-certificate-errors")
-        
-        # Anti-detection measures
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        
-        # Additional anti-bot measures
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-browser-side-navigation")
-        
-        # Performance optimizations
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
-        
-        # Random window size to appear more natural
-        window_sizes = [(1920, 1080), (1366, 768), (1536, 864), (1440, 900)]
-        width, height = random.choice(window_sizes)
-        options.add_argument(f"--window-size={width},{height}")
-        
-        try:
-            _driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-            
-            # Additional anti-detection JavaScript
-            _driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-                "userAgent": user_agent,
-                "platform": "Windows",
-                "acceptLanguage": "en-US,en;q=0.9"
-            })
-            
-            # Execute stealth JS
-            _driver.execute_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """)
-            
-            _driver_creation_time = current_time
-            _driver_request_count = 0
-            FETCH_METRICS['browser_instances'] += 1
-            logger.debug("Created new WebDriver instance")
-            
-        except Exception as e:
-            logger.error(f"Failed to create WebDriver: {e}")
-            return None
-    
-    if _driver is not None:
-        _driver_request_count += 1
-        FETCH_METRICS['driver_reuse_count'] += 1
-    
-    return _driver
+def create_session():
+    """Create a requests session with rotating user agents and proper settings."""
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': random.choice(USER_AGENTS),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+    })
+    return session
 
-def resolve_google_redirect_selenium(url, max_retries=2):
+def resolve_google_redirect(url, max_retries=2, timeout=10):
     """
-    Resolve Google News redirect URLs to their final destination
+    Resolve Google News redirect URLs to their final destination using requests.
     
     Args:
         url (str): The URL to resolve
         max_retries (int): Maximum number of retry attempts
+        timeout (int): Request timeout in seconds
         
     Returns:
         str: The resolved URL, or original URL if resolution fails
@@ -125,51 +47,125 @@ def resolve_google_redirect_selenium(url, max_retries=2):
     if not url or 'news.google.com' not in url:
         return url
     
+    session = create_session()
+    
     for attempt in range(max_retries):
         try:
-            # Get a WebDriver instance
-            driver = get_webdriver()
-            if not driver:
-                logger.error("Failed to create WebDriver for redirect resolution")
-                return url
+            # First try with regular requests
+            response = session.get(url, timeout=timeout, allow_redirects=True)
+            response.raise_for_status()
             
-            try:
-                # Set shorter timeout for redirects
-                driver.set_page_load_timeout(10)
+            # Check if we got redirected away from Google News
+            if response.url and response.url != url and 'news.google.com' not in response.url:
+                logger.debug(f"Successfully resolved redirect with requests: {url} -> {response.url}")
+                return response.url
                 
-                # Load the page
-                driver.get(url)
-                
-                # Wait for redirect with dynamic timeout
-                timeout = random.uniform(1.5, 3)
+            # If regular requests didn't work, try with requests-html
+            if attempt == max_retries - 1:
                 try:
-                    # Wait for URL to change or page to stabilize
-                    WebDriverWait(driver, timeout).until(
-                        lambda d: d.current_url != url or
-                        d.execute_script("return document.readyState") == "complete"
-                    )
-                    # Small additional wait for any final redirects
-                    time.sleep(0.5)
-                except TimeoutException:
-                    pass  # URL might not change if there's no redirect
-                
-                final_url = driver.current_url
-                
-                # Only return if we got a different, valid URL
-                if final_url and final_url != url and not 'news.google.com' in final_url:
-                    logger.debug(f"Successfully resolved redirect: {url} -> {final_url}")
-                    return final_url
+                    html_session = HTMLSession()
+                    r = html_session.get(url, timeout=timeout)
+                    r.html.render(timeout=10, sleep=1)  # Short render timeout
                     
-            finally:
-                # Don't quit the driver, it will be reused
-                pass
+                    # Check for meta refresh redirects
+                    for meta in r.html.find('meta[http-equiv="refresh"]'):
+                        content = meta.attrs.get('content', '')
+                        if 'url=' in content.lower():
+                            final_url = content.split('url=', 1)[1].strip('"\'')
+                            if final_url and 'news.google.com' not in final_url:
+                                logger.debug(f"Resolved redirect via meta refresh: {url} -> {final_url}")
+                                return final_url
+                    
+                    # Check final URL after JavaScript execution
+                    if r.url and r.url != url and 'news.google.com' not in r.url:
+                        logger.debug(f"Resolved redirect with requests-html: {url} -> {r.url}")
+                        return r.url
+                        
+                except Exception as e:
+                    logger.warning(f"requests-html resolution failed: {e}")
+                    
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff
                 
         except Exception as e:
             logger.warning(f"Redirect resolution attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)  # Exponential backoff
+                time.sleep(2 ** attempt)
     
     return url
+
+def extract_article_content(url, timeout=15):
+    """
+    Extract article content using newspaper3k with fallback to requests-html.
+    
+    Args:
+        url (str): The article URL to process
+        timeout (int): Request timeout in seconds
+        
+    Returns:
+        dict: Article data including title, text, and metadata
+    """
+    try:
+        # Try newspaper3k first
+        article = Article(url)
+        article.download()
+        article.parse()
+        
+        # Basic validation of extracted content
+        if article.text and len(article.text.strip()) > 150:
+            return {
+                'title': article.title,
+                'text': article.text,
+                'authors': article.authors,
+                'publish_date': article.publish_date,
+                'top_image': article.top_image,
+                'meta_description': article.meta_description,
+                'fetch_method': 'newspaper'
+            }
+    except ArticleException as e:
+        logger.warning(f"newspaper3k extraction failed for {url}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error during newspaper3k extraction: {e}")
+    
+    # Fallback to requests-html
+    try:
+        session = HTMLSession()
+        r = session.get(url, timeout=timeout)
+        
+        # Try to find article content
+        content = ""
+        selectors = [
+            'article', 'main', '[role="article"]', '.article-content',
+            '.post-content', '.entry-content', '#article-body'
+        ]
+        
+        for selector in selectors:
+            elements = r.html.find(selector)
+            if elements:
+                content = elements[0].text
+                if len(content.strip()) > 150:
+                    break
+        
+        # Fallback to p tags if no content found
+        if not content:
+            paragraphs = r.html.find('p')
+            content = '\n'.join(p.text for p in paragraphs if len(p.text.strip()) > 50)
+        
+        if content and len(content.strip()) > 150:
+            return {
+                'title': r.html.find('title')[0].text if r.html.find('title') else None,
+                'text': content,
+                'authors': None,  # Could extract but would need custom selectors
+                'publish_date': None,  # Could extract but would need custom parsing
+                'meta_description': r.html.find('meta[name="description"]')[0].attrs['content'] 
+                                 if r.html.find('meta[name="description"]') else None,
+                'fetch_method': 'requests-html'
+            }
+            
+    except Exception as e:
+        logger.warning(f"requests-html extraction failed for {url}: {e}")
+    
+    return None
 
 def cleanup():
     """Clean up resources when done"""
