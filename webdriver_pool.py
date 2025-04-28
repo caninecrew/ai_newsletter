@@ -16,6 +16,19 @@ from selenium.common.exceptions import WebDriverException, TimeoutException
 
 logger = logging.getLogger(__name__)
 
+# Default pool size for the WebDriver pool
+_POOL_SIZE = 3
+
+# List of user agents to rotate through for anti-bot detection
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+]
+
 class DriverWrapper:
     def __init__(self, driver: webdriver.Chrome):
         self.driver = driver
@@ -90,13 +103,18 @@ class WebDriverPool:
             chrome_options.add_argument('--single-process')
             chrome_options.add_argument('--ignore-certificate-errors')
             chrome_options.add_argument('--log-level=3')
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Suppress DevTools logging
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+            
+            # Add random user agent
+            import random
+            user_agent = random.choice(USER_AGENTS)
+            chrome_options.add_argument(f'--user-agent={user_agent}')
             
             # Set resource limits
             chrome_options.add_argument('--memory-pressure-off')
             chrome_options.add_argument('--js-flags="--max-old-space-size=500"')
 
-            service = Service(executable_path=os.getenv('CHROMEWEBDRIVER'), log_output=os.devnull)  # Suppress Selenium logging
+            service = Service(executable_path=os.getenv('CHROMEWEBDRIVER'), log_output=os.devnull)
             driver = webdriver.Chrome(service=service, options=chrome_options)
             
             # Set reasonable timeouts
