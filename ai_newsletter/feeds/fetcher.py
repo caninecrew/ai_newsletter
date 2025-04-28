@@ -364,33 +364,32 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     FETCH_METRICS['source_statistics'] = defaultdict(lambda: {'articles': 0, 'fetch_time': 0.0, 'success': 0, 'failures': 0})
 
     # Validate feed URLs and create mapping with source names
-    unique_feeds = {}
-    invalid_feeds = []
-    for name, url in rss_feeds.items():
-        if not isinstance(url, str):
-            logger.error(f"Invalid feed URL for {name}: URL must be a string")
-            invalid_feeds.append(name)
+    valid_feeds = {}
+    for source_name, feed_url in rss_feeds.items():
+        if not feed_url or not isinstance(feed_url, str):
+            logger.warning(f"Invalid feed URL for source {source_name}: {feed_url}")
             continue
-            
-        # Basic URL validation
-        if not url.startswith(('http://', 'https://')):
-            logger.error(f"Invalid feed URL for {name}: {url} (must start with http:// or https://)")
-            invalid_feeds.append(name)
-            continue
-            
-        unique_feeds[name] = url
-
-    if invalid_feeds:
-        logger.warning(f"Skipping invalid feeds: {', '.join(invalid_feeds)}")
-
-    if not unique_feeds:
-        logger.error("No valid feeds to process")
-        return []
-
+        valid_feeds[source_name] = feed_url
+    
+    unique_feeds = valid_feeds
     logger.info(f"Processing {len(unique_feeds)} valid feed URLs from {len(rss_feeds)} initial sources.")
 
     # Process feeds in parallel (fetching RSS is usually I/O bound)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_source = {
+            executor.submit(fetch_rss_feed, feed_url, source_name, max_articles_per_feed): source_name
+            for source_name, feed_url in unique_feeds.items()
+        }
+
+        for future in concurrent.futures.as_completed(future_to_source):
+            source_name = future_to_source[future]
+            try:
+                articles = future.result()
+                if articles:
+                    all_articles.extend(articles)
+            except Exception as e:
+                logger.error(f"Task error for source {source_name}: {e}")
+                if source_name not in FETCH_METRICS['failed_sources']:
                     FETCH_METRICS['failed_sources'].append(f"{source_name} (Task Error)")
 
     logger.info(f"Found {len(all_articles)} unique articles from feeds.")
