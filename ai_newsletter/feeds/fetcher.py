@@ -3,71 +3,214 @@ import requests
 import time
 import random
 import re
-import ssl  # Added import
-import certifi # Added import
+import ssl
+import certifi
 from datetime import datetime, timezone, timedelta
 import concurrent.futures
 from bs4 import BeautifulSoup
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-from ai_newsletter.selenium_pool.pool import get_driver, USER_AGENTS, WebDriverPool # Corrected import path
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
 import threading
 import hashlib
-from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode # Added urlencode, parse_qs
-from collections import defaultdict # Added import
-from difflib import SequenceMatcher # Added import
-from ai_newsletter.utils.redirects import resolve_google_redirect_selenium  # Corrected import for google_redirect
-
-# --- Local Imports ---
-from ai_newsletter.logging_cfg.logger import setup_logger  # Corrected import for logger_config
-from ai_newsletter.config.settings import ( # Fix import path to use correct package structure
+from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode
+from collections import defaultdict
+from difflib import SequenceMatcher
+from ai_newsletter.utils.redirects import resolve_google_redirect, extract_article_content, create_session
+from ai_newsletter.logging_cfg.logger import setup_logger
+from ai_newsletter.config.settings import (
     SYSTEM_SETTINGS,
     USER_INTERESTS,
     PRIMARY_NEWS_FEEDS,
     SECONDARY_FEEDS,
     SUPPLEMENTAL_FEEDS,
-    PROBLEM_SOURCES # Assuming PROBLEM_SOURCES is defined in config.py
+    PROBLEM_SOURCES
 )
 
 # --- Setup ---
-logger = setup_logger() # Initialize logger
-CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc # Ensure CENTRAL is defined
+logger = setup_logger()
+CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc
 
 # --- Metrics Initialization ---
-FETCH_METRICS = defaultdict(lambda: 0) # Initialize metrics
+FETCH_METRICS = defaultdict(lambda: 0)
 FETCH_METRICS['failed_sources'] = []
 FETCH_METRICS['empty_sources'] = []
 FETCH_METRICS['source_statistics'] = defaultdict(lambda: {'articles': 0, 'fetch_time': 0.0, 'success': 0, 'failures': 0})
-FETCH_METRICS['pool_timeouts'] = 0
-# --------------------------
-
-# --- Concurrency Control ---
-# Set concurrency limit based on WebDriver pool size
-from ai_newsletter.selenium_pool.pool import WebDriverPool, _POOL_SIZE  # Import _POOL_SIZE directly
-CONCURRENCY_LIMIT = _POOL_SIZE
-selenium_semaphore = threading.Semaphore(CONCURRENCY_LIMIT)
-logger.info(f"Selenium concurrency limit set to: {CONCURRENCY_LIMIT}")
-# ---------------------------
-
-# Domains to try with Requests first
-REQUESTS_FIRST_DOMAINS = [
-    "reuters.com",
-    "apnews.com",
-    "businesswire.com",
-    # Add other domains known to work well with requests or block Selenium
-]
 
 # --- Global Variables & Sets ---
-attempted_urls = set() # Track URLs attempted in this run
-failed_urls = set() # Track URLs that failed all fetch attempts
-unique_article_urls = set() # Track unique normalized URLs seen across all feeds
-source_performance = defaultdict(lambda: {'total_time': 0.0, 'attempts': 0, 'successes': 0}) # Track performance per source
-# -----------------------------
+attempted_urls = set()
+failed_urls = set()
+unique_article_urls = set()
+source_performance = defaultdict(lambda: {'total_time': 0.0, 'attempts': 0, 'successes': 0})
 
-# --- Helper Functions ---
+# Create a shared session for feed fetching
+feed_session = create_session()
+
+def fetch_article_content(article, max_retries=2):
+    """Fetch article content using HTTP-based methods."""
+    url = article['link']
+    source_name = article.get('source', 'Unknown Source')
+
+    if url in attempted_urls:
+        logger.debug(f"Skipping already attempted URL: {url}")
+        return article
+    attempted_urls.add(url)
+    FETCH_METRICS['content_attempts'] = FETCH_METRICS.get('content_attempts', 0) + 1
+
+    start_time = time.time()
+    success = False
+
+    try:
+        # Extract content using our new methods
+        content_data = extract_article_content(url, timeout=15)
+        
+        if content_data and content_data.get('text'):
+            article['content'] = content_data['text']
+            article['fetch_method'] = content_data['fetch_method']
+            article['authors'] = content_data.get('authors')
+            article['meta_description'] = content_data.get('meta_description')
+            
+            # Update article title if newspaper3k found a better one
+            if content_data['title'] and len(content_data['title']) > len(article.get('title', '')):
+                article['title'] = content_data['title']
+                
+            success = True
+            FETCH_METRICS['content_success_requests'] = FETCH_METRICS.get('content_success_requests', 0) + 1
+            logger.info(f"Successfully fetched content with {content_data['fetch_method']}: {url}")
+        else:
+            logger.warning(f"Failed to extract content from {url}")
+            failed_urls.add(url)
+
+    except Exception as e:
+        logger.error(f"Error fetching content for {url}: {e}")
+        failed_urls.add(url)
+
+    # Update stats
+    end_time = time.time()
+    duration = end_time - start_time
+    stats = FETCH_METRICS['source_statistics'][source_name]
+    stats['fetch_time'] += duration
+    if success:
+        stats['success'] += 1
+    else:
+        stats['failures'] += 1
+
+    # Add age categorization
+    if article.get('published'):
+        article['age_category'] = categorize_article_age(article['published'])
+    else:
+        article['age_category'] = 'Unknown'
+
+    return article
+
+def fetch_rss_feed(feed_url, source_name, max_articles=5):
+    """Fetches and parses an RSS feed, returning a list of article dicts."""
+    logger.info(f"Fetching RSS feed: {source_name} ({feed_url})")
+    FETCH_METRICS['sources_checked'] += 1
+    articles = []
+    unique_article_urls_in_feed = set()
+
+    try:
+        # Use our shared session to fetch the feed
+        headers = {'User-Agent': random.choice(USER_AGENTS)}
+        response = feed_session.get(feed_url, timeout=20, headers=headers)
+        response.raise_for_status()
+
+        # Check content type
+        content_type = response.headers.get('content-type', '').lower()
+        if 'xml' not in content_type and 'rss' not in content_type and 'atom' not in content_type:
+            logger.warning(f"Unexpected content type '{content_type}' for feed {source_name}.")
+
+        # Parse the feed
+        feed = feedparser.parse(response.text)
+
+        if feed.bozo:
+            logger.warning(f"Feedparser encountered issues (bozo=1) for {source_name}: {feed.bozo_exception}")
+            if not feed.entries:
+                FETCH_METRICS['failed_sources'].append(f"{source_name} (Bozo/No Entries)")
+                return []
+
+        if not feed.entries:
+            logger.warning(f"No entries found in feed: {source_name}")
+            FETCH_METRICS['empty_sources'].append(source_name)
+            return []
+
+        count = 0
+        for entry in feed.entries:
+            if count >= max_articles:
+                break
+
+            title = entry.get('title', 'No Title')
+            link = entry.get('link')
+            published = entry.get('published_parsed') or entry.get('updated_parsed')
+
+            if not link:
+                logger.warning(f"Skipping entry with no link in {source_name}: '{title}'")
+                continue
+
+            # Handle Google News URLs
+            original_link = link
+            if "news.google.com" in link:
+                extracted = resolve_google_redirect(link)
+                if extracted and extracted != link:
+                    logger.debug(f"Extracted Google News URL: {link} -> {extracted}")
+                    link = extracted
+                else:
+                    logger.warning(f"Could not extract final URL from Google News link: {link}. Using original.")
+
+            # Check for duplicates
+            normalized_link = normalize_url(link)
+            if normalized_link in unique_article_urls or normalized_link in unique_article_urls_in_feed:
+                logger.debug(f"Skipping duplicate article URL: {link}")
+                FETCH_METRICS['duplicate_articles'] = FETCH_METRICS.get('duplicate_articles', 0) + 1
+                continue
+
+            unique_article_urls.add(normalized_link)
+            unique_article_urls_in_feed.add(normalized_link)
+
+            # Convert published time to Central Time
+            published_date = force_central(published, link) if published else None
+
+            # Basic interest check
+            relevant = True
+            if USER_INTERESTS:
+                relevant = any(interest.lower() in title.lower() for interest in USER_INTERESTS)
+
+            if relevant:
+                articles.append({
+                    'title': title.strip(),
+                    'link': link,
+                    'original_google_link': original_link if link != original_link else None,
+                    'published': published_date,
+                    'source': source_name,
+                    'feed_url': feed_url,
+                    'content': None,
+                    'fetch_method': None,
+                    'id': hashlib.sha256(link.encode()).hexdigest()[:16]
+                })
+                count += 1
+            else:
+                logger.debug(f"Skipping article not matching interests: '{title}' from {source_name}")
+
+        if articles:
+            FETCH_METRICS['successful_sources'] += 1
+            FETCH_METRICS['total_articles'] += len(articles)
+            stats = FETCH_METRICS['source_statistics'][source_name]
+            stats['articles'] += len(articles)
+            logger.info(f"Successfully fetched {len(articles)} articles from {source_name}")
+        elif not feed.bozo:
+            FETCH_METRICS['empty_sources'].append(source_name)
+
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout fetching RSS feed: {source_name} ({feed_url})")
+        FETCH_METRICS['failed_sources'].append(f"{source_name} (Timeout)")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching RSS feed {source_name} ({feed_url}): {e}")
+        FETCH_METRICS['failed_sources'].append(f"{source_name} (Request Error)")
+    except Exception as e:
+        logger.error(f"Unexpected error processing feed {source_name} ({feed_url}): {e}", exc_info=True)
+        if source_name not in FETCH_METRICS['failed_sources']:
+            FETCH_METRICS['failed_sources'].append(f"{source_name} (Parse Error)")
+
+    return articles
 
 def create_secure_session():
     """Creates a requests session with updated TLS settings and certifi."""
@@ -169,322 +312,12 @@ def print_metrics_summary():
     summary.append(f"Duplicate Articles Skipped: {FETCH_METRICS['duplicate_articles']}")
     summary.append(f"Content Fetch Attempts: {FETCH_METRICS.get('content_attempts', 0)}")
     summary.append(f"Content Fetch Success (Requests): {FETCH_METRICS.get('content_success_requests', 0)}")
-    summary.append(f"Content Fetch Success (Selenium): {FETCH_METRICS.get('content_success_selenium', 0)}")
     summary.append(f"Content Fetch Failures: {len(failed_urls)}")
-    summary.append(f"WebDriver Pool Timeouts: {FETCH_METRICS['pool_timeouts']}")
     summary.append(f"Total Processing Time: {FETCH_METRICS.get('processing_time', 0):.2f} seconds")
     summary.append("---------------------------")
     return "\n".join(summary)
 
 # --- Core Fetching Logic ---
-
-def fetch_rss_feed(feed_url, source_name, max_articles=5):
-    """Fetches and parses an RSS feed, returning a list of article dicts."""
-    logger.info(f"Fetching RSS feed: {source_name} ({feed_url})")
-    FETCH_METRICS['sources_checked'] += 1
-    articles = []
-    unique_article_urls_in_feed = set()  # Track URLs within this specific feed
-
-    try:
-        # Use requests to fetch, then parse with feedparser for better SSL control
-        headers = {'User-Agent': random.choice(USER_AGENTS)}
-        response = secure_session.get(feed_url, timeout=20, headers=headers)
-        response.raise_for_status()
-
-        # Check content type - feedparser might handle non-XML, but good practice
-        content_type = response.headers.get('content-type', '').lower()
-        if 'xml' not in content_type and 'rss' not in content_type and 'atom' not in content_type:
-            logger.warning(f"Unexpected content type '{content_type}' for feed {source_name}. Attempting parse anyway.")
-
-        # Parse the feed URL itself, not the title
-        feed = feedparser.parse(feed_url)
-
-        if feed.bozo:
-            logger.warning(f"Feedparser encountered issues (bozo=1) for {source_name}: {feed.bozo_exception}")
-            # Still try to process entries if available
-            if not feed.entries:
-                FETCH_METRICS['failed_sources'].append(f"{source_name} (Bozo/No Entries)")
-                return []  # Return empty if parsing truly failed
-
-        if not feed.entries:
-            logger.warning(f"No entries found in feed: {source_name}")
-            FETCH_METRICS['empty_sources'].append(source_name)
-            return []
-
-        count = 0
-        for entry in feed.entries:
-            if count >= max_articles:
-                break
-
-            title = entry.get('title', 'No Title')
-            link = entry.get('link')
-            published = entry.get('published_parsed') or entry.get('updated_parsed')
-
-            if not link:
-                logger.warning(f"Skipping entry with no link in {source_name}: '{title}'")
-                continue
-
-            # Handle Google News URLs
-            original_link = link
-            if "news.google.com" in link:
-                extracted = resolve_google_redirect_selenium(link)
-                if extracted:
-                    logger.debug(f"Extracted Google News URL: {link} -> {extracted}")
-                    link = extracted
-                else:
-                    logger.warning(f"Could not extract final URL from Google News link: {link}. Using original.")
-
-            # Check if URL already processed globally or within this feed
-            normalized_link = normalize_url(link)
-            if normalized_link in unique_article_urls or normalized_link in unique_article_urls_in_feed:
-                logger.debug(f"Skipping duplicate article URL (already seen): {link}")
-                FETCH_METRICS['duplicate_articles'] = FETCH_METRICS.get('duplicate_articles', 0) + 1
-                continue
-
-            unique_article_urls.add(normalized_link)
-            unique_article_urls_in_feed.add(normalized_link)
-
-            # Convert published time to Central Time
-            published_date = force_central(published, link) if published else None
-
-            # Basic interest check (optional, can be done later)
-            relevant = True  # Default to relevant
-            if USER_INTERESTS:  # Check only if interests are defined
-                relevant = any(interest.lower() in title.lower() for interest in USER_INTERESTS)
-
-            if relevant:
-                articles.append({
-                    'title': title.strip(),
-                    'link': link,
-                    'original_google_link': original_link if link != original_link else None,
-                    'published': published_date,
-                    'source': source_name,
-                    'feed_url': feed_url,
-                    'content': None,  # Content fetched later
-                    'fetch_method': None,
-                    'id': hashlib.sha256(link.encode()).hexdigest()[:16]  # Generate unique ID
-                })
-                count += 1
-            else:
-                logger.debug(f"Skipping article not matching interests: '{title}' from {source_name}")
-
-        if articles:
-            FETCH_METRICS['successful_sources'] += 1
-            FETCH_METRICS['total_articles'] += len(articles)
-            # Update source statistics
-            stats = FETCH_METRICS['source_statistics'][source_name]
-            stats['articles'] += len(articles)
-            logger.info(f"Successfully fetched {len(articles)} articles from {source_name}")
-        elif not feed.bozo:  # Only mark as empty if not already marked as failed (bozo)
-            FETCH_METRICS['empty_sources'].append(source_name)
-
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout fetching RSS feed: {source_name} ({feed_url})")
-        FETCH_METRICS['failed_sources'].append(f"{source_name} (Timeout)")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching RSS feed {source_name} ({feed_url}): {e}")
-        FETCH_METRICS['failed_sources'].append(f"{source_name} (Request Error)")
-    except Exception as e:
-        logger.error(f"Unexpected error processing feed {source_name} ({feed_url}): {e}", exc_info=True)
-        if source_name not in FETCH_METRICS['failed_sources']:  # Avoid double counting
-            FETCH_METRICS['failed_sources'].append(f"{source_name} (Parse Error)")
-
-    return articles
-
-def fetch_article_content(article, max_retries=2):
-    """Fetches article content, trying Requests first for specific domains."""
-    url = article['link']
-    source_domain = urlparse(url).netloc
-    source_name = article.get('source', 'Unknown Source') # Get source name for stats
-
-    if url in attempted_urls:
-        logger.debug(f"Skipping already attempted URL: {url}")
-        return article # Avoid re-fetching
-    attempted_urls.add(url)
-    FETCH_METRICS['content_attempts'] = FETCH_METRICS.get('content_attempts', 0) + 1
-
-
-    start_time = time.time()
-    content = None
-    fetch_method = "None"
-    success = False
-
-    # --- Requests-First Strategy ---
-    if any(domain in source_domain for domain in REQUESTS_FIRST_DOMAINS):
-        logger.debug(f"Attempting fetch with Requests for {url}")
-        try:
-            headers = {"User-Agent": random.choice(USER_AGENTS)}
-            response = secure_session.get(url, timeout=15, headers=headers, allow_redirects=True)
-            response.raise_for_status()
-
-            if response.status_code == 200 and response.text:
-                content_type = response.headers.get('content-type', '').lower()
-                if 'html' in content_type:
-                    soup = BeautifulSoup(response.text, 'lxml')
-                    body = soup.find('body')
-                    if body:
-                        for script_or_style in body(['script', 'style']):
-                            script_or_style.decompose()
-                        extracted_text = body.get_text(separator='\n', strip=True)
-                        if extracted_text and len(extracted_text) > 100:
-                            content = extracted_text
-                            article['content'] = content
-                            fetch_method = "Requests"
-                            success = True
-                            FETCH_METRICS['content_success_requests'] = FETCH_METRICS.get('content_success_requests', 0) + 1
-                            logger.info(f"Successfully fetched content with Requests: {url}")
-                        else:
-                            logger.debug(f"Requests fetch succeeded but content extraction failed/short for {url}")
-                    else:
-                         logger.debug(f"No body tag found in Requests response for {url}")
-                else:
-                    logger.warning(f"Skipping non-HTML content from Requests for {url} (Content-Type: {content_type})")
-            else:
-                 logger.warning(f"Requests fetch for {url} returned status {response.status_code}")
-
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Requests fetch failed for {url}: {e}. Falling back to Selenium if needed.")
-        except Exception as e:
-             logger.error(f"Unexpected error during Requests fetch for {url}: {e}")
-    # -------------------------------
-
-    # --- Fallback to Selenium ---
-    if content is None and SYSTEM_SETTINGS.get("use_selenium_fetch", True):
-        if should_skip_source(url):
-            logger.info(f"Skipping Selenium fetch for problematic source: {url}")
-        else:
-            logger.debug(f"Falling back to Selenium for {url}")
-            with selenium_semaphore:
-                logger.debug(f"Acquired semaphore for Selenium fetch: {url}")
-                try:
-                    # Pass FETCH_METRICS to the selenium function if it needs to update specific counters
-                    article_result = fetch_article_content_with_selenium(article, max_retries=max_retries)
-                    # Check if content was added by the selenium function
-                    if article_result.get('content') and not success: # Ensure we don't double count success
-                        fetch_method = "Selenium"
-                        success = True
-                        FETCH_METRICS['content_success_selenium'] = FETCH_METRICS.get('content_success_selenium', 0) + 1
-                        article = article_result # Update article with content
-                finally:
-                     logger.debug(f"Released semaphore for Selenium fetch: {url}")
-            if not success: # Check if Selenium also failed
-                 logger.warning(f"Selenium fetch also failed to get content for {url}")
-                 # failed_urls.add(url) # Add to failed list only after all methods tried
-
-    elif content is None:
-         logger.warning(f"Failed to fetch content for {url} (Requests failed/skipped, Selenium disabled/skipped)")
-         # failed_urls.add(url) # Add to failed list only after all methods tried
-
-    # --- Update Stats ---
-    end_time = time.time()
-    duration = end_time - start_time
-    stats = FETCH_METRICS['source_statistics'][source_name]
-    stats['fetch_time'] += duration
-    if success:
-        stats['success'] += 1
-    else:
-        stats['failures'] += 1
-        failed_urls.add(url) # Add to failed list if both methods failed
-
-    article['fetch_method'] = fetch_method # Record how content was fetched (or attempted)
-
-    # --- Age Categorization ---
-    if article.get('published'):
-        article['age_category'] = categorize_article_age(article['published'])
-    else:
-        article['age_category'] = 'Unknown'
-    # ------------------------
-
-    return article
-
-
-def fetch_article_content_with_selenium(article, max_retries=3, base_delay=3):
-    """
-    Fetch article content using Selenium WebDriver from the pool.
-    Includes exponential backoff and domain-aware driver management.
-    """
-    url = article['link']
-    domain = urlparse(url).netloc
-
-    for attempt in range(max_retries):
-        try:
-            # Use the get_driver context manager with domain awareness
-            with get_driver(domain=domain) as driver:
-                if attempt > 0:
-                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1.5)
-                    logger.info(f"Retry attempt {attempt + 1}/{max_retries} for {url}, waiting {delay:.1f}s")
-                    time.sleep(delay)
-
-                logger.debug(f"Selenium attempt {attempt + 1}: Loading {url}")
-                driver.get(url)
-
-                try:
-                    # Wait for either article content or body
-                    content_selectors = ["article", "main", ".main-content", ".post-content", "#content", "#main", ".entry-content", ".article-body"]
-                    for selector in content_selectors:
-                        try:
-                            element = WebDriverWait(driver, 15).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                            )
-                            if element.is_displayed() and len(element.text) > 150:
-                                content = element.text
-                                article['content'] = content
-                                logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
-                                return article
-                        except TimeoutException:
-                            continue
-
-                    # Fallback to body if no content selectors worked
-                    body = WebDriverWait(driver, 5).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    content = body.text
-                    
-                    if content and len(content) > 150:
-                        article['content'] = content
-                        logger.info(f"Successfully fetched content from body with WebDriver (attempt {attempt + 1}): {url}")
-                        return article
-                    else:
-                        logger.warning(f"Content too short from body, retrying: {url}")
-                        continue
-
-                except TimeoutException as te:
-                    if attempt == max_retries - 1:  # Last attempt
-                        logger.error(f"All timeouts exhausted for {url}: {te}")
-                        break
-                    logger.warning(f"Timeout waiting for content on {url} (attempt {attempt + 1})")
-                    continue
-
-        except (TimeoutException, WebDriverException) as e:
-            if "ERR_TOO_MANY_REQUESTS" in str(e) or "403" in str(e) or "401" in str(e):
-                logger.warning(f"Rate limited or blocked by {domain}, falling back to requests: {e}")
-                # Try with requests as fallback
-                try:
-                    headers = {'User-Agent': random.choice(USER_AGENTS)}
-                    response = secure_session.get(url, timeout=15, headers=headers, allow_redirects=True)
-                    response.raise_for_status()
-                    
-                    soup = BeautifulSoup(response.text, 'lxml')
-                    for element in soup(['script', 'style', 'nav', 'footer', 'header']):
-                        element.decompose()
-                    
-                    content = soup.get_text(separator='\n', strip=True)
-                    if content and len(content) > 150:
-                        article['content'] = content
-                        article['fetch_method'] = 'Requests (fallback)'
-                        return article
-                except Exception as req_err:
-                    logger.error(f"Requests fallback also failed for {url}: {req_err}")
-            
-            if attempt < max_retries - 1:  # Not the last attempt
-                logger.warning(f"WebDriver error (attempt {attempt + 1}) for {url}: {e}")
-                continue
-            else:
-                logger.error(f"All WebDriver attempts failed for {url}: {e}")
-                break
-
-    return article  # Return article without content if all attempts fail
-
 
 def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=None):
     """Fetches articles from RSS feeds and optionally their content in parallel."""
@@ -492,25 +325,19 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     
     # Use configured pool size if not specified
     if max_workers is None:
-        max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", CONCURRENCY_LIMIT + 2)
-        
-    # Initialize WebDriver pool with configured size
-    pool_size = SYSTEM_SETTINGS.get("webdriver_pool_size", 3)
-    from ai_newsletter.selenium_pool.pool import initialize_pool
-    initialize_pool(pool_size)
+        max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 10)
     
     all_articles = []
     unique_article_urls.clear() # Reset global set for this run
     attempted_urls.clear() # Reset attempted URLs for this run
     failed_urls.clear() # Reset failed URLs for this run
 
-    # Reset metrics for this run (keep structure, reset values)
+    # Reset metrics for this run
     global FETCH_METRICS
     FETCH_METRICS = defaultdict(lambda: 0)
     FETCH_METRICS['failed_sources'] = []
     FETCH_METRICS['empty_sources'] = []
     FETCH_METRICS['source_statistics'] = defaultdict(lambda: {'articles': 0, 'fetch_time': 0.0, 'success': 0, 'failures': 0})
-    FETCH_METRICS['pool_timeouts'] = 0
 
     # Validate feed URLs and create mapping with source names
     unique_feeds = {}
@@ -538,15 +365,8 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
 
     logger.info(f"Processing {len(unique_feeds)} valid feed URLs from {len(rss_feeds)} initial sources.")
 
-    # Adjust max_workers based on CONCURRENCY_LIMIT if not specified
-    if max_workers is None:
-        # Set slightly higher than semaphore limit to keep queue full, but not excessively so
-        max_workers = CONCURRENCY_LIMIT + 2 # For feed fetching (I/O bound)
-        logger.info(f"Adjusting max_workers for Feed Fetching ThreadPoolExecutor to {max_workers}")
-
     # Process feeds in parallel (fetching RSS is usually I/O bound)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='FeedFetcher') as executor:
-        # Create futures with correct parameter order (URL, name)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_feed = {executor.submit(fetch_rss_feed, url, name, max_articles_per_feed): name 
                          for name, url in unique_feeds.items()}
         
@@ -555,18 +375,17 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
             try:
                 articles_from_feed = future.result()
                 if articles_from_feed:
-                    # Filter duplicates based on global list before adding
-                    new_articles = [a for a in articles_from_feed if not is_duplicate_article(a['title'], a['link'], all_articles)]
+                    new_articles = [a for a in articles_from_feed 
+                                  if not is_duplicate_article(a['title'], a['link'], all_articles)]
                     all_articles.extend(new_articles)
-                    # Update duplicate count based on filtering
                     duplicates_filtered = len(articles_from_feed) - len(new_articles)
                     if duplicates_filtered > 0:
                         FETCH_METRICS['duplicate_articles'] += duplicates_filtered
-                        logger.debug(f"Filtered {duplicates_filtered} duplicates from {source_name} after fetch.")
+                        logger.debug(f"Filtered {duplicates_filtered} duplicates from {source_name}")
 
             except Exception as exc:
-                logger.error(f"Feed fetch task for {source_name} generated an exception: {exc}", exc_info=True)
-                if source_name not in FETCH_METRICS['failed_sources']: # Ensure it's marked as failed
+                logger.error(f"Feed fetch task for {source_name} generated an exception: {exc}")
+                if source_name not in FETCH_METRICS['failed_sources']:
                     FETCH_METRICS['failed_sources'].append(f"{source_name} (Task Error)")
 
     logger.info(f"Found {len(all_articles)} unique articles from feeds.")
@@ -575,36 +394,34 @@ def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, 
     if fetch_content and all_articles:
         logger.info(f"Fetching full content for {len(all_articles)} articles...")
         processed_articles = []
-        # Adjust workers for content fetching - limited by selenium_semaphore anyway
-        content_max_workers = CONCURRENCY_LIMIT + 4 # Allow more threads to wait on semaphore/IO
-        logger.info(f"Adjusting max_workers for Content Fetching ThreadPoolExecutor to {content_max_workers}")
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=content_max_workers, thread_name_prefix='ContentFetcher') as executor:
-            future_to_article = {executor.submit(fetch_article_content, article): article for article in all_articles}
+        # Create a thread pool for content fetching
+        content_max_workers = min(10, len(all_articles))  # Limit concurrent requests
+        logger.info(f"Using {content_max_workers} workers for content fetching")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=content_max_workers) as executor:
+            future_to_article = {executor.submit(fetch_article_content, article): article 
+                               for article in all_articles}
             for future in concurrent.futures.as_completed(future_to_article):
                 original_article = future_to_article[future]
                 try:
                     processed_article = future.result()
                     processed_articles.append(processed_article)
                 except Exception as exc:
-                    logger.error(f"Content fetch task for {original_article.get('link')} generated an exception: {exc}", exc_info=True)
-                    processed_articles.append(original_article) # Keep original article even if content fetch failed
+                    logger.error(f"Content fetch failed for {original_article.get('link')}: {exc}")
+                    processed_articles.append(original_article)
 
         all_articles = processed_articles
-        logger.info(f"Finished content fetching. {FETCH_METRICS.get('content_success_requests', 0)} via Requests, {FETCH_METRICS.get('content_success_selenium', 0)} via Selenium.")
-
-    elif not all_articles:
-        logger.info("No articles found from feeds, skipping content fetch.")
+        logger.info(f"Finished content fetching. Success: {FETCH_METRICS.get('content_success_requests', 0)}")
 
     end_time = time.time()
     processing_time = end_time - start_time
     FETCH_METRICS['processing_time'] = processing_time
 
     logger.info(f"Total fetch process completed in {processing_time:.2f} seconds.")
-    logger.info(print_metrics_summary()) # Print summary at the end
+    logger.info(print_metrics_summary())
 
-    return all_articles # Return the final list
-
+    return all_articles
 
 def combine_feed_sources():
     """Combines primary, secondary, and supplemental feeds based on config."""
@@ -647,18 +464,27 @@ _last_cleanup = time.time()
 _cleanup_lock = threading.Lock()
 
 def _check_cleanup_needed():
-    """Check if periodic cleanup is needed and perform it if so."""
+    """Check if periodic cleanup is needed."""
     global _last_cleanup
-    cleanup_interval = SYSTEM_SETTINGS.get("webdriver_cleanup_interval", 300)
+    cleanup_interval = SYSTEM_SETTINGS.get("cleanup_interval", 300)
     
     with _cleanup_lock:
         current_time = time.time()
         if current_time - _last_cleanup >= cleanup_interval:
-            logger.info("Performing periodic WebDriver pool cleanup")
+            logger.info("Performing periodic cleanup")
             try:
-                from ai_newsletter.selenium_pool.pool import _pool
-                if _pool is not None:
-                    _pool.cleanup()
+                # Clear caches and reset tracking sets
+                unique_article_urls.clear()
+                attempted_urls.clear()
+                failed_urls.clear()
+                
+                # Reset performance tracking
+                source_performance.clear()
+                
+                # Reset session
+                global feed_session
+                feed_session = create_session()
+                
             except Exception as e:
                 logger.error(f"Error during periodic cleanup: {e}")
             _last_cleanup = current_time
@@ -674,7 +500,7 @@ def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5)
         return [], {"error": "No feed sources available"}
 
     # Get settings from config
-    max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", CONCURRENCY_LIMIT + 2) # Default based on pool size + buffer
+    max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 10) # Default based on pool size + buffer
     max_articles = SYSTEM_SETTINGS.get("max_articles_per_feed", max_articles_per_source)
 
     logger.info(f"Starting article fetch with max_articles_per_feed={max_articles}, max_workers={max_workers}")
@@ -731,10 +557,6 @@ if __name__ == "__main__":
 
     logger.info("--- Starting Standalone Fetch Test ---")
 
-    # Ensure pool is initialized for standalone test
-    from ai_newsletter.selenium_pool.pool import initialize_pool, close_pool
-    initialize_pool()
-
     # Example: Fetch articles with content
     fetched_articles, fetch_stats = fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=2) # Limit articles per feed for test
 
@@ -753,8 +575,3 @@ if __name__ == "__main__":
         logger.info(f"  Fetch Method: {article.get('fetch_method')}")
         content_preview = (article.get('content') or "")[:100].replace('\n', ' ') + "..." if article.get('content') else "No Content"
         logger.info(f"  Content Preview: {content_preview}")
-
-
-    # Close the pool when done
-    close_pool()
-    logger.info("--- WebDriver Pool Closed ---")
