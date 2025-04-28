@@ -19,6 +19,7 @@ import hashlib
 from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode # Added urlencode, parse_qs
 from collections import defaultdict # Added import
 from difflib import SequenceMatcher # Added import
+from google_redirect import resolve_google_redirect_selenium # Import Google redirect resolver
 
 # --- Local Imports ---
 from logger_config import setup_logger # Import logger setup
@@ -225,7 +226,7 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
             # --- Handle Google News URLs ---
             original_link = link
             if "news.google.com" in link:
-                extracted = extract_google_news_url(link)
+                extracted = resolve_google_redirect_selenium(link)
                 if extracted:
                     logger.debug(f"Extracted Google News URL: {link} -> {extracted}")
                     link = extracted
@@ -291,9 +292,6 @@ def fetch_rss_feed(feed_url, source_name, max_articles=5):
              FETCH_METRICS['failed_sources'].append(f"{source_name} (Parse Error)")
 
     return articles
-
-
-# ... (extract_google_news_url - assumed correct) ...
 
 def fetch_article_content(article, max_retries=2):
     """Fetches article content, trying Requests first for specific domains."""
