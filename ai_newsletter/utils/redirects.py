@@ -301,3 +301,17 @@ def extract_article_content(url, timeout=15, max_retries=2):
     except Exception as e:
         logger.warning(f"requests-html extraction failed for {url}: {e}")
     
+    # If all extraction attempts failed
+    logger.error(f"All content extraction methods failed for {url}")
+    return None
+
+def cleanup():
+    """Clean up resources when done"""
+    global _driver
+    if _driver is not None:
+        try:
+            _driver.quit()
+        except:
+            pass
+        _driver = None
+
