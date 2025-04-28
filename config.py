@@ -173,6 +173,20 @@ SUPPLEMENTAL_FEEDS = {
     }
 }
 
+# Flatten SECONDARY_FEEDS
+FLATTENED_SECONDARY_FEEDS = {}
+for category, feeds in SECONDARY_FEEDS.items():
+    FLATTENED_SECONDARY_FEEDS.update(feeds)
+
+# Flatten SUPPLEMENTAL_FEEDS
+FLATTENED_SUPPLEMENTAL_FEEDS = {}
+for category, feeds in SUPPLEMENTAL_FEEDS.items():
+    FLATTENED_SUPPLEMENTAL_FEEDS.update(feeds)
+
+# Replace original variables with flattened versions
+SECONDARY_FEEDS = FLATTENED_SECONDARY_FEEDS
+SUPPLEMENTAL_FEEDS = FLATTENED_SUPPLEMENTAL_FEEDS
+
 # --- BACKUP NEWS FEEDS ---
 # Used when primary feeds fail or return no articles
 BACKUP_RSS_FEEDS = {
