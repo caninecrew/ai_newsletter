@@ -1160,3 +1160,21 @@ def get_personalization_tags_html(article: Dict) -> str:
             html_tags.append('<span class="tag">📰 News</span>')
     
     return "".join(html_tags)
+
+def build_empty_newsletter() -> str:
+    """Generate a polite 'no new stories' HTML page."""
+    return """
+    <html>
+    <head>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #333; }
+            p { color: #555; }
+        </style>
+    </head>
+    <body>
+        <h1>No New Stories Today</h1>
+        <p>We couldn't find any new articles to share with you today. Check back tomorrow for the latest updates!</p>
+    </body>
+    </html>
+    """
