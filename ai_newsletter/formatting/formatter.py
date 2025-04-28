@@ -8,6 +8,7 @@ from dateutil import parser, tz as dateutil_tz
 import pandas as pd
 from ai_newsletter.logging_cfg.logger import setup_logger, DEFAULT_TZ
 from ai_newsletter.config.settings import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
+from bs4 import BeautifulSoup
 
 # Set up logger
 logger = setup_logger()
@@ -1194,3 +1195,53 @@ def build_html(articles: List[Dict]) -> str:
 
     # Use the format_articles function to generate the HTML content
     return format_articles(articles, html=True)
+
+def strip_html(html: str) -> str:
+    """Convert HTML to plain text by removing HTML tags while preserving structure.
+    
+    Args:
+        html: HTML content to convert
+        
+    Returns:
+        Plain text version of the HTML content
+    """
+    if not html:
+        return ""
+        
+    # Parse HTML with BeautifulSoup
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Remove script and style elements
+    for script in soup(["script", "style"]):
+        script.decompose()
+    
+    # Get text while preserving some structure
+    lines = []
+    for element in soup.descendants:
+        # Skip NavigableString inside certain tags
+        if element.parent and element.parent.name in ['style', 'script']:
+            continue
+            
+        if element.name == 'p':
+            lines.append("\n")
+        elif element.name == 'br':
+            lines.append("\n")
+        elif element.name == 'h1':
+            lines.append("\n" + "="*40 + "\n")
+        elif element.name == 'h2':
+            lines.append("\n" + "-"*30 + "\n")
+        elif element.name == 'li':
+            lines.append("\n* ")
+        elif element.name == 'a' and element.string:
+            lines.append(f"{element.string} ({element.get('href', '')})")
+        elif element.string and element.string.strip():
+            lines.append(element.string.strip())
+            
+    # Join lines and fix spacing
+    text = ' '.join(lines)
+    
+    # Fix multiple newlines and spaces
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    
+    return text.strip()
