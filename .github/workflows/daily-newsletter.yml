@@ -29,8 +29,8 @@ jobs:
         run: |
           echo "Checking for required files..."
           ls -la
-          if [ ! -f "main.py" ]; then
-            echo "ERROR: main.py not found!"
+          if [ ! -f "cli.py" ]; then
+            echo "ERROR: cli.py not found!"
             exit 1
           fi
           if [ ! -f "requirements.txt" ]; then
@@ -65,7 +65,7 @@ jobs:
           # Update config.py with the specified news source
           sed -i "s/PRIMARY_NEWS_SOURCE = \".*\"/PRIMARY_NEWS_SOURCE = \"$NEWS_SOURCE\"/" config.py
           # Run with error handling
-          python main.py || { echo "Script failed with exit code $?"; exit 1; }
+          python cli.py || { echo "Script failed with exit code $?"; exit 1; }
           
       - name: Archive logs
         if: always()  # Run even if the newsletter script fails
