@@ -11,8 +11,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from dateutil import tz as dateutil_tz
 from typing import Optional, List, Dict
-from logger_config import setup_logger
-from config import (
+from ai_newsletter.logging_cfg.logger import setup_logger
+from ai_newsletter.config.settings import (
     PRIMARY_NEWS_FEEDS, SECONDARY_FEEDS, SUPPLEMENTAL_FEEDS, BACKUP_RSS_FEEDS, 
     SYSTEM_SETTINGS, USER_INTERESTS, EMAIL_SETTINGS
 )
