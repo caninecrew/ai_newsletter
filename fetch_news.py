@@ -403,115 +403,89 @@ def fetch_article_content(article, max_retries=2):
 def fetch_article_content_with_selenium(article, max_retries=3, base_delay=3):
     """
     Fetch article content using Selenium WebDriver from the pool.
-    Includes exponential backoff and uses a single tab per attempt.
-    Assumes semaphore is acquired *before* calling this function.
+    Includes exponential backoff and domain-aware driver management.
     """
     url = article['link']
-    # Removed should_skip_source check as it's done before acquiring semaphore
+    domain = urlparse(url).netloc
 
     for attempt in range(max_retries):
-        driver = None
         try:
-            # Use the get_driver context manager from the pool
-            with get_driver(timeout=30) as driver: # Increased timeout for getting driver
+            # Use the get_driver context manager with domain awareness
+            with get_driver(domain=domain) as driver:
                 if attempt > 0:
                     delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1.5)
                     logger.info(f"Retry attempt {attempt + 1}/{max_retries} for {url}, waiting {delay:.1f}s")
                     time.sleep(delay)
 
                 logger.debug(f"Selenium attempt {attempt + 1}: Loading {url}")
-                driver.get(url) # Page load timeout is set in _create_driver
+                driver.get(url)
 
                 try:
-                    WebDriverWait(driver, 15).until(
+                    # Wait for either article content or body
+                    content_selectors = ["article", "main", ".main-content", ".post-content", "#content", "#main", ".entry-content", ".article-body"]
+                    for selector in content_selectors:
+                        try:
+                            element = WebDriverWait(driver, 15).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                            if element.is_displayed() and len(element.text) > 150:
+                                content = element.text
+                                article['content'] = content
+                                logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
+                                return article
+                        except TimeoutException:
+                            continue
+
+                    # Fallback to body if no content selectors worked
+                    body = WebDriverWait(driver, 5).until(
                         EC.presence_of_element_located((By.TAG_NAME, "body"))
                     )
-                except TimeoutException:
-                    logger.warning(f"Timeout waiting for body element on {url} (attempt {attempt + 1})")
-                    continue # Go to next retry attempt
-
-                time.sleep(random.uniform(0.5, 1.5)) # Allow dynamic content loading
-
-                # --- Content Extraction ---
-                content_element = None
-                selectors = ["article", "main", ".main-content", ".post-content", "#content", "#main", ".entry-content", ".article-body"] # Added more common selectors
-                for selector in selectors:
-                    try:
-                        # Use find_elements to avoid exception if not found
-                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                        if elements and elements[0].is_displayed():
-                             # Basic check for relevance (e.g., avoid tiny headers/footers matched by 'main')
-                             if len(elements[0].text) > 100:
-                                content_element = elements[0]
-                                logger.debug(f"Found potential content element with selector '{selector}' for {url}")
-                                break # Use the first suitable one found
-                    except Exception as find_err:
-                        logger.debug(f"Error checking selector '{selector}' for {url}: {find_err}")
-                        pass # Ignore errors finding specific selectors
-
-                if content_element:
-                    # Try getting text directly first, might be cleaner
-                    content = content_element.text
-                    if not content or len(content) < 150: # If direct text is poor, fallback to HTML parsing
-                         logger.debug(f"Direct text from selector '{selector}' too short, falling back to HTML parse for {url}")
-                         html_content = content_element.get_attribute('outerHTML')
+                    content = body.text
+                    
+                    if content and len(content) > 150:
+                        article['content'] = content
+                        logger.info(f"Successfully fetched content from body with WebDriver (attempt {attempt + 1}): {url}")
+                        return article
                     else:
-                         html_content = None # Indicate we used direct text
-                else:
-                    logger.debug(f"No specific content element found/suitable, using body for {url}")
-                    try:
-                        body_element = driver.find_element(By.TAG_NAME, "body")
-                        content = body_element.text # Try direct text from body
-                        if not content or len(content) < 150:
-                             html_content = body_element.get_attribute('outerHTML')
-                        else:
-                             html_content = None
-                    except Exception as body_err:
-                         logger.warning(f"Could not get body content for {url}: {body_err}")
-                         html_content = None
-                         content = None
+                        logger.warning(f"Content too short from body, retrying: {url}")
+                        continue
 
+                except TimeoutException as te:
+                    if attempt == max_retries - 1:  # Last attempt
+                        logger.error(f"All timeouts exhausted for {url}: {te}")
+                        break
+                    logger.warning(f"Timeout waiting for content on {url} (attempt {attempt + 1})")
+                    continue
 
-                # If we need to parse HTML (either from specific element or body)
-                if html_content:
-                    soup = BeautifulSoup(html_content, 'lxml')
-                    # Remove unwanted tags more aggressively
-                    for element in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', '.sidebar', '.ad', '.advertisement', '.related-posts', '.comments', 'form', 'button', 'iframe']):
+        except (TimeoutException, WebDriverException) as e:
+            if "ERR_TOO_MANY_REQUESTS" in str(e) or "403" in str(e) or "401" in str(e):
+                logger.warning(f"Rate limited or blocked by {domain}, falling back to requests: {e}")
+                # Try with requests as fallback
+                try:
+                    headers = {'User-Agent': random.choice(USER_AGENTS)}
+                    response = secure_session.get(url, timeout=15, headers=headers, allow_redirects=True)
+                    response.raise_for_status()
+                    
+                    soup = BeautifulSoup(response.text, 'lxml')
+                    for element in soup(['script', 'style', 'nav', 'footer', 'header']):
                         element.decompose()
+                    
                     content = soup.get_text(separator='\n', strip=True)
+                    if content and len(content) > 150:
+                        article['content'] = content
+                        article['fetch_method'] = 'Requests (fallback)'
+                        return article
+                except Exception as req_err:
+                    logger.error(f"Requests fallback also failed for {url}: {req_err}")
+            
+            if attempt < max_retries - 1:  # Not the last attempt
+                logger.warning(f"WebDriver error (attempt {attempt + 1}) for {url}: {e}")
+                continue
+            else:
+                logger.error(f"All WebDriver attempts failed for {url}: {e}")
+                break
 
-                # --- Validation ---
-                if content and len(content) > 150: # Check for meaningful content length
-                    article['content'] = content
-                    logger.info(f"Successfully fetched content with WebDriver (attempt {attempt + 1}): {url}")
-                    return article # Success
-                else:
-                    logger.warning(f"Extracted content too short or empty with WebDriver (attempt {attempt + 1}): {url}")
-                    # Continue to next retry if content is bad
-
-        except TimeoutError as e: # Catch timeout from get_driver
-             logger.error(f"Timeout acquiring WebDriver (attempt {attempt + 1}) for {url}: {e}")
-             # No need to discard driver here, context manager handles it
-             # Break the loop for this article if we can't even get a driver
-             break
-        except TimeoutException as e: # Catch timeout during page load/wait
-            logger.error(f"Selenium timeout (attempt {attempt + 1}) for {url}: {e}")
-            # Context manager handles driver release/discard
-        except WebDriverException as e:
-            logger.error(f"WebDriver exception (attempt {attempt + 1}) for {url}: {e}")
-            # Context manager handles driver release/discard
-            # Break if the exception seems fatal (e.g., browser crashed)
-            if "ERR_CONNECTION_REFUSED" in str(e) or "disconnected" in str(e) or "crashed" in str(e):
-                 logger.error("Breaking retry loop due to potentially fatal WebDriverException.")
-                 break
-        except Exception as e:
-            logger.error(f"Unexpected error (attempt {attempt + 1}) fetching {url} with Selenium: {e}", exc_info=True)
-            # Context manager handles driver release/discard
-
-    # If all retries fail
-    logger.error(f"All Selenium attempts failed for {url}")
-    # failed_urls.add(url) # Handled in the calling function
-    return article # Return article without content
+    return article  # Return article without content if all attempts fail
 
 
 def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=None):
