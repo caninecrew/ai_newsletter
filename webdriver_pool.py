@@ -70,9 +70,11 @@ class DriverWrapper:
 class WebDriverPool:
     _instance = None
     _lock = threading.Lock()
+    _POOL_SIZE = 3  # Default pool size, accessible as a class variable
 
     def __init__(self, pool_size: int = 3):
         self.pool_size = pool_size
+        WebDriverPool._POOL_SIZE = pool_size  # Update class variable when instance is created
         self.available_drivers: Queue = Queue()
         self.active_drivers: Dict[int, DriverWrapper] = {}
         self.domain_last_access: Dict[str, float] = defaultdict(float)
