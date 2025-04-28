@@ -2,7 +2,7 @@ name: Daily AI Newsletter
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Run at 8:00 AM UTC daily
+    - cron: '14 8 * * *'  # Run at 8:00 AM Central Time daily
   workflow_dispatch:      # Allow manual trigger for testing
 
 jobs:
