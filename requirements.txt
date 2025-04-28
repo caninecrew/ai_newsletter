@@ -11,7 +11,7 @@ gnews>=0.2.7
 
 # Data handling and utilities
 pandas>=2.1.0
-lxml>=5.1.0
+lxml[html_clean]>=5.1.0
 pytz>=2024.1
 python-dateutil>=2.8.2
 
