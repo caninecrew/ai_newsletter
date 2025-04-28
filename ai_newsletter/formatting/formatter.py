@@ -6,8 +6,8 @@ import hashlib
 import pytz
 from dateutil import parser, tz as dateutil_tz
 import pandas as pd
-from logger_config import setup_logger, DEFAULT_TZ
-from config import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
+from ai_newsletter.logging_cfg.logger import setup_logger, DEFAULT_TZ
+from ai_newsletter.config.settings import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 
 # Set up logger
 logger = setup_logger()

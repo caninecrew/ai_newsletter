@@ -3,15 +3,22 @@ import sys
 import warnings
 import argparse
 from datetime import datetime, timedelta, date
-from fetch_news import fetch_articles_from_all_feeds
-from summarize import summarize_articles
-from formatter import format_articles, filter_articles_by_date, deduplicate_articles, build_html, strip_html, build_empty_newsletter
-from send_email import send_email
-from logger_config import setup_logger
-from config import EMAIL_SETTINGS, SYSTEM_SETTINGS, FEED_SETTINGS
+from ai_newsletter.feeds.fetcher import fetch_articles_from_all_feeds
+from ai_newsletter.utils.summarize import summarize_articles
+from ai_newsletter.formatting.formatter import (
+    format_articles, 
+    filter_articles_by_date, 
+    deduplicate_articles,
+    build_html,
+    strip_html,
+    build_empty_newsletter
+)
+from ai_newsletter.email.sender import send_email
+from ai_newsletter.logging_cfg.logger import setup_logger
+from ai_newsletter.config.settings import EMAIL_SETTINGS, SYSTEM_SETTINGS, FEED_SETTINGS
 from dotenv import load_dotenv
-import json # Import json for summary
-import time # Import time for summary
+import json
+import time
 
 # Import dateutil timezone tools
 from dateutil import tz as dateutil_tz
