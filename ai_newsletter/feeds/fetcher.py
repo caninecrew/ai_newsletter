@@ -31,7 +31,7 @@ from ai_newsletter.config.settings import (
     GNEWS_CONFIG,
     FEED_SETTINGS
 )
-from ai_newsletter.feeds.gnews_api import GNewsClient
+from ai_newsletter.feeds.gnews_api import GNewsAPI
 
 # --- Setup ---
 logger = setup_logger()
@@ -588,7 +588,7 @@ import logging
 import time
 from typing import List, Dict
 from ..config.settings import GNEWS_CONFIG, FEED_SETTINGS, SYSTEM_SETTINGS
-from .gnews_api import GNewsClient
+from .gnews_api import GNewsAPI
 from ..logging_cfg.logger import setup_logger
 
 logger = setup_logger()
@@ -623,7 +623,7 @@ def fetch_from_gnews() -> List[Dict]:
     Fetch articles using the GNews API based on configured settings.
     """
     try:
-        gnews_client = GNewsClient()
+        gnews_client = GNewsAPI()
         all_articles = []
         
         # Fetch top headlines for enabled categories
