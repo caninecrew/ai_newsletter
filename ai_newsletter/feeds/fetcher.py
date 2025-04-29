@@ -3,7 +3,7 @@ import time
 import logging
 from datetime import datetime, timezone, timedelta
 import concurrent.futures
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
 from ai_newsletter.utils.redirects import extract_article_content
 from ai_newsletter.logging_cfg.logger import setup_logger
@@ -30,16 +30,54 @@ FETCH_METRICS = {
 
 CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc
 
-def fetch_article_content(article, max_retries=2):
+def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict], Dict]:
+    """
+    Safely fetch news articles with parameter validation.
+    
+    Valid parameters:
+    - fetch_content (bool): Whether to fetch full article content
+    - max_articles_per_source (int): Maximum articles to fetch per source
+    - language (str): Language code for articles (e.g., 'en')
+    - country (str): Country code for articles
+    
+    Returns:
+        tuple: (list of articles, fetch statistics dictionary)
+    """
+    # Define valid parameters and their types
+    valid_params = {
+        'fetch_content': bool,
+        'max_articles_per_source': int,
+        'language': str,
+        'country': str
+    }
+    
+    # Filter out invalid parameters
+    filtered_kwargs = {}
+    for key, value in kwargs.items():
+        if key in valid_params:
+            # Type validation
+            if not isinstance(value, valid_params[key]):
+                logger.warning(f"Parameter '{key}' has invalid type. Expected {valid_params[key].__name__}, got {type(value).__name__}")
+                continue
+            filtered_kwargs[key] = value
+        else:
+            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
+    
+    try:
+        return fetch_articles_from_all_feeds(**filtered_kwargs)
+    except Exception as e:
+        logger.error(f"Error in safe_fetch_news_articles: {str(e)}", exc_info=True)
+        return [], {'error': str(e)}
+
+def fetch_article_content(article: Dict, max_retries: int = 2) -> Dict:
     """Fetch article content using HTTP-based methods."""
     url = article.get('url', article.get('link'))
     if not url:
         logger.warning("Article missing URL/link field, skipping content fetch")
         return article
 
-    source_name = article.get('source', {}).get('name', 'Unknown Source')
-    if isinstance(article['source'], str):
-        source_name = article['source']
+    source = article.get('source', {})
+    source_name = source.get('name', source) if isinstance(source, dict) else str(source)
 
     FETCH_METRICS['content_attempts'] = FETCH_METRICS.get('content_attempts', 0) + 1
     start_time = time.time()
@@ -123,6 +161,7 @@ def fetch_from_gnews() -> List[Dict]:
             except Exception as e:
                 logger.error(f"Error fetching {category} headlines: {e}")
                 FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
+                continue
         
         # Fetch articles for configured interest areas
         for interest, enabled in USER_INTERESTS.items():
@@ -145,6 +184,7 @@ def fetch_from_gnews() -> List[Dict]:
             except Exception as e:
                 logger.error(f"Error fetching articles for interest {interest}: {e}")
                 FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
+                continue
         
         return all_articles
         
@@ -152,7 +192,7 @@ def fetch_from_gnews() -> List[Dict]:
         logger.error(f"Error in GNews fetch process: {e}")
         return []
 
-def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5):
+def fetch_articles_from_all_feeds(fetch_content: bool = True, max_articles_per_source: int = 5) -> Tuple[List[Dict], Dict]:
     """
     Main function to fetch all articles using GNews API.
     
@@ -212,6 +252,18 @@ def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5)
         "empty_sources": FETCH_METRICS.get("empty_sources", []),
         "processing_time": FETCH_METRICS.get("processing_time", 0),
     }
+
+    # Print details of a few articles
+    for i, article in enumerate(all_articles[:3]):
+        logger.info(f"\nArticle {i+1}:")
+        logger.info(f"  Title: {article.get('title')}")
+        logger.info(f"  Link: {article.get('url', article.get('link'))}")
+        logger.info(f"  Source: {article.get('source', {}).get('name', 'Unknown Source')}")
+        logger.info(f"  Published: {article.get('published_at')}")
+        logger.info(f"  Age Category: {article.get('age_category')}")
+        logger.info(f"  Fetch Method: {article.get('fetch_method')}")
+        content_preview = (article.get('content') or "")[:100].replace('\n', ' ') + "..." if article.get('content') else "No Content"
+        logger.info(f"  Content Preview: {content_preview}")
 
     return all_articles, fetch_stats
 
