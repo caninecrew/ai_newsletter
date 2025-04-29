@@ -62,6 +62,33 @@ def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict[str, Any]], Dict[str, 
         logger.error(f"Error in safe_fetch_news_articles: {str(e)}")
         return [], {"error": str(e)}
 
+def categorize_article_age(published_date: datetime) -> str:
+    """
+    Categorizes article age relative to now.
+    
+    Args:
+        published_date: The article's publication date (timezone-aware)
+        
+    Returns:
+        str: Age category ('Breaking', 'Today', 'Yesterday', 'This Week', or 'Older')
+    """
+    if not published_date.tzinfo:
+        published_date = published_date.replace(tzinfo=timezone.utc)
+        
+    now = datetime.now(timezone.utc)
+    age = now - published_date
+    
+    if age < timedelta(hours=6):
+        return 'Breaking'
+    elif age < timedelta(hours=24):
+        return 'Today'
+    elif age < timedelta(days=2):
+        return 'Yesterday'
+    elif age < timedelta(days=7):
+        return 'This Week'
+    else:
+        return 'Older'
+
 def fetch_articles_by_category() -> List[Dict]:
     """
     Fetch articles using the GNews API based on configured categories and their queries.
@@ -102,6 +129,7 @@ def fetch_articles_by_category() -> List[Dict]:
                         if pub_date >= cutoff_time:
                             article['newsletter_category'] = 'TOP_HEADLINES'
                             article['query_matched'] = 'top_headlines'
+                            article['age_category'] = categorize_article_age(pub_date)
                             fresh_headlines.append(article)
                         else:
                             FETCH_METRICS['filtered_old_articles'] += 1
@@ -166,6 +194,7 @@ def fetch_articles_by_category() -> List[Dict]:
                                 if pub_date >= cutoff_time:
                                     article['newsletter_category'] = category
                                     article['query_matched'] = query
+                                    article['age_category'] = categorize_article_age(pub_date)
                                     fresh_articles.append(article)
                                 else:
                                     FETCH_METRICS['filtered_old_articles'] += 1
@@ -208,22 +237,6 @@ def fetch_articles_by_category() -> List[Dict]:
     except Exception as e:
         logger.error(f"Error in GNews fetch process: {e}")
         return []
-
-def categorize_article_age(published_date: datetime) -> str:
-    """Categorizes article age relative to now."""
-    now = datetime.now(timezone.utc)
-    age = now - published_date
-    
-    if age < timedelta(hours=6):
-        return 'Breaking'
-    elif age < timedelta(hours=24):
-        return 'Today'
-    elif age < timedelta(days=2):
-        return 'Yesterday'
-    elif age < timedelta(days=7):
-        return 'This Week'
-    else:
-        return 'Older'
 
 def fetch_articles_from_all_feeds(max_articles_per_source: int = 5) -> Tuple[List[Dict], Dict]:
     """
