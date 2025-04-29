@@ -33,45 +33,23 @@ class GNewsAPI:
         )
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
     
-    def _format_query(self, query: str) -> str:
-        """
-        Format query string for GNews API.
-        Replaces spaces with + and validates query.
-        """
+    def _validate_query(self, query: str) -> str:
+        """Validate query string before sending to GNews API."""
         if not query or len(query.strip()) < 3:
             raise ValueError(f"Invalid search term: {query}")
-            
-        # Replace spaces with + manually since GNews expects + instead of %20
-        formatted = query.strip().replace(' ', '+')
-        
-        # Log the formatted query for debugging
-        logger.debug(f"Formatted query: {formatted}")
-        return formatted
-
+        return query.strip()
+    
     def _build_url(self, endpoint: str, params: Dict[str, Any]) -> str:
         """Build URL with proper encoding for GNews API."""
         # Log the request URL for debugging (without API key)
         debug_params = params.copy()
         debug_params['apikey'] = 'REDACTED'
-        logger.debug(f"GNews API request URL (redacted): {self.BASE_URL}/{endpoint}?{urlencode(debug_params)}")
+        debug_url = f"{self.BASE_URL}/{endpoint}?{urlencode(debug_params)}"
+        logger.debug(f"GNews API request URL (redacted): {debug_url}")
         
         # Build and return actual URL with API key
         return f"{self.BASE_URL}/{endpoint}?{urlencode(params)}"
-    
-    def _validate_response(self, data: dict) -> None:
-        """Validate GNews API response data."""
-        if not isinstance(data, dict):
-            raise GNewsAPIError(f"Invalid response format. Expected dict, got {type(data)}")
-            
-        if 'errors' in data:
-            raise GNewsAPIError(f"API returned errors: {data['errors']}")
-            
-        if 'articles' not in data:
-            raise GNewsAPIError("Response missing 'articles' field")
-            
-        if not isinstance(data['articles'], list):
-            raise GNewsAPIError(f"Invalid articles format. Expected list, got {type(data['articles'])}")
-    
+
     def search_news(
         self,
         query: str,
@@ -96,11 +74,11 @@ class GNewsAPI:
         Raises:
             GNewsAPIError: If the API request fails or returns invalid data
         """
-        # Format query properly for GNews API
-        formatted_query = self._format_query(query)
+        # Validate but don't pre-encode the query
+        validated_query = self._validate_query(query)
         
         params = {
-            'q': formatted_query,
+            'q': validated_query,  # Let urlencode handle the encoding
             'lang': language,
             'max': min(max_results, 100),  # API limit is 100
             'apikey': self.api_key
