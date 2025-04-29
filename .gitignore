@@ -13,3 +13,4 @@ __pycache__/
 logs.txt
 *.txt
 .lock
+PKG-INFO
