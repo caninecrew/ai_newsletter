@@ -3,7 +3,12 @@ from typing import List
 from datetime import datetime
 from ai_newsletter.core.types import Article
 from ai_newsletter.formatting.components import format_summary_block, get_tags_html
-from ai_newsletter.formatting.layout import wrap_with_css, build_header, build_footer
+from ai_newsletter.formatting.layout import (
+    wrap_with_css, 
+    build_header, 
+    build_footer, 
+    build_empty_newsletter
+)
 from ai_newsletter.logging_cfg.logger import setup_logger
 
 logger = setup_logger()
