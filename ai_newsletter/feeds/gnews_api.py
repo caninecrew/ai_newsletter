@@ -1,8 +1,7 @@
 import os
 from datetime import datetime
 import logging
-from typing import List, Dict, Optional
-
+from typing import List, Dict, Optional, Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -53,7 +52,7 @@ class GNewsAPI:
         country: Optional[str] = None,
         max_results: int = 10,
         exclude_domains: Optional[List[str]] = None
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
         """
         Search for news articles using the GNews API.
         
@@ -175,11 +174,8 @@ class GNewsAPI:
                 processed_article = {
                     'title': article.get('title', '').strip(),
                     'description': article.get('description', '').strip(),
-                    # Store full content if available
-                    'content': article.get('content', '').strip(),
-                    # Store URL in both fields for compatibility
                     'url': url,
-                    'link': url,
+                    'link': url,  # For compatibility
                     'source': {
                         'name': article.get('source', {}).get('name', '').strip() if isinstance(article.get('source'), dict) else str(article.get('source', '')).strip(),
                         'url': article.get('source', {}).get('url', '').strip() if isinstance(article.get('source'), dict) else ''
