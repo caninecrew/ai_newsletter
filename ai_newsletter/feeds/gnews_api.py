@@ -32,6 +32,20 @@ class GNewsAPI:
         )
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
     
+    def _validate_response(self, data: dict) -> None:
+        """Validate GNews API response data."""
+        if not isinstance(data, dict):
+            raise GNewsAPIError(f"Invalid response format. Expected dict, got {type(data)}")
+            
+        if 'errors' in data:
+            raise GNewsAPIError(f"API returned errors: {data['errors']}")
+            
+        if 'articles' not in data:
+            raise GNewsAPIError("Response missing 'articles' field")
+            
+        if not isinstance(data['articles'], list):
+            raise GNewsAPIError(f"Invalid articles format. Expected list, got {type(data['articles'])}")
+    
     def search_news(
         self,
         query: str,
@@ -52,6 +66,9 @@ class GNewsAPI:
             
         Returns:
             List of articles as dictionaries
+            
+        Raises:
+            GNewsAPIError: If the API request fails or returns invalid data
         """
         params = {
             'q': query,
@@ -72,7 +89,8 @@ class GNewsAPI:
             response.raise_for_status()
             
             data = response.json()
-            articles = data.get('articles', [])
+            self._validate_response(data)
+            articles = data['articles']
             
             # Filter out excluded domains if specified
             if exclude_domains:
@@ -87,7 +105,7 @@ class GNewsAPI:
         except requests.exceptions.RequestException as e:
             logger.error(f"GNews API request failed: {str(e)}")
             raise GNewsAPIError(f"Failed to fetch news: {str(e)}")
-        
+            
     def get_top_headlines(
         self,
         language: str = "en",
@@ -106,6 +124,9 @@ class GNewsAPI:
             
         Returns:
             List of articles as dictionaries
+            
+        Raises:
+            GNewsAPIError: If the API request fails or returns invalid data
         """
         params = {
             'lang': language,
@@ -127,7 +148,8 @@ class GNewsAPI:
             response.raise_for_status()
             
             data = response.json()
-            articles = data.get('articles', [])
+            self._validate_response(data)
+            articles = data['articles']
             return self._process_articles(articles[:max_results])
             
         except requests.exceptions.RequestException as e:
@@ -139,33 +161,42 @@ class GNewsAPI:
         processed_articles = []
         
         for article in articles:
+            if not isinstance(article, dict):
+                logger.warning(f"Skipping invalid article format: {type(article)}")
+                continue
+                
             # Ensure we have a URL field
             url = article.get('url')
             if not url:
                 logger.warning("Skipping article without URL")
                 continue
                 
-            processed_article = {
-                'title': article.get('title', '').strip(),
-                'description': article.get('description', '').strip(),
-                # Store full content if available
-                'content': article.get('content', '').strip(),
-                # Store URL in both fields for compatibility
-                'url': url,
-                'link': url,
-                'source': {
-                    'name': article.get('source', {}).get('name', '').strip(),
-                    'url': article.get('source', {}).get('url', '').strip()
-                },
-                'published_at': self._parse_date(article.get('publishedAt', ''))
-            }
-            
-            # Skip articles with empty titles
-            if not processed_article['title']:
-                logger.warning(f"Skipping article with empty title: {url}")
-                continue
+            try:
+                processed_article = {
+                    'title': article.get('title', '').strip(),
+                    'description': article.get('description', '').strip(),
+                    # Store full content if available
+                    'content': article.get('content', '').strip(),
+                    # Store URL in both fields for compatibility
+                    'url': url,
+                    'link': url,
+                    'source': {
+                        'name': article.get('source', {}).get('name', '').strip() if isinstance(article.get('source'), dict) else str(article.get('source', '')).strip(),
+                        'url': article.get('source', {}).get('url', '').strip() if isinstance(article.get('source'), dict) else ''
+                    },
+                    'published_at': self._parse_date(article.get('publishedAt', ''))
+                }
                 
-            processed_articles.append(processed_article)
+                # Skip articles with empty titles
+                if not processed_article['title']:
+                    logger.warning(f"Skipping article with empty title: {url}")
+                    continue
+                    
+                processed_articles.append(processed_article)
+                
+            except Exception as e:
+                logger.warning(f"Error processing article {url}: {str(e)}")
+                continue
             
         return processed_articles
     
