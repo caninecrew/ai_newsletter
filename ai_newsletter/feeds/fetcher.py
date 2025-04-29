@@ -7,8 +7,9 @@ from dateutil import parser as dateutil_parser, tz as dateutil_tz
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import (
     SYSTEM_SETTINGS,
-    USER_INTERESTS,
-    GNEWS_CONFIG
+    NEWS_CATEGORIES,
+    GNEWS_DAILY_LIMIT,
+    GNEWS_REQUEST_DELAY
 )
 from ai_newsletter.feeds.gnews_api import GNewsAPI, GNewsAPIError
 
@@ -20,166 +21,83 @@ FETCH_METRICS = {
     'start_time': None,
     'processing_time': 0,
     'total_articles': 0,
-    'failed_sources': [],
-    'empty_sources': []
+    'articles_per_category': {},
+    'failed_queries': [],
+    'empty_queries': []
 }
 
-CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc
-
-def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict], Dict]:
+def fetch_articles_by_category() -> List[Dict]:
     """
-    Safely fetch news articles with parameter validation.
-    
-    Valid parameters:
-    - max_articles_per_source (int): Maximum articles to fetch per source
-    - language (str): Language code for articles (e.g., 'en')
-    - country (str): Country code for articles
+    Fetch articles using the GNews API based on configured categories and their queries.
     
     Returns:
-        tuple: (list of articles, fetch statistics dictionary)
-    """
-    valid_params = {
-        'max_articles_per_source': int,
-        'language': str,
-        'country': str
-    }
-    
-    filtered_kwargs = {}
-    for key, value in kwargs.items():
-        if key in valid_params:
-            if not isinstance(value, valid_params[key]):
-                logger.warning(f"Parameter '{key}' has invalid type. Expected {valid_params[key].__name__}, got {type(value).__name__}")
-                continue
-            filtered_kwargs[key] = value
-        else:
-            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
-    
-    try:
-        return fetch_articles_from_all_feeds(**filtered_kwargs)
-    except Exception as e:
-        logger.error(f"Error in safe_fetch_news_articles: {str(e)}", exc_info=True)
-        return [], {'error': str(e)}
-
-def categorize_article_age(published_date):
-    """Categorizes article age relative to now."""
-    if not published_date:
-        return 'Unknown'
-        
-    now = datetime.now(timezone.utc)
-    age = now - published_date
-    
-    if age < timedelta(hours=1):
-        return 'Breaking'
-    elif age < timedelta(hours=6):
-        return 'Very Recent'
-    elif age < timedelta(hours=12):
-        return 'Recent'
-    elif age < timedelta(days=1):
-        return 'Today'
-    elif age < timedelta(days=2):
-        return 'Yesterday'
-    elif age < timedelta(days=7):
-        return 'This Week'
-    else:
-        return 'Older'
-
-def fetch_from_gnews() -> List[Dict]:
-    """
-    Fetch articles using the GNews API based on configured settings.
+        List[Dict]: List of articles with category information
     """
     try:
         gnews_client = GNewsAPI()
         all_articles = []
+        requests_made = 0
         
         logger.info("Starting GNews API article fetch process")
         
-        # Fetch top headlines using search with filters
-        if isinstance(GNEWS_CONFIG.get('categories'), dict):
-            logger.debug(f"Processing {len(GNEWS_CONFIG['categories'])} categories")
-            for category, enabled in GNEWS_CONFIG['categories'].items():
-                if not enabled:
-                    logger.debug(f"Category {category} is disabled, skipping")
-                    continue
-                    
-                try:
-                    logger.debug(f"Fetching articles for category: {category}")
-                    articles = gnews_client.search_news(
-                        query=f"topic:{category}" if category != 'general' else None,
-                        language=GNEWS_CONFIG.get('language', 'en'),
-                        country=GNEWS_CONFIG.get('country'),
-                        max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
-                    )
-                    
-                    if articles:
-                        # Add category to each article
-                        for article in articles:
-                            article['category'] = category
-                        all_articles.extend(articles)
-                        logger.info(f"Fetched {len(articles)} articles for category: {category}")
-                    else:
-                        logger.warning(f"No articles found for category: {category}")
-                        FETCH_METRICS['empty_sources'].append(f"GNews-{category}")
-                        
-                except GNewsAPIError as e:
-                    logger.error(f"GNews API error fetching {category} headlines: {e}")
-                    FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
-                    continue
-                except Exception as e:
-                    logger.error(f"Unexpected error fetching {category} headlines: {e}")
-                    FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
-                    continue
-        else:
-            logger.warning("GNEWS_CONFIG categories is not a dictionary, skipping category fetching")
+        # Process each category
+        for category, config in NEWS_CATEGORIES.items():
+            if not config.get('enabled', True):
+                logger.debug(f"Category {category} is disabled, skipping")
+                continue
+                
+            FETCH_METRICS['articles_per_category'][category] = 0
             
-        # Fetch articles for configured interest areas
-        if isinstance(USER_INTERESTS, dict):
-            logger.debug(f"Processing {len(USER_INTERESTS)} interests")
-            for interest, enabled in USER_INTERESTS.items():
-                if not enabled:
-                    logger.debug(f"Interest {interest} is disabled, skipping")
-                    continue
+            # Process each query in the category
+            for query in config.get('queries', []):
+                # Check API rate limit
+                if requests_made >= GNEWS_DAILY_LIMIT:
+                    logger.warning("Daily API limit reached, stopping fetch process")
+                    break
                     
                 try:
-                    logger.debug(f"Fetching articles for interest: {interest}")
-                    query = interest.replace('_', ' ')
+                    logger.debug(f"Fetching articles for category '{category}' with query: {query}")
                     articles = gnews_client.search_news(
                         query=query,
-                        language=GNEWS_CONFIG.get('language', 'en'),
-                        country=GNEWS_CONFIG.get('country'),
-                        max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
+                        language="en",
+                        max_results=3  # Limit per query to ensure diverse coverage
                     )
+                    requests_made += 1
+                    time.sleep(GNEWS_REQUEST_DELAY)  # Respect rate limiting
                     
                     if articles:
-                        # Add interest and category to each article
+                        # Add category information to each article
                         for article in articles:
-                            article['interest'] = interest
-                            article['category'] = 'Interest'
+                            article['newsletter_category'] = category
+                            article['query_matched'] = query
+                        
                         all_articles.extend(articles)
-                        logger.info(f"Fetched {len(articles)} articles for interest: {interest}")
+                        FETCH_METRICS['articles_per_category'][category] += len(articles)
+                        logger.info(f"Fetched {len(articles)} articles for {category} - {query}")
                     else:
-                        logger.warning(f"No articles found for interest: {interest}")
-                        FETCH_METRICS['empty_sources'].append(f"GNews-{interest}")
+                        logger.warning(f"No articles found for query: {query} in category: {category}")
+                        FETCH_METRICS['empty_queries'].append(f"{category}:{query}")
                         
                 except GNewsAPIError as e:
-                    logger.error(f"GNews API error fetching articles for interest {interest}: {e}")
-                    FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
+                    logger.error(f"GNews API error for {category} - {query}: {e}")
+                    FETCH_METRICS['failed_queries'].append(f"{category}:{query}")
                     continue
                 except Exception as e:
-                    logger.error(f"Unexpected error fetching articles for interest {interest}: {e}")
-                    FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
+                    logger.error(f"Unexpected error for {category} - {query}: {e}")
+                    FETCH_METRICS['failed_queries'].append(f"{category}:{query}")
                     continue
-        else:
-            logger.warning("USER_INTERESTS is not a dictionary, skipping interest-based fetching")
+                    
+            if requests_made >= GNEWS_DAILY_LIMIT:
+                break
 
         if not all_articles:
-            logger.warning("No articles were fetched from any source")
+            logger.warning("No articles were fetched from any category")
             return []
             
-        # Add age categorization to all articles
+        # Add age categorization
         for article in all_articles:
             if article.get('published_at'):
                 try:
-                    # Handle ISO format strings from GNews API
                     pub_date = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
                     article['age_category'] = categorize_article_age(pub_date)
                 except (ValueError, TypeError) as e:
@@ -187,13 +105,29 @@ def fetch_from_gnews() -> List[Dict]:
                     article['age_category'] = 'Unknown'
             else:
                 article['age_category'] = 'Unknown'
-        
-        logger.info(f"Successfully fetched {len(all_articles)} total articles")
+                
+        logger.info(f"Successfully fetched {len(all_articles)} total articles across {len(FETCH_METRICS['articles_per_category'])} categories")
         return all_articles
         
     except Exception as e:
         logger.error(f"Error in GNews fetch process: {e}")
         return []
+
+def categorize_article_age(published_date: datetime) -> str:
+    """Categorizes article age relative to now."""
+    now = datetime.now(timezone.utc)
+    age = now - published_date
+    
+    if age < timedelta(hours=6):
+        return 'Breaking'
+    elif age < timedelta(hours=24):
+        return 'Today'
+    elif age < timedelta(days=2):
+        return 'Yesterday'
+    elif age < timedelta(days=7):
+        return 'This Week'
+    else:
+        return 'Older'
 
 def fetch_articles_from_all_feeds(max_articles_per_source: int = 5) -> Tuple[List[Dict], Dict]:
     """
@@ -209,38 +143,28 @@ def fetch_articles_from_all_feeds(max_articles_per_source: int = 5) -> Tuple[Lis
     FETCH_METRICS['start_time'] = time.time()
 
     try:
-        all_articles = fetch_from_gnews()
+        articles = fetch_articles_by_category()
     except Exception as e:
-        logger.error(f"Error fetching from GNews API: {e}")
-        all_articles = []
+        logger.error(f"Error fetching articles: {e}")
+        articles = []
 
     # Update metrics and return
     end_time = time.time()
     processing_time = end_time - FETCH_METRICS['start_time']
     FETCH_METRICS['processing_time'] = processing_time
-    FETCH_METRICS['total_articles'] = len(all_articles)
+    FETCH_METRICS['total_articles'] = len(articles)
 
     logger.info(f"Total fetch process completed in {processing_time:.2f} seconds")
     
     fetch_stats = {
-        "total_articles": len(all_articles),
-        "failed_sources": FETCH_METRICS.get("failed_sources", []),
-        "empty_sources": FETCH_METRICS.get("empty_sources", []),
-        "processing_time": FETCH_METRICS.get("processing_time", 0),
+        "total_articles": len(articles),
+        "processing_time": processing_time,
+        "articles_per_category": FETCH_METRICS['articles_per_category'],
+        "failed_queries": FETCH_METRICS['failed_queries'],
+        "empty_queries": FETCH_METRICS['empty_queries']
     }
-
-    # Log sample articles for debugging
-    for i, article in enumerate(all_articles[:3]):
-        logger.info(f"\nArticle {i+1}:")
-        logger.info(f"  Title: {article.get('title')}")
-        logger.info(f"  Description: {article.get('description')}")
-        logger.info(f"  Link: {article.get('url', article.get('link'))}")
-        logger.info(f"  Source: {article.get('source', {}).get('name', 'Unknown Source')}")
-        logger.info(f"  Published: {article.get('published_at')}")
-        logger.info(f"  Category: {article.get('category', 'Uncategorized')}")
-        logger.info(f"  Age Category: {article.get('age_category', 'Unknown')}")
-
-    return all_articles, fetch_stats
+    
+    return articles, fetch_stats
 
 # --- Test Execution ---
 if __name__ == "__main__":
