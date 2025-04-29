@@ -139,17 +139,32 @@ class GNewsAPI:
         processed_articles = []
         
         for article in articles:
+            # Ensure we have a URL field
+            url = article.get('url')
+            if not url:
+                logger.warning("Skipping article without URL")
+                continue
+                
             processed_article = {
-                'title': article.get('title', ''),
-                'description': article.get('description', ''),
-                'content': article.get('content', ''),
-                'url': article.get('url', ''),
+                'title': article.get('title', '').strip(),
+                'description': article.get('description', '').strip(),
+                # Store full content if available
+                'content': article.get('content', '').strip(),
+                # Store URL in both fields for compatibility
+                'url': url,
+                'link': url,
                 'source': {
-                    'name': article.get('source', {}).get('name', ''),
-                    'url': article.get('source', {}).get('url', '')
+                    'name': article.get('source', {}).get('name', '').strip(),
+                    'url': article.get('source', {}).get('url', '').strip()
                 },
                 'published_at': self._parse_date(article.get('publishedAt', ''))
             }
+            
+            # Skip articles with empty titles
+            if not processed_article['title']:
+                logger.warning(f"Skipping article with empty title: {url}")
+                continue
+                
             processed_articles.append(processed_article)
             
         return processed_articles
