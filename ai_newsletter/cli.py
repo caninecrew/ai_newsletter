@@ -18,6 +18,7 @@ from ai_newsletter.config.settings import EMAIL_SETTINGS, SYSTEM_SETTINGS
 from dotenv import load_dotenv
 import json
 import time
+import click
 
 # Import dateutil timezone tools
 from dateutil import tz as dateutil_tz
@@ -40,15 +41,15 @@ def parse_feed_args():
     parser.add_argument("--end_date", help="End date for filtering articles (YYYY-MM-DD)")
     return parser.parse_args()
 
-def run_newsletter(args):
+def run_newsletter(args=None):
     """Run the newsletter generation process"""
     try:
         start_dt = None
         end_dt = None
         
-        if args.start_date:
+        if args and args.start_date:
             start_dt = datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=CENTRAL)
-        if args.end_date:
+        if args and args.end_date:
             # Parse, add time component to include the whole day, make aware
             end_dt = (datetime.strptime(args.end_date, "%Y-%m-%d") + timedelta(days=1, seconds=-1)).replace(tzinfo=CENTRAL)
             
@@ -128,8 +129,10 @@ def main():
         }
         logger.info(f"SUMMARY: {json.dumps(stats)}")
 
-# Define cli as the main entry point for the module
-cli = main
+@click.command()
+def cli():
+    """Run the newsletter generator."""
+    run_newsletter()
 
 if __name__ == "__main__":
     cli()
