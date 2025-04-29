@@ -14,53 +14,41 @@ load_dotenv()
 
 def summarize_articles(articles: List[Dict], max_summary_length=150, min_summary_length=50) -> List[Dict]:
     """
-    Create summaries for articles using their metadata from GNews API.
+    Summarize articles using OpenAI's API with GNews metadata.
     
     Args:
-        articles: List of article dictionaries with title, description and content fields
-        max_summary_length: Maximum length of generated summaries
-        min_summary_length: Minimum length of generated summaries
+        articles: List of article dictionaries with GNews metadata
+        max_summary_length: Maximum length of generated summary
+        min_summary_length: Minimum length of generated summary
         
     Returns:
-        List of articles with added summaries
+        List of articles with summaries added
     """
     summarized = []
     summarization_stats = {
-        'total': 0,
+        'total': len(articles),
         'success': 0,
         'failed': 0,
         'skipped': 0
     }
 
     for article in articles:
-        summarization_stats['total'] += 1
-        
-        # Skip if article already has a summary
-        if article.get('summary'):
-            summarization_stats['skipped'] += 1
-            summarized.append(article)
-            continue
-
-        # Combine available metadata for summarization
         title = article.get('title', '').strip()
         description = article.get('description', '').strip()
-        content = article.get('content', '').strip()
         
-        # Skip if we don't have enough content to summarize
-        if not title and not description and not content:
-            logger.warning("Article has no content to summarize")
+        # Skip if we don't have enough metadata to summarize
+        if not title and not description:
+            logger.warning("Article lacks title and description for summarization")
             summarization_stats['failed'] += 1
             continue
             
         try:
-            # Combine available text for the summary
+            # Combine available metadata for summary
             text_to_summarize = []
             if title:
                 text_to_summarize.append(f"Title: {title}")
             if description:
                 text_to_summarize.append(f"Description: {description}")
-            if content:
-                text_to_summarize.append(f"Content: {content}")
                 
             combined_text = "\n".join(text_to_summarize)
             
@@ -71,8 +59,14 @@ def summarize_articles(articles: List[Dict], max_summary_length=150, min_summary
                 article['summary_method'] = 'openai'
                 summarization_stats['success'] += 1
             else:
-                logger.warning(f"Failed to generate summary for: {title}")
-                summarization_stats['failed'] += 1
+                # If OpenAI fails, use description as fallback summary
+                if description:
+                    article['summary'] = description
+                    article['summary_method'] = 'description_fallback'
+                    summarization_stats['success'] += 1
+                else:
+                    logger.warning(f"Failed to generate summary for: {title}")
+                    summarization_stats['failed'] += 1
                 
         except Exception as e:
             logger.error(f"Error summarizing article: {str(e)}")
