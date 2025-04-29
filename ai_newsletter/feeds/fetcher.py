@@ -93,7 +93,7 @@ def fetch_from_gnews() -> List[Dict]:
         
         logger.info("Starting GNews API article fetch process")
         
-        # Fetch top headlines for enabled categories
+        # Fetch top headlines using search with filters
         if isinstance(GNEWS_CONFIG.get('categories'), dict):
             logger.debug(f"Processing {len(GNEWS_CONFIG['categories'])} categories")
             for category, enabled in GNEWS_CONFIG['categories'].items():
@@ -103,10 +103,10 @@ def fetch_from_gnews() -> List[Dict]:
                     
                 try:
                     logger.debug(f"Fetching articles for category: {category}")
-                    articles = gnews_client.get_top_headlines(
+                    articles = gnews_client.search_news(
+                        query=f"topic:{category}" if category != 'general' else None,
                         language=GNEWS_CONFIG.get('language', 'en'),
                         country=GNEWS_CONFIG.get('country'),
-                        category=category if category != 'general' else None,
                         max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
                     )
                     
