@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib.parse import urlencode
 from dateutil import parser as dateutil_parser
 
 logger = logging.getLogger(__name__)
@@ -35,18 +36,26 @@ class GNewsAPI:
     def _format_query(self, query: str) -> str:
         """
         Format query string for GNews API.
-        Replaces spaces with + and escapes special characters.
+        Replaces spaces with + and validates query.
         """
         if not query or len(query.strip()) < 3:
             raise ValueError(f"Invalid search term: {query}")
             
-        # Replace spaces with + and handle special characters
-        formatted = query.strip()
-        formatted = formatted.replace(' ', '+')
+        # Replace spaces with + manually since GNews expects + instead of %20
+        formatted = query.strip().replace(' ', '+')
         
         # Log the formatted query for debugging
         logger.debug(f"Formatted query: {formatted}")
         return formatted
+
+    def _build_url(self, endpoint: str, params: Dict[str, Any]) -> str:
+        """Build URL with proper encoding for GNews API."""
+        # Log the request URL for debugging (without API key)
+        debug_params = params.copy()
+        debug_params['apikey'] = 'REDACTED'
+        url = f"{self.BASE_URL}/{endpoint}?{urlencode(debug_params)}"
+        logger.debug(f"GNews API request URL: {url}")
+        return url
     
     def _validate_response(self, data: dict) -> None:
         """Validate GNews API response data."""
@@ -96,20 +105,12 @@ class GNewsAPI:
             'apikey': self.api_key
         }
         
-        # Log the full URL for debugging (without API key)
-        debug_params = params.copy()
-        debug_params['apikey'] = 'REDACTED'
-        logger.debug(f"GNews API request: {self.BASE_URL}/search?{requests.utils.urlencode(debug_params)}")
-        
         if country:
             params['country'] = country
             
         try:
-            response = self.session.get(
-                f"{self.BASE_URL}/search",
-                params=params,
-                timeout=30
-            )
+            url = self._build_url('search', params)
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -164,11 +165,8 @@ class GNewsAPI:
             params['category'] = category
             
         try:
-            response = self.session.get(
-                f"{self.BASE_URL}/top-headlines",
-                params=params,
-                timeout=30
-            )
+            url = self._build_url('top-headlines', params)
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
             
             data = response.json()
