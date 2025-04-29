@@ -57,11 +57,40 @@ def create_secure_smtp_context():
 
 def create_smtp_connection(smtp_settings):
     """Create and configure SMTP connection with retry logic"""
-    context = create_secure_smtp_context()
-    server = smtplib.SMTP(smtp_settings['host'], smtp_settings['port'], timeout=SMTP_TIMEOUT)
-    server.starttls(context=context)
-    server.login(smtp_settings['username'], smtp_settings['password'])
-    return server
+    logger.debug(f"Attempting SMTP connection to {smtp_settings['host']}:{smtp_settings['port']}")
+    
+    try:
+        context = create_secure_smtp_context()
+        
+        # Use SMTP_SSL for port 465
+        if smtp_settings['port'] == 465:
+            logger.debug("Using SMTP_SSL connection")
+            server = smtplib.SMTP_SSL(smtp_settings['host'], smtp_settings['port'], 
+                                    timeout=SMTP_TIMEOUT, context=context)
+        else:
+            # Use STARTTLS for other ports (587, 25)
+            logger.debug("Using SMTP with STARTTLS")
+            server = smtplib.SMTP(smtp_settings['host'], smtp_settings['port'], 
+                                timeout=SMTP_TIMEOUT)
+            server.starttls(context=context)
+        
+        logger.debug(f"Authenticating with username: {smtp_settings['username']}")
+        server.login(smtp_settings['username'], smtp_settings['password'])
+        
+        # Test connection with NOOP
+        server.noop()
+        logger.debug("SMTP connection and authentication successful")
+        return server
+        
+    except smtplib.SMTPAuthenticationError as e:
+        logger.exception("SMTP authentication failed. Check credentials and ensure 'Less secure app access' or App Password is configured")
+        raise
+    except smtplib.SMTPConnectError as e:
+        logger.exception(f"Failed to connect to SMTP server: {smtp_settings['host']}:{smtp_settings['port']}")
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error during SMTP connection setup")
+        raise
 
 def send_email(subject: str, body: str, recipients: list = None, smtp_settings: dict = None) -> bool:
     """Send an email via SMTP with retry logic and secure connection.
@@ -81,44 +110,70 @@ def send_email(subject: str, body: str, recipients: list = None, smtp_settings: 
     if smtp_settings is None:
         smtp_settings = EMAIL_SETTINGS['smtp']
     
-    if not recipients or not all(smtp_settings.values()):
-        logger.error("Missing required email settings")
+    # Validate settings
+    if not recipients:
+        logger.error("No recipients specified")
+        return False
+        
+    required_settings = ['host', 'port', 'username', 'password', 'sender']
+    missing_settings = [s for s in required_settings if not smtp_settings.get(s)]
+    if missing_settings:
+        logger.error(f"Missing required SMTP settings: {', '.join(missing_settings)}")
         return False
 
-    # Prepare the email
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = formataddr(("AI Newsletter", smtp_settings['sender']))
-    msg['Date'] = formatdate(localtime=True)
-    
-    # Add body - both text and HTML versions
-    text_part = MIMEText(strip_html(body), 'plain', 'utf-8')
-    html_part = MIMEText(body, 'html', 'utf-8')
-    msg.attach(text_part)
-    msg.attach(html_part)
+    try:
+        # Prepare the email
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = formataddr(("AI Newsletter", smtp_settings['sender']))
+        msg['Date'] = formatdate(localtime=True)
+        msg['To'] = ', '.join(recipients)
+        
+        # Add body - both text and HTML versions
+        text_part = MIMEText(strip_html(body), 'plain', 'utf-8')
+        html_part = MIMEText(body, 'html', 'utf-8')
+        msg.attach(text_part)
+        msg.attach(html_part)
 
-    # Add recipients
-    msg['To'] = ', '.join(recipients)
+        logger.debug(f"Prepared email message to {len(recipients)} recipients")
+        logger.debug(f"Email headers: Subject='{subject}', From='{smtp_settings['sender']}', To='{msg['To']}'")
 
-    # Try to send email with retries
-    for attempt in range(MAX_RETRIES):
-        try:
-            with create_smtp_connection(smtp_settings) as server:
-                server.send_message(msg)
-                logger.info(f"Email sent successfully to {len(recipients)} recipients")
-                return True
-                
-        except (smtplib.SMTPException, socket_error) as e:
-            logger.error(f"SMTP error on attempt {attempt + 1}: {str(e)}")
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(RETRY_DELAY * (attempt + 1))
-            else:
-                logger.error(f"Failed to send email after {MAX_RETRIES} attempts")
+        # Try to send email with retries
+        for attempt in range(MAX_RETRIES):
+            try:
+                with create_smtp_connection(smtp_settings) as server:
+                    logger.debug("Attempting to send message...")
+                    response = server.send_message(msg)
+                    
+                    if response:
+                        # send_message returns a dict of failed recipients
+                        failed_recipients = list(response.keys())
+                        if failed_recipients:
+                            logger.error(f"Failed to deliver to some recipients: {failed_recipients}")
+                            return False
+                    
+                    logger.info(f"Email sent successfully to {len(recipients)} recipients")
+                    return True
+                    
+            except smtplib.SMTPRecipientsRefused as e:
+                logger.exception("All recipients were refused")
                 return False
-                
-        except Exception as e:
-            logger.error(f"Unexpected error sending email: {str(e)}")
-            return False
+            except smtplib.SMTPResponseException as e:
+                logger.exception(f"SMTP error code {e.smtp_code}: {e.smtp_error}")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY * (attempt + 1))
+                else:
+                    return False
+            except (smtplib.SMTPException, socket_error) as e:
+                logger.exception(f"SMTP error on attempt {attempt + 1}")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY * (attempt + 1))
+                else:
+                    return False
+                    
+    except Exception as e:
+        logger.exception("Unexpected error while preparing or sending email")
+        return False
 
 def strip_html(html_content):
     """Convert HTML to plain text.
