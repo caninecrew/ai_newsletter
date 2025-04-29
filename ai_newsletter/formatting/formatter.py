@@ -1,10 +1,10 @@
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Any
 from datetime import datetime, timedelta
 import re
 from difflib import SequenceMatcher
 import hashlib
 import pytz
-from dateutil import parser, tz as dateutil_tz
+from dateutil import parser, tz as dateutil_tz, parser as dateutil_parser
 from ai_newsletter.logging_cfg.logger import setup_logger, DEFAULT_TZ
 from ai_newsletter.config.settings import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 from bs4 import BeautifulSoup
@@ -169,70 +169,87 @@ def format_date(date_str: str) -> str:
         logger.warning(f"Date parsing error: {e}")
         return date_str
 
-def format_article(article: Dict, html: bool = False) -> str:
-    """
-    Formats a single article into a string for display or email.
-
-    Args:
-        article: A dictionary containing GNews metadata
-        html: Whether to format as HTML or plain text.
-
-    Returns:
-        A formatted string representation of the article.
-    """
-    # Extract data from GNews metadata
+def format_article(article: Dict[str, Any]) -> str:
+    """Format a single article for the email newsletter."""
     title = article.get('title', 'No Title')
-    source = article.get('source', {})
-    source_name = source.get('name', source) if isinstance(source, dict) else str(source)
-    url = article.get('url', article.get('link', '#'))
-    description = article.get('description', '')
-    summary = article.get('summary', description)  # Fall back to description if no summary
+    source = article.get('source', {}).get('name', 'Unknown Source')
+    date = parser.parse(article.get('published_at', '')).strftime('%B %d, %Y %H:%M UTC')
+    description = article.get('description', 'No description available')
+    url = article.get('url', '#')
     
-    # Handle both published_at and published fields
-    published = article.get('published_at', article.get('published', 'Unknown Date'))
-    formatted_date = format_date(published)
+    return f"""
+    <div class="article">
+        <h2><a href="{url}">{title}</a></h2>
+        <p class="meta">
+            <span class="source">{source}</span> | 
+            <span class="date">{date}</span>
+        </p>
+        <p class="description">{description}</p>
+        <hr>
+    </div>
+    """
+
+def generate_newsletter_html(articles: List[Dict[str, Any]]) -> str:
+    """Generate HTML content for the newsletter."""
     
-    # Get article tags based on metadata
-    tags = identify_tags(article)
+    # HTML template with updated styling
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body { 
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                line-height: 1.6;
+            }
+            .article {
+                margin-bottom: 30px;
+            }
+            h2 {
+                color: #1a1a1a;
+                margin-bottom: 10px;
+            }
+            a {
+                color: #2c5282;
+                text-decoration: none;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+            .meta {
+                color: #666;
+                font-size: 0.9em;
+                margin: 5px 0;
+            }
+            .description {
+                color: #333;
+                margin: 10px 0;
+            }
+            hr {
+                border: 0;
+                height: 1px;
+                background: #ddd;
+                margin: 20px 0;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Daily Global News Update</h1>
+        {content}
+    </body>
+    </html>
+    """
     
-    if html:
-        # Generate personalization tags with emojis
-        tags_html = get_personalization_tags_html(article)
-        
-        # Generate key takeaways from summary
-        key_takeaways = get_key_takeaways(summary) if summary else ""
-        
-        # Generate "Why This Matters" section
-        why_matters = get_why_this_matters(article) if EMAIL_SETTINGS.get("show_why_this_matters", True) else ""
-        
-        # Create a unique ID for the full summary toggle functionality
-        article_id = f"article-{hash(title) & 0xFFFFFFFF}"
-        
-        return f"""
-        <div class="article">
-            <h2 class="article-title"><a href="{url}" target="_blank">{title}</a></h2>
-            <div class="article-meta">
-                <span class="source">{source_name}</span>
-                <span class="published">{formatted_date}</span>
-                <div class="tags">{tags_html}</div>
-            </div>
-            
-            {key_takeaways}
-            
-            <div id="{article_id}-full" class="article-content full-summary" style="display:none;">
-                <p>{summary}</p>
-                {why_matters}
-            </div>
-            
-            <div class="article-actions">
-                <a href="javascript:void(0)" onclick="toggleSummary('{article_id}')" id="{article_id}-toggle" class="toggle-link">Read full summary</a>
-                <a href="{url}" target="_blank" class="read-source-link">Read original article →</a>
-            </div>
-        </div>
-        """
-    else:
-        tags_text = ", ".join(tags)
-        return f"Title: {title}\nSource: {source_name}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n{summary}\n\nRead more: {url}\n\n"
+    # Format all articles
+    articles_html = ''.join(format_article(article) for article in articles)
+    
+    # Generate final HTML
+    newsletter_html = html_template.format(content=articles_html)
+    
+    return newsletter_html
 
 def limit_articles_by_source(articles: List[Dict], max_per_source: int = 3) -> List[Dict]:
     """
