@@ -5,21 +5,55 @@ import os
 from typing import Dict, Any
 from datetime import timedelta
 
-# --- API CONFIGURATION ---
+# System-wide settings
+SYSTEM_SETTINGS = {
+    'max_concurrent_requests': 5,
+    'request_timeout': 30,
+    'max_retries': 3,
+    'retry_delay': 1,
+}
+
+# GNews API Configuration
 GNEWS_CONFIG = {
-    "enabled": True,  # Set to False to use RSS feeds instead
-    "language": "en",
-    "country": "us",  # Optional country filter
-    "max_articles_per_query": 10,
-    "categories": {
-        "general": True,
-        "world": True,
-        "nation": True,
-        "business": True,
-        "technology": True,
-        "health": True,
-        "science": True
-    }
+    'enabled': True,  # Set to False to fall back to RSS feeds
+    'language': 'en',
+    'country': 'us',  # Optional, can be None
+    'max_articles_per_query': 10,
+    'categories': {
+        'general': True,
+        'world': True,
+        'nation': True,
+        'business': True,
+        'technology': True,
+        'science': False,
+        'sports': False,
+        'health': True,
+        'entertainment': False
+    },
+    'excluded_domains': [],  # List of domains to exclude from results
+}
+
+# Feed settings (retained for compatibility/fallback)
+FEED_SETTINGS = {
+    'interests': {
+        'artificial_intelligence': True,
+        'machine_learning': True,
+        'cloud_computing': True,
+        'cybersecurity': True,
+        'software_development': True,
+    },
+    'update_interval': 3600,  # How often to check for new articles (in seconds)
+    'max_articles_per_feed': 10,
+    'min_article_length': 100,  # Minimum content length to consider
+}
+
+# Email settings
+EMAIL_SETTINGS = {
+    'smtp_server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+    'smtp_port': int(os.getenv('SMTP_PORT', '587')),
+    'sender_email': os.getenv('SENDER_EMAIL'),
+    'smtp_username': os.getenv('SMTP_USERNAME'),
+    'smtp_password': os.getenv('SMTP_PASSWORD'),
 }
 
 # --- News Source Configuration ---
@@ -315,3 +349,12 @@ PROBLEM_SOURCES = {
     "forbes.com",       # Forbes (anti-bot measures)
     "theatlantic.com"   # The Atlantic (paywall)
 }
+
+def get_settings() -> Dict[str, Any]:
+    """Returns all settings as a dictionary."""
+    return {
+        'system': SYSTEM_SETTINGS,
+        'gnews': GNEWS_CONFIG,
+        'feeds': FEED_SETTINGS,
+        'email': EMAIL_SETTINGS,
+    }
