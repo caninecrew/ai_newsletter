@@ -2,7 +2,7 @@
 import time
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import (
@@ -25,6 +25,41 @@ FETCH_METRICS = {
     'failed_queries': [],
     'empty_queries': []
 }
+
+def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Safe wrapper around fetch_articles_from_all_feeds with parameter validation.
+    
+    Args:
+        **kwargs: Keyword arguments to pass to fetch_articles_from_all_feeds
+        
+    Returns:
+        tuple: (list of articles, fetch statistics dictionary)
+    """
+    # Parameter validation
+    valid_params = {
+        'max_articles_per_source': int,
+        'language': str,
+        'country': str
+    }
+
+    # Filter and validate parameters
+    filtered_kwargs = {}
+    for key, value in kwargs.items():
+        if key in valid_params:
+            expected_type = valid_params[key]
+            if not isinstance(value, expected_type):
+                logger.warning(f"Parameter '{key}' has invalid type. Expected {expected_type.__name__}, got {type(value).__name__}")
+                continue
+            filtered_kwargs[key] = value
+        else:
+            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
+
+    try:
+        return fetch_articles_from_all_feeds(**filtered_kwargs)
+    except Exception as e:
+        logger.error(f"Error in safe_fetch_news_articles: {str(e)}")
+        return [], {"error": str(e)}
 
 def fetch_articles_by_category() -> List[Dict]:
     """
