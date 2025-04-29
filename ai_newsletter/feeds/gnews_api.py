@@ -1,8 +1,9 @@
 import os
-import requests
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+import time
 import logging
+import requests
+from typing import List, Dict, Optional
+from datetime import datetime, timezone
 from ..logging_cfg.logger import setup_logger
 
 logger = setup_logger()
@@ -12,94 +13,147 @@ class GNewsClient:
     
     BASE_URL = "https://gnews.io/api/v4"
     
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize the GNews API client."""
-        self.api_key = api_key or os.environ.get('GNEWS_API_KEY')
+    def __init__(self):
+        self.api_key = os.getenv('GNEWS_API_KEY')
         if not self.api_key:
-            raise ValueError("GNews API key is required. Set GNEWS_API_KEY environment variable.")
-    
-    def search_news(self, 
-                   query: str, 
-                   language: str = "en",
-                   country: Optional[str] = None,
-                   max_results: int = 10,
-                   from_date: Optional[datetime] = None) -> List[Dict]:
+            raise ValueError("GNEWS_API_KEY environment variable is required")
+            
+        self.session = requests.Session()
+        self.last_request_time = 0
+        self.min_request_interval = 1.0  # Minimum time between requests to avoid rate limits
+        
+    def _wait_for_rate_limit(self):
+        """Implements basic rate limiting."""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        if time_since_last < self.min_request_interval:
+            time.sleep(self.min_request_interval - time_since_last)
+        self.last_request_time = time.time()
+        
+    def _make_request(self, endpoint: str, params: Dict) -> Dict:
+        """Makes a request to the GNews API with rate limiting and error handling."""
+        self._wait_for_rate_limit()
+        
+        params['apikey'] = self.api_key
+        url = f"{self.BASE_URL}/{endpoint}"
+        
+        try:
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            return response.json()
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:  # Too Many Requests
+                logger.warning("Rate limit exceeded, implementing longer delay")
+                time.sleep(5)  # Wait longer before retrying
+                return self._make_request(endpoint, params)  # Retry once
+            elif e.response.status_code == 403:  # Invalid API key
+                logger.error("Invalid GNews API key")
+                raise ValueError("Invalid GNews API key") from e
+            else:
+                logger.error(f"HTTP error occurred: {e}")
+                raise
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed: {e}")
+            raise
+            
+    def _process_article(self, article: Dict) -> Dict:
+        """Processes and normalizes a raw article from the API."""
+        try:
+            # Convert published date string to datetime
+            published_at = article.get('publishedAt')
+            if published_at:
+                published_dt = datetime.fromisoformat(published_at.replace('Z', '+00:00'))
+            else:
+                published_dt = None
+                
+            return {
+                'title': article.get('title', '').strip(),
+                'description': article.get('description', '').strip(),
+                'content': article.get('content', '').strip(),
+                'url': article.get('url', ''),
+                'image': article.get('image'),
+                'published': published_dt,
+                'source': article.get('source', {}).get('name', 'Unknown'),
+                'source_url': article.get('source', {}).get('url'),
+                'fetch_method': 'gnews_api'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing article: {e}")
+            return None
+            
+    def search_news(
+        self,
+        query: str,
+        language: str = 'en',
+        country: Optional[str] = None,
+        max_results: int = 10,
+        exclude_websites: Optional[List[str]] = None
+    ) -> List[Dict]:
         """
         Search for news articles using the GNews API.
         
         Args:
             query: Search query string
-            language: Language code (default: "en")
-            country: Optional country code
-            max_results: Maximum number of results to return (default: 10)
-            from_date: Optional start date for articles
+            language: Language code (e.g., 'en' for English)
+            country: Optional country code (e.g., 'us' for United States)
+            max_results: Maximum number of results to return
+            exclude_websites: Optional list of websites to exclude from results
             
         Returns:
-            List of article dictionaries
+            List of processed article dictionaries
         """
         params = {
             'q': query,
             'lang': language,
-            'max': max_results,
-            'apikey': self.api_key
+            'max': max_results
         }
         
         if country:
             params['country'] = country
             
-        if from_date:
-            params['from'] = from_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if exclude_websites:
+            params['in'] = ','.join(f'site:{site}' for site in exclude_websites)
             
         try:
-            response = requests.get(f"{self.BASE_URL}/search", params=params)
-            response.raise_for_status()
-            data = response.json()
-            
+            data = self._make_request('search', params)
             articles = []
-            for article in data.get('articles', []):
-                processed_article = {
-                    'title': article.get('title'),
-                    'description': article.get('description'),
-                    'content': article.get('content'),
-                    'link': article.get('url'),
-                    'source': article.get('source', {}).get('name'),
-                    'published': datetime.strptime(article.get('publishedAt'), "%Y-%m-%dT%H:%M:%SZ"),
-                    'fetch_method': 'gnews_api'
-                }
-                articles.append(processed_article)
             
+            for article in data.get('articles', []):
+                processed = self._process_article(article)
+                if processed:
+                    articles.append(processed)
+                    
             return articles
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"GNews API request failed: {e}")
-            if hasattr(e.response, 'status_code'):
-                if e.response.status_code == 429:
-                    logger.error("GNews API rate limit exceeded")
-                elif e.response.status_code == 401:
-                    logger.error("Invalid GNews API key")
-            raise
+        except Exception as e:
+            logger.error(f"Error searching news: {e}")
+            return []
             
-    def get_top_headlines(self,
-                         language: str = "en",
-                         country: Optional[str] = None,
-                         category: Optional[str] = None,
-                         max_results: int = 10) -> List[Dict]:
+    def get_top_headlines(
+        self,
+        language: str = 'en',
+        country: Optional[str] = None,
+        category: Optional[str] = None,
+        max_results: int = 10
+    ) -> List[Dict]:
         """
         Get top headlines from GNews API.
         
         Args:
-            language: Language code (default: "en")
-            country: Optional country code
-            category: Optional category (business, entertainment, health, science, sports, technology)
-            max_results: Maximum number of results to return (default: 10)
+            language: Language code (e.g., 'en' for English)
+            country: Optional country code (e.g., 'us' for United States)
+            category: Optional category (general, world, nation, business, technology, etc.)
+            max_results: Maximum number of results to return
             
         Returns:
-            List of article dictionaries
+            List of processed article dictionaries
         """
         params = {
             'lang': language,
-            'max': max_results,
-            'apikey': self.api_key
+            'max': max_results
         }
         
         if country:
@@ -109,30 +163,16 @@ class GNewsClient:
             params['category'] = category
             
         try:
-            response = requests.get(f"{self.BASE_URL}/top-headlines", params=params)
-            response.raise_for_status()
-            data = response.json()
-            
+            data = self._make_request('top-headlines', params)
             articles = []
-            for article in data.get('articles', []):
-                processed_article = {
-                    'title': article.get('title'),
-                    'description': article.get('description'),
-                    'content': article.get('content'),
-                    'link': article.get('url'),
-                    'source': article.get('source', {}).get('name'),
-                    'published': datetime.strptime(article.get('publishedAt'), "%Y-%m-%dT%H:%M:%SZ"),
-                    'fetch_method': 'gnews_api'
-                }
-                articles.append(processed_article)
             
+            for article in data.get('articles', []):
+                processed = self._process_article(article)
+                if processed:
+                    articles.append(processed)
+                    
             return articles
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"GNews API request failed: {e}")
-            if hasattr(e.response, 'status_code'):
-                if e.response.status_code == 429:
-                    logger.error("GNews API rate limit exceeded")
-                elif e.response.status_code == 401:
-                    logger.error("Invalid GNews API key")
-            raise
+        except Exception as e:
+            logger.error(f"Error fetching top headlines: {e}")
+            return []
