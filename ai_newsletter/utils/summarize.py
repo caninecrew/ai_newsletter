@@ -1,5 +1,5 @@
 """Module for article summarization using metadata from GNews API."""
-import openai
+from openai import OpenAI
 import time
 import os
 from dotenv import load_dotenv
@@ -11,6 +11,9 @@ logger = setup_logger()
 
 # Load environment variables
 load_dotenv()
+
+# Initialize OpenAI client
+client = OpenAI()
 
 def summarize_articles(articles: List[Dict], max_summary_length=150, min_summary_length=50) -> List[Dict]:
     """
@@ -108,7 +111,7 @@ def summarize_with_openai(text: str, title: str = None, max_retries: int = 3, re
                 messages[1]["content"] += f"Title: {title}\n\n"
             messages[1]["content"] += f"Content:\n{text}"
 
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=messages,
                 max_tokens=150,
