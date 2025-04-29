@@ -346,89 +346,43 @@ def print_metrics_summary():
 
 # --- Core Fetching Logic ---
 
-def fetch_news_articles(rss_feeds, fetch_content=True, max_articles_per_feed=5, max_workers=None):
-    """Fetches articles from RSS feeds and optionally their content in parallel."""
-    start_time = time.time()
+def fetch_news_articles(rss_feeds=None, fetch_content=True, max_articles=10, max_workers=None):
+    """
+    Main function to fetch news articles using either GNews API or RSS feeds.
     
-    # Use configured pool size if not specified
-    if max_workers is None:
-        max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 10)
+    Args:
+        rss_feeds (dict, optional): Dictionary of RSS feeds to fetch from. If None, uses configured feeds.
+        fetch_content (bool): Whether to fetch full article content. Defaults to True.
+        max_articles (int): Maximum number of articles to fetch per source. Defaults to 10.
+        max_workers (int, optional): Maximum number of parallel workers. If None, uses system settings.
+        
+    Returns:
+        tuple: A tuple containing (list of articles, fetch statistics dictionary)
+    """
+    logger.info("Starting news fetch process...")
+    FETCH_METRICS['start_time'] = time.time()
     
-    all_articles = []
-    unique_article_urls.clear() # Reset global set for this run
-    attempted_urls.clear() # Reset attempted URLs for this run
-    failed_urls.clear() # Reset failed URLs for this run
-
-    # Reset metrics for this run
-    global FETCH_METRICS
-    FETCH_METRICS = defaultdict(lambda: 0)
-    FETCH_METRICS['failed_sources'] = []
-    FETCH_METRICS['empty_sources'] = []
-    FETCH_METRICS['source_statistics'] = defaultdict(lambda: {'articles': 0, 'fetch_time': 0.0, 'success': 0, 'failures': 0})
-
-    # Validate feed URLs and create mapping with source names
-    valid_feeds = {}
-    for source_name, feed_url in rss_feeds.items():
-        if not feed_url or not isinstance(feed_url, str):
-            logger.warning(f"Invalid feed URL for source {source_name}: {feed_url}")
-            continue
-        valid_feeds[source_name] = feed_url
+    if rss_feeds is None:
+        if GNEWS_CONFIG.get('enabled', True):
+            articles = fetch_from_gnews()
+            return articles, {
+                "total_articles": len(articles),
+                "failed_sources": FETCH_METRICS.get("failed_sources", []),
+                "empty_sources": FETCH_METRICS.get("empty_sources", []),
+                "processing_time": FETCH_METRICS.get("processing_time", 0),
+            }
+        else:
+            return fetch_articles_from_all_feeds(
+                fetch_content=fetch_content,
+                max_articles_per_source=max_articles
+            )
     
-    unique_feeds = valid_feeds
-    logger.info(f"Processing {len(unique_feeds)} valid feed URLs from {len(rss_feeds)} initial sources.")
-
-    # Process feeds in parallel (fetching RSS is usually I/O bound)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_source = {
-            executor.submit(fetch_rss_feed, feed_url, source_name, max_articles_per_feed): source_name
-            for source_name, feed_url in unique_feeds.items()
-        }
-
-        for future in concurrent.futures.as_completed(future_to_source):
-            source_name = future_to_source[future]
-            try:
-                articles = future.result()
-                if articles:
-                    all_articles.extend(articles)
-            except Exception as e:
-                logger.error(f"Task error for source {source_name}: {e}")
-                if source_name not in FETCH_METRICS['failed_sources']:
-                    FETCH_METRICS['failed_sources'].append(f"{source_name} (Task Error)")
-
-    logger.info(f"Found {len(all_articles)} unique articles from feeds.")
-
-    # Fetch full content if requested
-    if fetch_content and all_articles:
-        logger.info(f"Fetching full content for {len(all_articles)} articles...")
-        processed_articles = []
-
-        # Create a thread pool for content fetching
-        content_max_workers = min(10, len(all_articles))  # Limit concurrent requests
-        logger.info(f"Using {content_max_workers} workers for content fetching")
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=content_max_workers) as executor:
-            future_to_article = {executor.submit(fetch_article_content, article): article 
-                               for article in all_articles}
-            for future in concurrent.futures.as_completed(future_to_article):
-                original_article = future_to_article[future]
-                try:
-                    processed_article = future.result()
-                    processed_articles.append(processed_article)
-                except Exception as exc:
-                    logger.error(f"Content fetch failed for {original_article.get('link')}: {exc}")
-                    processed_articles.append(original_article)
-
-        all_articles = processed_articles
-        logger.info(f"Finished content fetching. Success: {FETCH_METRICS.get('content_success_requests', 0)}")
-
-    end_time = time.time()
-    processing_time = end_time - start_time
-    FETCH_METRICS['processing_time'] = processing_time
-
-    logger.info(f"Total fetch process completed in {processing_time:.2f} seconds.")
-    logger.info(print_metrics_summary())
-
-    return all_articles
+    return fetch_articles_from_all_feeds(
+        rss_feeds=rss_feeds,
+        fetch_content=fetch_content,
+        max_articles_per_source=max_articles,
+        max_workers=max_workers
+    )
 
 def combine_feed_sources():
     """Combines primary, secondary, and supplemental feeds based on config."""
@@ -496,18 +450,18 @@ def _check_cleanup_needed():
                 logger.error(f"Error during periodic cleanup: {e}")
             _last_cleanup = current_time
 
-def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5):
+def fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=5, rss_feeds=None, max_workers=None):
     """Combines feeds and fetches articles."""
     # Check for cleanup before starting new fetch
     _check_cleanup_needed()
     
-    all_feeds = combine_feed_sources()
+    all_feeds = rss_feeds if rss_feeds else combine_feed_sources()
     if not all_feeds:
         logger.warning("No feed sources defined or loaded. Cannot fetch articles.")
         return [], {"error": "No feed sources available"}
 
     # Get settings from config
-    max_workers = SYSTEM_SETTINGS.get("max_parallel_workers", 10) # Default based on pool size + buffer
+    max_workers = max_workers or SYSTEM_SETTINGS.get("max_parallel_workers", 10) # Default based on pool size + buffer
     max_articles = SYSTEM_SETTINGS.get("max_articles_per_feed", max_articles_per_source)
 
     logger.info(f"Starting article fetch with max_articles_per_feed={max_articles}, max_workers={max_workers}")
@@ -604,19 +558,28 @@ FETCH_METRICS = {
     'content_success_requests': 0
 }
 
-def fetch_news_articles(max_articles=10):
+import inspect
+from functools import wraps
+
+def safe_fetch_news_articles(*args, **kwargs):
     """
-    Main function to fetch news articles using either GNews API or RSS feeds.
-    """
-    logger.info("Starting news fetch process...")
-    FETCH_METRICS['start_time'] = time.time()
+    Safe wrapper for fetch_news_articles that filters out unexpected arguments.
     
-    if GNEWS_CONFIG.get('enabled', True):
-        return fetch_from_gnews()
-    else:
-        # Fallback to existing RSS feed functionality
-        # ...existing RSS feed code...
-        pass
+    Returns:
+        Same return type as fetch_news_articles
+    """
+    sig = inspect.signature(fetch_news_articles)
+    valid_params = sig.parameters.keys()
+    
+    # Filter out invalid kwargs
+    filtered_kwargs = {}
+    for key, value in kwargs.items():
+        if key in valid_params:
+            filtered_kwargs[key] = value
+        else:
+            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
+    
+    return fetch_news_articles(*args, **filtered_kwargs)
 
 def fetch_from_gnews() -> List[Dict]:
     """
