@@ -3,12 +3,14 @@ from typing import List
 from datetime import datetime
 from ai_newsletter.core.types import Article
 from ai_newsletter.formatting.components import format_summary_block, get_tags_html
+from ai_newsletter.formatting.date_utils import format_date
 from ai_newsletter.formatting.layout import (
     wrap_with_css, 
     build_header, 
     build_footer, 
     build_empty_newsletter
 )
+from ai_newsletter.formatting.text_utils import get_key_takeaways
 from ai_newsletter.logging_cfg.logger import setup_logger
 
 logger = setup_logger()
@@ -17,21 +19,14 @@ def format_article(article: Article, html: bool = False) -> str:
     """Format a single article for the newsletter."""
     title = article.get('title', 'No Title')
     source = article.get('source', {}).get('name', 'Unknown Source')
-    date = article.get('published_at', '')
+    date_str = format_date(article.get('published_at', ''))
     description = article.get('description', 'No description available')
     url = article.get('url', '#')
-    
-    # Format date if available
-    try:
-        if isinstance(date, str):
-            date = datetime.fromisoformat(date.replace('Z', '+00:00'))
-        date_str = date.strftime('%B %d, %Y %H:%M UTC')
-    except (ValueError, AttributeError):
-        date_str = 'Date unknown'
     
     if html:
         summary_block = format_summary_block(article)
         tags_block = get_tags_html(article)
+        takeaways = get_key_takeaways(article.get('summary', '') or description)
         
         return f"""
         <div class="article">
@@ -43,6 +38,7 @@ def format_article(article: Article, html: bool = False) -> str:
             {tags_block}
             <p class="description">{description}</p>
             {summary_block}
+            {takeaways}
             <hr>
         </div>
         """
