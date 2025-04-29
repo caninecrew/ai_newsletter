@@ -1,28 +1,21 @@
+"""CLI interface for the AI Newsletter."""
 import os
 import sys
 import argparse
-from datetime import datetime, timedelta, date
-from ai_newsletter.feeds.fetcher import safe_fetch_news_articles
-from ai_newsletter.utils.summarize import summarize_articles
-from ai_newsletter.formatting.formatter import (
-    format_articles, 
-    filter_articles_by_date, 
-    deduplicate_articles,
-    build_html,
-    strip_html,
-    build_empty_newsletter
-)
-from ai_newsletter.email.sender import send_email
-from ai_newsletter.logging_cfg.logger import setup_logger
-from ai_newsletter.config.settings import EMAIL_SETTINGS, SYSTEM_SETTINGS
-from dotenv import load_dotenv
+from datetime import datetime, timedelta
 import json
 import time
 import click
+from dotenv import load_dotenv
+from dateutil import tz
 
-# Import dateutil timezone tools
-from dateutil import tz as dateutil_tz
-CENTRAL = dateutil_tz.gettz("America/Chicago")
+from ai_newsletter.feeds import safe_fetch_news_articles
+from ai_newsletter.llm import summarize_article
+from ai_newsletter.feeds.filters import filter_articles_by_date
+from ai_newsletter.formatting import build_newsletter
+from ai_newsletter.email.sender import send_email
+from ai_newsletter.logging_cfg.logger import setup_logger
+from ai_newsletter.config.settings import EMAIL_SETTINGS
 
 # Load environment variables
 load_dotenv()
@@ -30,9 +23,12 @@ load_dotenv()
 # Set up logger
 logger = setup_logger()
 
-# --- Global variables for summary ---
-all_articles_global = [] # To store articles for summary
-failed_articles_global = [] # To store failed articles for summary
+# Define Central timezone
+CENTRAL = tz.gettz("America/Chicago")
+
+# Global variables for summary
+all_articles_global = []  # To store articles for summary
+failed_articles_global = []  # To store failed articles for summary
 
 def parse_feed_args():
     """Parse command line arguments for feed configuration"""
@@ -86,11 +82,18 @@ def generate_newsletter(start_date=None, end_date=None):
 
         # 3. Summarize articles
         logger.info("Summarizing articles...")
-        articles = summarize_articles(articles)
+        for article in articles:
+            summary = summarize_article(article)
+            if summary:
+                article['summary'] = summary
+                article['summary_method'] = 'openai'
+            else:
+                article['summary'] = article.get('description', '')
+                article['summary_method'] = 'description_fallback'
 
         # 4. Format newsletter
         logger.info("Formatting newsletter...")
-        newsletter_content = build_html(articles)
+        newsletter_content = build_newsletter(articles)
 
         # 5. Send newsletter
         if newsletter_content:
@@ -100,7 +103,7 @@ def generate_newsletter(start_date=None, end_date=None):
             yesterday = now - timedelta(days=1)
             subject = f"AI Newsletter: {yesterday.strftime('%B %d')} - {now.strftime('%B %d, %Y')}"
 
-            send_email(subject=subject, body=newsletter_content)  # Changed content to body
+            send_email(subject=subject, body=newsletter_content)
             logger.info("Newsletter sent successfully")
         else:
             logger.warning("No content generated after formatting. Newsletter not sent.")
