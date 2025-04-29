@@ -89,154 +89,90 @@ def categorize_article_age(published_date: datetime) -> str:
     else:
         return 'Older'
 
-def fetch_articles_by_category() -> List[Dict]:
+def is_major_international_story(article: Dict[str, Any]) -> bool:
     """
-    Fetch articles using the GNews API based on configured categories and their queries.
-    Also fetches top headlines.
+    Determine if an article represents a major international story.
     
-    Returns:
-        List[Dict]: List of articles with category information
+    Criteria:
+    - Contains keywords indicating global significance
+    - Not focused on local crime or minor incidents
+    - Has international impact
     """
+    title = article.get('title', '').lower()
+    description = article.get('description', '').lower()
+    content = f"{title} {description}"
+    
+    # Keywords indicating major international stories
+    major_keywords = [
+        'global', 'worldwide', 'international', 'crisis', 'summit', 
+        'pandemic', 'climate', 'war', 'peace', 'treaty', 'united nations',
+        'world health', 'global economy', 'international trade',
+        'humanitarian', 'nuclear', 'diplomatic', 'g20', 'g7', 'nato',
+        'security council', 'economic crisis', 'global market'
+    ]
+    
+    # Keywords indicating local/minor stories to filter out
+    local_keywords = [
+        'local police', 'arrested', 'minor incident', 'local council',
+        'neighborhood', 'city council', 'municipal', 'local resident',
+        'small business', 'traffic accident', 'petty crime'
+    ]
+    
+    # Check if any major keywords are present
+    has_major_keywords = any(keyword in content for keyword in major_keywords)
+    
+    # Check if any local keywords are present
+    has_local_keywords = any(keyword in content for keyword in local_keywords)
+    
+    return has_major_keywords and not has_local_keywords
+
+def fetch_articles_by_category() -> List[Dict[str, Any]]:
+    """Fetch articles for each news category."""
+    articles = []
+    gnews = GNewsAPI()
+    
+    # First, get top headlines
     try:
-        gnews_client = GNewsAPI()
-        all_articles = []
-        requests_made = 0
-        
-        logger.info("Starting GNews API article fetch process")
-        
-        # Calculate cutoff time for article age filtering
-        cutoff_time = datetime.now(timezone.utc) - timedelta(days=1)
-        logger.info(f"Filtering articles newer than {cutoff_time.isoformat()}")
-        
-        # First fetch top headlines
+        top_headlines = gnews.get_top_headlines(max_results=5)
+        articles.extend(top_headlines)
+        time.sleep(GNEWS_REQUEST_DELAY)  # Respect API rate limits
+    except Exception as e:
+        logger.error(f"Error fetching top headlines: {e}")
+
+    # Then fetch category-specific articles
+    for category in NEWS_CATEGORIES:
         try:
-            logger.info("Fetching top headlines...")
-            top_headlines = gnews_client.get_top_headlines(
-                language="en",
-                max_results=5  # Limit top headlines to avoid overwhelming other categories
+            category_articles = gnews.search_news(
+                query=f"({category}) AND (global OR international OR worldwide)",
+                max_results=5
             )
-            requests_made += 1
+            # Filter for major international stories
+            filtered_articles = [
+                article for article in category_articles
+                if is_major_international_story(article)
+            ]
+            articles.extend(filtered_articles)
+            
+            # Update metrics
+            FETCH_METRICS['articles_per_category'][category] = len(filtered_articles)
+            
             time.sleep(GNEWS_REQUEST_DELAY)
             
-            if top_headlines:
-                fresh_headlines = []
-                for article in top_headlines:
-                    try:
-                        pub_date = dateutil_parser.parse(article['published_at'])
-                        if pub_date.tzinfo is None:
-                            pub_date = pub_date.replace(tzinfo=timezone.utc)
-                        
-                        if pub_date >= cutoff_time:
-                            article['newsletter_category'] = 'TOP_HEADLINES'
-                            article['query_matched'] = 'top_headlines'
-                            article['age_category'] = categorize_article_age(pub_date)
-                            fresh_headlines.append(article)
-                        else:
-                            FETCH_METRICS['filtered_old_articles'] += 1
-                    except (ValueError, TypeError, KeyError) as e:
-                        logger.warning(f"Error parsing headline date: {e}")
-                        continue
-                
-                if fresh_headlines:
-                    all_articles.extend(fresh_headlines)
-                    FETCH_METRICS['articles_per_category']['TOP_HEADLINES'] = len(fresh_headlines)
-                    logger.info(f"Fetched {len(fresh_headlines)} fresh top headlines")
-                else:
-                    logger.warning("No fresh top headlines found")
-                    FETCH_METRICS['empty_queries'].append("TOP_HEADLINES:top_headlines")
-            else:
-                logger.warning("No top headlines returned from API")
-                FETCH_METRICS['empty_queries'].append("TOP_HEADLINES:top_headlines")
-                
-        except GNewsAPIError as e:
-            logger.error(f"GNews API error fetching top headlines: {e}")
-            FETCH_METRICS['failed_queries'].append("TOP_HEADLINES:top_headlines")
         except Exception as e:
-            logger.error(f"Unexpected error fetching top headlines: {e}")
-            FETCH_METRICS['failed_queries'].append("TOP_HEADLINES:top_headlines")
-        
-        # Process each category
-        for category, config in NEWS_CATEGORIES.items():
-            if not config.get('enabled', True):
-                logger.debug(f"Category {category} is disabled, skipping")
-                continue
-                
-            FETCH_METRICS['articles_per_category'][category] = 0
-            
-            # Process each query in the category
-            for query in config.get('queries', []):
-                # Check API rate limit
-                if requests_made >= GNEWS_DAILY_LIMIT:
-                    logger.warning("Daily API limit reached, stopping fetch process")
-                    break
-                    
-                try:
-                    logger.debug(f"Fetching articles for category '{category}' with query: {query}")
-                    articles = gnews_client.search_news(
-                        query=query,
-                        language="en",
-                        max_results=3  # Limit per query to ensure diverse coverage
-                    )
-                    requests_made += 1
-                    time.sleep(GNEWS_REQUEST_DELAY)  # Respect rate limiting
-                    
-                    if articles:
-                        # Filter articles by age and add category information
-                        fresh_articles = []
-                        for article in articles:
-                            # Parse the published_at date
-                            try:
-                                pub_date = dateutil_parser.parse(article['published_at'])
-                                if pub_date.tzinfo is None:
-                                    pub_date = pub_date.replace(tzinfo=timezone.utc)
-                                
-                                # Only include articles newer than cutoff time
-                                if pub_date >= cutoff_time:
-                                    article['newsletter_category'] = category
-                                    article['query_matched'] = query
-                                    article['age_category'] = categorize_article_age(pub_date)
-                                    fresh_articles.append(article)
-                                else:
-                                    FETCH_METRICS['filtered_old_articles'] += 1
-                            except (ValueError, TypeError, KeyError) as e:
-                                logger.warning(f"Error parsing article date: {e}")
-                                continue
-                        
-                        if fresh_articles:
-                            all_articles.extend(fresh_articles)
-                            FETCH_METRICS['articles_per_category'][category] += len(fresh_articles)
-                            logger.info(f"Fetched {len(fresh_articles)} fresh articles for {category} - {query}")
-                        else:
-                            logger.warning(f"No fresh articles found for query: {query} in category: {category}")
-                            FETCH_METRICS['empty_queries'].append(f"{category}:{query}")
-                    else:
-                        logger.warning(f"No articles found for query: {query} in category: {category}")
-                        FETCH_METRICS['empty_queries'].append(f"{category}:{query}")
-                        
-                except GNewsAPIError as e:
-                    logger.error(f"GNews API error for {category} - {query}: {e}")
-                    FETCH_METRICS['failed_queries'].append(f"{category}:{query}")
-                    continue
-                except Exception as e:
-                    logger.error(f"Unexpected error for {category} - {query}: {e}")
-                    FETCH_METRICS['failed_queries'].append(f"{category}:{query}")
-                    continue
+            logger.error(f"Error fetching {category} news: {e}")
+            FETCH_METRICS['failed_queries'].append(category)
 
-                if requests_made >= GNEWS_DAILY_LIMIT:
-                    break
-
-        if not all_articles:
-            logger.warning("No articles were fetched from any category or top headlines")
-            return []
-
-        # Log filtering metrics
-        logger.info(f"Filtered out {FETCH_METRICS['filtered_old_articles']} articles older than 24 hours")
-        logger.info(f"Successfully fetched {len(all_articles)} fresh articles (including top headlines) across {len(FETCH_METRICS['articles_per_category'])} categories")
-        return all_articles
-        
-    except Exception as e:
-        logger.error(f"Error in GNews fetch process: {e}")
-        return []
+    # Remove duplicates based on URL
+    unique_articles = {article['url']: article for article in articles}.values()
+    
+    # Sort by date (most recent first)
+    sorted_articles = sorted(
+        unique_articles,
+        key=lambda x: dateutil_parser.parse(x['published_at']) if x.get('published_at') else datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True
+    )
+    
+    return list(sorted_articles)
 
 def fetch_articles_from_all_feeds(max_articles_per_source: int = 5) -> Tuple[List[Dict], Dict]:
     """
