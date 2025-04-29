@@ -3,7 +3,7 @@ import sys
 import warnings
 import argparse
 from datetime import datetime, timedelta, date
-from ai_newsletter.feeds.fetcher import fetch_articles_from_all_feeds
+from ai_newsletter.feeds.fetcher import safe_fetch_news_articles
 from ai_newsletter.utils.summarize import summarize_articles
 from ai_newsletter.formatting.formatter import (
     format_articles, 
@@ -102,13 +102,10 @@ def generate_newsletter(start_date=None, end_date=None):
     try:
         logger.info("--- Starting Newsletter Generation ---")
 
-        # 1. Fetch articles
+        # 1. Fetch articles using safe wrapper
         logger.info("Fetching articles...")
-        # Assuming fetch_articles_from_all_feeds returns articles and stats
-        articles, fetch_stats = fetch_articles_from_all_feeds()
-        all_articles_global = articles # Store for summary
-        # Extract failed articles from stats if available
-        # This requires fetch_news_articles to return detailed stats
+        articles, fetch_stats = safe_fetch_news_articles()
+        all_articles_global = articles  # Store for summary
 
         if not articles:
             logger.warning("No articles fetched. Exiting.")
