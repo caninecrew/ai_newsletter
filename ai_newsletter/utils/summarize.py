@@ -102,6 +102,7 @@ def summarize_with_openai(text: str, title: str = None, max_retries: int = 3, re
     """
     for attempt in range(max_retries):
         try:
+            # Create the messages for the chat completion
             messages = [
                 {"role": "system", "content": "You are a helpful assistant that creates concise news summaries."},
                 {"role": "user", "content": "Create a concise 2-3 sentence summary of this news article content. Focus on the key facts and main points:\n\n"}
@@ -110,7 +111,8 @@ def summarize_with_openai(text: str, title: str = None, max_retries: int = 3, re
             if title:
                 messages[1]["content"] += f"Title: {title}\n\n"
             messages[1]["content"] += f"Content:\n{text}"
-
+            
+            # Using the new OpenAI API syntax
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=messages,
@@ -118,6 +120,7 @@ def summarize_with_openai(text: str, title: str = None, max_retries: int = 3, re
                 temperature=0.5
             )
             
+            # Access the response content using the new API
             summary = response.choices[0].message.content.strip()
             if summary:
                 return summary
