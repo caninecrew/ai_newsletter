@@ -11,7 +11,7 @@ from ai_newsletter.config.settings import (
     GNEWS_DAILY_LIMIT,
     GNEWS_REQUEST_DELAY
 )
-from ai_newsletter.feeds.gnews_api import GNewsAPI, GNewsAPIError
+from ai_newsletter.feeds.gnews_client import GNewsAPI, GNewsAPIError
 
 # Initialize logger
 logger = setup_logger()
