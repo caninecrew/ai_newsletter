@@ -282,22 +282,27 @@ def limit_articles_by_source(articles: List[Dict], max_per_source: int = 3) -> L
     # Group articles by source
     source_groups = {}
     for article in articles:
-        source = article.get('source', 'Unknown')
-        if source not in source_groups:
-            source_groups[source] = []
-        source_groups[source].append(article)
+        source = article.get('source', {})
+        # Handle both string and dict source formats from GNews API
+        source_name = source.get('name', source) if isinstance(source, dict) else str(source)
+        if not source_name:
+            source_name = 'Unknown'
+            
+        if source_name not in source_groups:
+            source_groups[source_name] = []
+        source_groups[source_name].append(article)
     
     # Sort each group by date (newest first)
-    for source, group in source_groups.items():
-        source_groups[source] = sorted(group, key=lambda a: a.get('published', '0'), reverse=True)
+    for source_name, group in source_groups.items():
+        source_groups[source_name] = sorted(group, key=lambda a: a.get('published_at') or a.get('published', '0'), reverse=True)
     
     # Take only the top N from each source
     limited_articles = []
-    for source, group in source_groups.items():
+    for source_name, group in source_groups.items():
         limited_articles.extend(group[:max_per_source])
     
     # Re-sort all articles by date
-    limited_articles = sorted(limited_articles, key=lambda a: a.get('published', '0'), reverse=True)
+    limited_articles = sorted(limited_articles, key=lambda a: a.get('published_at') or a.get('published', '0'), reverse=True)
     
     logger.info(f"Limited articles from {len(source_groups)} sources: kept {len(limited_articles)} out of {len(articles)}")
     
@@ -685,11 +690,6 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
         if sections_with_articles == 0:
             html_output += """
             <div class="section">
-                <p><strong>No articles available:</strong> We couldn't find any articles meeting your criteria for today's date.
-                Please check back tomorrow for fresh news coverage.</p>
-            </div>
-            """
-        
         # Add footer
         html_output += """
             <div class="footer">
