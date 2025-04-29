@@ -392,27 +392,90 @@ def fetch_news_articles(rss_feeds=None, fetch_content=True, max_articles=10, max
     logger.info("Starting news fetch process...")
     FETCH_METRICS['start_time'] = time.time()
     
-    if rss_feeds is None:
-        if GNEWS_CONFIG.get('enabled', True):
-            articles = fetch_from_gnews()
-            return articles, {
-                "total_articles": len(articles),
-                "failed_sources": FETCH_METRICS.get("failed_sources", []),
-                "empty_sources": FETCH_METRICS.get("empty_sources", []),
-                "processing_time": FETCH_METRICS.get("processing_time", 0),
-            }
-        else:
-            return fetch_articles_from_all_feeds(
-                fetch_content=fetch_content,
-                max_articles_per_source=max_articles
-            )
+    # Check for cleanup before starting new fetch
+    _check_cleanup_needed()
     
-    return fetch_articles_from_all_feeds(
-        rss_feeds=rss_feeds,
-        fetch_content=fetch_content,
-        max_articles_per_source=max_articles,
-        max_workers=max_workers
-    )
+    all_feeds = rss_feeds if rss_feeds else combine_feed_sources()
+    if not all_feeds:
+        logger.warning("No feed sources defined or loaded. Cannot fetch articles.")
+        return [], {"error": "No feed sources available"}
+
+    # Get settings from config
+    max_workers = max_workers or SYSTEM_SETTINGS.get("max_parallel_workers", 10)
+    max_articles = SYSTEM_SETTINGS.get("max_articles_per_feed", max_articles)
+
+    logger.info(f"Starting article fetch with max_articles_per_feed={max_articles}, max_workers={max_workers}")
+
+    all_articles = []
+    
+    # If no specific feeds provided and GNews is enabled, try that first
+    if rss_feeds is None and GNEWS_CONFIG.get('enabled', True):
+        try:
+            articles = fetch_from_gnews()
+            all_articles.extend(articles)
+        except Exception as e:
+            logger.error(f"Error fetching from GNews API: {e}")
+    
+    # Process RSS feeds in parallel
+    if all_feeds:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(fetch_rss_feed, feed_url, source_name, max_articles): source_name
+                for source_name, feed_url in all_feeds.items()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source_name = future_to_source[future]
+                try:
+                    articles = future.result()
+                    if articles:
+                        all_articles.extend(articles)
+                except Exception as e:
+                    logger.error(f"Task error for source {source_name}: {e}")
+                    if source_name not in FETCH_METRICS['failed_sources']:
+                        FETCH_METRICS['failed_sources'].append(f"{source_name} (Task Error)")
+
+    # Fetch full content if requested
+    if fetch_content and all_articles:
+        logger.info(f"Fetching full content for {len(all_articles)} articles...")
+        processed_articles = []
+
+        content_max_workers = min(10, len(all_articles))
+        logger.info(f"Using {content_max_workers} workers for content fetching")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=content_max_workers) as executor:
+            future_to_article = {
+                executor.submit(fetch_article_content, article): article 
+                for article in all_articles
+            }
+            for future in concurrent.futures.as_completed(future_to_article):
+                original_article = future_to_article[future]
+                try:
+                    processed_article = future.result()
+                    processed_articles.append(processed_article)
+                except Exception as exc:
+                    logger.error(f"Content fetch failed for {original_article.get('link')}: {exc}")
+                    processed_articles.append(original_article)
+
+        all_articles = processed_articles
+
+    # Update metrics and return
+    end_time = time.time()
+    processing_time = end_time - FETCH_METRICS['start_time']
+    FETCH_METRICS['processing_time'] = processing_time
+    FETCH_METRICS['total_articles'] = len(all_articles)
+
+    logger.info(f"Total fetch process completed in {processing_time:.2f} seconds")
+    logger.info(print_metrics_summary())
+
+    fetch_stats = {
+        "total_articles": len(all_articles),
+        "failed_sources": FETCH_METRICS.get("failed_sources", []),
+        "empty_sources": FETCH_METRICS.get("empty_sources", []),
+        "processing_time": processing_time,
+    }
+
+    return all_articles, fetch_stats
 
 def combine_feed_sources():
     """Combines primary, secondary, and supplemental feeds based on config."""
