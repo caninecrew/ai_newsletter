@@ -38,13 +38,19 @@ from ai_newsletter.feeds.gnews_api import GNewsAPI
 
 # --- Setup ---
 logger = setup_logger()
-CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc
 
 # --- Metrics Initialization ---
-FETCH_METRICS = defaultdict(lambda: 0)
-FETCH_METRICS['failed_sources'] = []
-FETCH_METRICS['empty_sources'] = []
-FETCH_METRICS['source_statistics'] = defaultdict(lambda: {'articles': 0, 'fetch_time': 0.0, 'success': 0, 'failures': 0})
+FETCH_METRICS = {
+    'start_time': None,
+    'processing_time': 0,
+    'total_articles': 0,
+    'failed_sources': [],
+    'source_statistics': {},
+    'content_attempts': 0,
+    'content_success_requests': 0
+}
+
+CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc
 
 # --- Global Variables & Sets ---
 attempted_urls = set()
@@ -549,17 +555,6 @@ from ai_newsletter.feeds.gnews_api import GNewsAPI
 from ..logging_cfg.logger import setup_logger
 
 logger = setup_logger()
-
-# Metrics tracking
-FETCH_METRICS = {
-    'start_time': None,
-    'processing_time': 0,
-    'total_articles': 0,
-    'failed_sources': [],
-    'source_statistics': {},
-    'content_attempts': 0,
-    'content_success_requests': 0
-}
 
 import inspect
 from functools import wraps
