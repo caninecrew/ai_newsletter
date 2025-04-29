@@ -100,7 +100,7 @@ def generate_newsletter(start_date=None, end_date=None):
             yesterday = now - timedelta(days=1)
             subject = f"AI Newsletter: {yesterday.strftime('%B %d')} - {now.strftime('%B %d, %Y')}"
 
-            send_email(subject=subject, content=newsletter_content)
+            send_email(subject=subject, body=newsletter_content)
             logger.info("Newsletter sent successfully")
         else:
             logger.warning("No content generated after formatting. Newsletter not sent.")
