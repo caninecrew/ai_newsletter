@@ -31,7 +31,7 @@ from ai_newsletter.config.settings import (
     GNEWS_CONFIG,
     FEED_SETTINGS
 )
-from ai_newsletter.gnews_api import GNewsClient
+from ai_newsletter.feeds.gnews_api import GNewsClient
 
 # --- Setup ---
 logger = setup_logger()
