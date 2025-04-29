@@ -130,7 +130,7 @@ def fetch_from_gnews() -> List[Dict]:
                     continue
         else:
             logger.warning("GNEWS_CONFIG categories is not a dictionary, skipping category fetching")
-        
+            
         # Fetch articles for configured interest areas
         if isinstance(USER_INTERESTS, dict):
             logger.debug(f"Processing {len(USER_INTERESTS)} interests")
@@ -178,7 +178,13 @@ def fetch_from_gnews() -> List[Dict]:
         # Add age categorization to all articles
         for article in all_articles:
             if article.get('published_at'):
-                article['age_category'] = categorize_article_age(article['published_at'])
+                try:
+                    # Handle ISO format strings from GNews API
+                    pub_date = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
+                    article['age_category'] = categorize_article_age(pub_date)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error parsing article date: {e}")
+                    article['age_category'] = 'Unknown'
             else:
                 article['age_category'] = 'Unknown'
         
