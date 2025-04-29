@@ -5,7 +5,6 @@ from typing import List, Dict, Optional, Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from urllib.parse import quote_plus
 from dateutil import parser as dateutil_parser
 
 logger = logging.getLogger(__name__)
@@ -32,6 +31,22 @@ class GNewsAPI:
             status_forcelist=[429, 500, 502, 503, 504]
         )
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
+    
+    def _format_query(self, query: str) -> str:
+        """
+        Format query string for GNews API.
+        Replaces spaces with + and escapes special characters.
+        """
+        if not query or len(query.strip()) < 3:
+            raise ValueError(f"Invalid search term: {query}")
+            
+        # Replace spaces with + and handle special characters
+        formatted = query.strip()
+        formatted = formatted.replace(' ', '+')
+        
+        # Log the formatted query for debugging
+        logger.debug(f"Formatted query: {formatted}")
+        return formatted
     
     def _validate_response(self, data: dict) -> None:
         """Validate GNews API response data."""
@@ -71,15 +86,20 @@ class GNewsAPI:
         Raises:
             GNewsAPIError: If the API request fails or returns invalid data
         """
-        # URL encode the query to handle special characters
-        encoded_query = quote_plus(query)
+        # Format query properly for GNews API
+        formatted_query = self._format_query(query)
         
         params = {
-            'q': encoded_query,
+            'q': formatted_query,
             'lang': language,
             'max': min(max_results, 100),  # API limit is 100
             'apikey': self.api_key
         }
+        
+        # Log the full URL for debugging (without API key)
+        debug_params = params.copy()
+        debug_params['apikey'] = 'REDACTED'
+        logger.debug(f"GNews API request: {self.BASE_URL}/search?{requests.utils.urlencode(debug_params)}")
         
         if country:
             params['country'] = country
