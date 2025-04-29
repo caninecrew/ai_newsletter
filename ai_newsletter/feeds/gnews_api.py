@@ -35,7 +35,21 @@ class GNewsAPI:
             'WHO',
             'global impact'
         ]
-        
+
+    def search_news(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Search for news articles using a query.
+        Now properly calls get_news() from gnews library.
+        """
+        return self.gnews.get_news(query)
+
+    def get_top_headlines(self) -> List[Dict[str, Any]]:
+        """
+        Get top headlines.
+        Now properly calls get_top_news() from gnews library.
+        """
+        return self.gnews.get_top_news()
+
     def is_major_story(self, article: Dict[str, Any]) -> bool:
         """
         Determine if a story is a major international event.
@@ -61,12 +75,12 @@ class GNewsAPI:
         """
         Fetch news articles, combining top headlines with major international stories.
         """
-        # Get top headlines
-        top_headlines = self.gnews.get_top_news()
+        # Get top headlines using the correct method
+        top_headlines = self.get_top_headlines()
         
         # Get international news from the past 24 hours
         time_frame = f"when:{int((datetime.now() - timedelta(days=1)).timestamp())}"
-        international_news = self.gnews.get_news(time_frame)
+        international_news = self.search_news(time_frame)
         
         # Filter international news for major stories only
         major_international = [
