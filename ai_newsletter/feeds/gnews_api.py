@@ -26,7 +26,12 @@ class GNewsAPI:
             country: Country for news articles
             max_results: Maximum number of results to return
         """
-        self.gnews = gnews.GNews(language=language, country=country, max_results=max_results)
+        self.gnews = gnews.GNews(
+            language=language, 
+            country=country, 
+            max_results=max_results,
+            period='1d'  # Default to last 24 hours
+        )
         self.major_keywords = [
             'global crisis',
             'world summit',
