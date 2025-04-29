@@ -23,7 +23,8 @@ FETCH_METRICS = {
     'total_articles': 0,
     'articles_per_category': {},
     'failed_queries': [],
-    'empty_queries': []
+    'empty_queries': [],
+    'filtered_old_articles': 0  # New metric to track filtered articles
 }
 
 def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -75,6 +76,10 @@ def fetch_articles_by_category() -> List[Dict]:
         
         logger.info("Starting GNews API article fetch process")
         
+        # Calculate cutoff time for article age filtering
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=1)
+        logger.info(f"Filtering articles newer than {cutoff_time.isoformat()}")
+        
         # Process each category
         for category, config in NEWS_CATEGORIES.items():
             if not config.get('enabled', True):
@@ -101,14 +106,33 @@ def fetch_articles_by_category() -> List[Dict]:
                     time.sleep(GNEWS_REQUEST_DELAY)  # Respect rate limiting
                     
                     if articles:
-                        # Add category information to each article
+                        # Filter articles by age and add category information
+                        fresh_articles = []
                         for article in articles:
-                            article['newsletter_category'] = category
-                            article['query_matched'] = query
+                            # Parse the published_at date
+                            try:
+                                pub_date = dateutil_parser.parse(article['published_at'])
+                                if pub_date.tzinfo is None:
+                                    pub_date = pub_date.replace(tzinfo=timezone.utc)
+                                
+                                # Only include articles newer than cutoff time
+                                if pub_date >= cutoff_time:
+                                    article['newsletter_category'] = category
+                                    article['query_matched'] = query
+                                    fresh_articles.append(article)
+                                else:
+                                    FETCH_METRICS['filtered_old_articles'] += 1
+                            except (ValueError, TypeError, KeyError) as e:
+                                logger.warning(f"Error parsing article date: {e}")
+                                continue
                         
-                        all_articles.extend(articles)
-                        FETCH_METRICS['articles_per_category'][category] += len(articles)
-                        logger.info(f"Fetched {len(articles)} articles for {category} - {query}")
+                        if fresh_articles:
+                            all_articles.extend(fresh_articles)
+                            FETCH_METRICS['articles_per_category'][category] += len(fresh_articles)
+                            logger.info(f"Fetched {len(fresh_articles)} fresh articles for {category} - {query}")
+                        else:
+                            logger.warning(f"No fresh articles found for query: {query} in category: {category}")
+                            FETCH_METRICS['empty_queries'].append(f"{category}:{query}")
                     else:
                         logger.warning(f"No articles found for query: {query} in category: {category}")
                         FETCH_METRICS['empty_queries'].append(f"{category}:{query}")
@@ -121,27 +145,17 @@ def fetch_articles_by_category() -> List[Dict]:
                     logger.error(f"Unexpected error for {category} - {query}: {e}")
                     FETCH_METRICS['failed_queries'].append(f"{category}:{query}")
                     continue
-                    
-            if requests_made >= GNEWS_DAILY_LIMIT:
-                break
+
+                if requests_made >= GNEWS_DAILY_LIMIT:
+                    break
 
         if not all_articles:
             logger.warning("No articles were fetched from any category")
             return []
-            
-        # Add age categorization
-        for article in all_articles:
-            if article.get('published_at'):
-                try:
-                    pub_date = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
-                    article['age_category'] = categorize_article_age(pub_date)
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Error parsing article date: {e}")
-                    article['age_category'] = 'Unknown'
-            else:
-                article['age_category'] = 'Unknown'
-                
-        logger.info(f"Successfully fetched {len(all_articles)} total articles across {len(FETCH_METRICS['articles_per_category'])} categories")
+
+        # Log filtering metrics
+        logger.info(f"Filtered out {FETCH_METRICS['filtered_old_articles']} articles older than 24 hours")
+        logger.info(f"Successfully fetched {len(all_articles)} fresh articles across {len(FETCH_METRICS['articles_per_category'])} categories")
         return all_articles
         
     except Exception as e:
