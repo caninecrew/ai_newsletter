@@ -32,58 +32,33 @@ CENTRAL = dateutil_tz.gettz("America/Chicago")
 
 def categorize_article(article: Dict) -> str:
     """
-    Categorize an article based on its source, content, and metadata.
+    Categorize an article based on its source and GNews metadata.
     
     Args:
-        article: Article dictionary with title, content, source, etc.
+        article: Article dictionary with GNews metadata
         
     Returns:
         Category key from SECTION_CATEGORIES
     """
     title = article.get('title', '').lower()
-    content = article.get('content', '').lower()
-    source = article.get('source', '').lower()
-    combined_text = f"{title} {content}"
+    description = article.get('description', '').lower()
+    source = article.get('source', {})
+    source_name = source.get('name', '').lower() if isinstance(source, dict) else str(source).lower()
+    combined_text = f"{title} {description}"
     
-    # Extract the category from the source if available (e.g., "CNN (Left)" -> "Left")
-    source_category = None
-    if '(' in source and ')' in source:
-        category_match = re.search(r'\(([^)]+)\)', source)
-        if category_match:
-            source_category = category_match.group(1)
-    
-    # First, categorize based on source category from RSS feed structure
-    if source_category:
-        if source_category.lower() == 'left':
-            return 'LEFT_LEANING'
-        elif source_category.lower() == 'center':
-            return 'CENTER'
-        elif source_category.lower() == 'right':
-            return 'RIGHT_LEANING'
-        elif source_category.lower() == 'international':
-            return 'WORLD_NEWS'
-        elif source_category.lower() == 'tennessee':
-            return 'LOCAL'
-        elif source_category.lower() == 'technology':
-            return 'TECHNOLOGY'
-        elif source_category.lower() == 'personalized':
-            return 'PERSONALIZED'
-    
-    # Next, categorize based on known sources
-    if any(s in source.lower() for s in ['cnn', 'msnbc', 'nyt', 'new york times', 'washington post']):
+    # First, categorize based on source name
+    if any(s in source_name for s in ['cnn', 'msnbc', 'nyt', 'new york times', 'washington post']):
         return 'LEFT_LEANING'
-    elif any(s in source.lower() for s in ['fox', 'national review', 'newsmax', 'washington examiner']):
+    elif any(s in source_name for s in ['fox', 'national review', 'newsmax', 'washington examiner']):
         return 'RIGHT_LEANING'
-    elif any(s in source.lower() for s in ['npr', 'reuters', 'ap', 'associated press', 'pbs', 'abc', 'cbs']):
+    elif any(s in source_name for s in ['npr', 'reuters', 'ap', 'associated press', 'pbs', 'abc', 'cbs']):
         return 'CENTER'
-    elif any(s in source.lower() for s in ['bbc', 'al jazeera', 'france24', 'dw', 'guardian world']):
+    elif any(s in source_name for s in ['bbc', 'al jazeera', 'france24', 'dw', 'guardian world']):
         return 'WORLD_NEWS'
-    elif any(s in source.lower() for s in ['techcrunch', 'wired', 'ars technica', 'technology review']):
+    elif any(s in source_name for s in ['techcrunch', 'wired', 'ars technica', 'technology review']):
         return 'TECHNOLOGY'
-    elif any(s in source.lower() for s in ['tennessean', 'nashville', 'tennessee']):
+    elif any(s in source_name for s in ['tennessean', 'nashville', 'tennessee']):
         return 'LOCAL'
-    elif any(s in source.lower() for s in ['scouting', 'scout life', 'education']):
-        return 'PERSONALIZED'
     
     # Then, categorize based on content keywords
     if any(kw in combined_text for kw in ['international', 'global', 'worldwide', 'foreign', 'abroad']):
@@ -100,50 +75,43 @@ def categorize_article(article: Dict) -> str:
 
 def identify_tags(article: Dict) -> List[str]:
     """
-    Identify relevant tags based on article content and user interests.
-    More aggressive matching to ensure accuracy.
+    Identify relevant tags based on GNews article metadata.
     
     Args:
-        article: Article dictionary
+        article: Article dictionary with GNews metadata
         
     Returns:
         List of matching tags
     """
     title = article.get('title', '').lower()
-    content = article.get('content', '').lower()
-    combined_text = f"{title} {content}"
+    description = article.get('description', '').lower()
+    combined_text = f"{title} {description}"
     
     matched_tags = []
     
     # Define interest-to-keyword mapping for better matching
     interest_keywords = {
-        "Scouting": ["scout", "boy scout", "girl scout", "eagle scout", "cub scout", "scouting"],
-        "Education": ["education", "school", "teacher", "student", "classroom", "learning", "curriculum"],
-        "Policy": ["policy", "regulation", "legislation", "law", "guideline", "rule"],
-        "AI": ["ai", "artificial intelligence", "machine learning", "neural network", "deep learning", "chatgpt", "llm"],
         "Technology": ["tech", "technology", "software", "hardware", "digital", "computer", "programming"],
+        "AI": ["ai", "artificial intelligence", "machine learning", "neural network", "deep learning", "chatgpt", "llm"],
         "Business": ["business", "company", "corporate", "industry", "market", "economy", "startup"],
-        "Civic Affairs": ["civic", "community", "local government", "municipal", "city council"],
-        "Tennessee": ["tennessee", "nashville", "memphis", "knoxville", "chattanooga"],
-        "Global Missions": ["mission", "missionary", "global mission", "church mission", "outreach"],
-        "Outdoor": ["outdoor", "nature", "hiking", "camping", "wildlife", "conservation", "environment"],
-        "Backpacking": ["backpack", "hiking", "trail", "trek", "outdoor gear", "wilderness"],
-        "FOIA": ["foia", "freedom of information", "public records", "information request"],
-        "Transparency": ["transparency", "disclosure", "open government", "accountability"],
-        "Government": ["government", "administration", "federal", "state", "local", "official", "agency"]
+        "Policy": ["policy", "regulation", "legislation", "law", "guideline", "rule"],
+        "Education": ["education", "school", "teacher", "student", "classroom", "learning", "curriculum"],
+        "Healthcare": ["health", "medical", "hospital", "patient", "doctor", "treatment", "medicine"],
+        "Environment": ["climate", "environment", "sustainability", "renewable", "green energy", "conservation"],
+        "Science": ["science", "research", "study", "discovery", "innovation", "breakthrough"]
     }
 
-    # Check each interest against the text with more specific matching
+    # Check each interest against the text
     for interest, keywords in interest_keywords.items():
         for keyword in keywords:
             if keyword in combined_text:
                 matched_tags.append(interest)
                 break
     
-    # Add some default categorization if no specific tags matched
+    # Add category-based tags if no specific tags matched
     if not matched_tags:
-        source = article.get('source', '').lower()
-        if "fox news" in source:
+        source_name = article.get('source', {}).get('name', '').lower() if isinstance(article.get('source'), dict) else ''
+        if "fox news" in source_name:
             matched_tags.append("U.S. News")
         elif any(k in combined_text for k in ["international", "world", "global", "foreign"]):
             matched_tags.append("International")
@@ -207,36 +175,33 @@ def format_article(article: Dict, html: bool = False) -> str:
     Formats a single article into a string for display or email.
 
     Args:
-        article: A dictionary containing article details.
+        article: A dictionary containing GNews metadata
         html: Whether to format as HTML or plain text.
 
     Returns:
         A formatted string representation of the article.
     """
-    # Extract data with GNews API compatibility
+    # Extract data from GNews metadata
     title = article.get('title', 'No Title')
     source = article.get('source', {})
     source_name = source.get('name', source) if isinstance(source, dict) else str(source)
     url = article.get('url', article.get('link', '#'))
-    
-    # Use summary if available, fall back to content or description
-    content = article.get('summary', article.get('content', article.get('description', 'No Content')))
+    description = article.get('description', '')
+    summary = article.get('summary', description)  # Fall back to description if no summary
     
     # Handle both published_at and published fields
     published = article.get('published_at', article.get('published', 'Unknown Date'))
-    
-    # Format the date using our new function
     formatted_date = format_date(published)
     
-    # Get article tags based on content
+    # Get article tags based on metadata
     tags = identify_tags(article)
     
     if html:
         # Generate personalization tags with emojis
         tags_html = get_personalization_tags_html(article)
         
-        # Generate key takeaways
-        key_takeaways = get_key_takeaways(content)
+        # Generate key takeaways from summary
+        key_takeaways = get_key_takeaways(summary) if summary else ""
         
         # Generate "Why This Matters" section
         why_matters = get_why_this_matters(article) if EMAIL_SETTINGS.get("show_why_this_matters", True) else ""
@@ -256,7 +221,7 @@ def format_article(article: Dict, html: bool = False) -> str:
             {key_takeaways}
             
             <div id="{article_id}-full" class="article-content full-summary" style="display:none;">
-                <p>{content}</p>
+                <p>{summary}</p>
                 {why_matters}
             </div>
             
@@ -268,7 +233,7 @@ def format_article(article: Dict, html: bool = False) -> str:
         """
     else:
         tags_text = ", ".join(tags)
-        return f"Title: {title}\nSource: {source_name}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
+        return f"Title: {title}\nSource: {source_name}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n{summary}\n\nRead more: {url}\n\n"
 
 def limit_articles_by_source(articles: List[Dict], max_per_source: int = 3) -> List[Dict]:
     """
@@ -803,30 +768,27 @@ def filter_articles_by_date(articles, start_date=None, end_date=None):
 
     return filtered_articles
 
-def is_duplicate(article1: Dict, article2: Dict, title_threshold: float = 0.8, content_threshold: float = 0.6) -> bool:
+def is_duplicate(article1: Dict, article2: Dict, title_threshold: float = 0.8) -> bool:
     """
-    Advanced duplicate detection using both title and content similarity
-    with weighted comparison for better accuracy.
+    Detect duplicate articles using GNews metadata.
     
     Args:
         article1: First article dictionary to compare
         article2: Second article dictionary to compare
         title_threshold: Similarity threshold for titles (0.0-1.0)
-        content_threshold: Similarity threshold for content (0.0-1.0)
         
     Returns:
         True if articles are likely duplicates, False otherwise
     """
-    # Clean and normalize text for comparison
     def normalize_text(text):
         if not text:
             return ""
-        # Convert to lowercase, remove extra spaces
         return re.sub(r'\s+', ' ', text.lower().strip())
     
-    # Extract and normalize title and content
     title1 = normalize_text(article1.get('title', ''))
     title2 = normalize_text(article2.get('title', ''))
+    desc1 = normalize_text(article1.get('description', ''))
+    desc2 = normalize_text(article2.get('description', ''))
     
     # If either title is empty, we can't reliably compare
     if not title1 or not title2:
@@ -839,26 +801,12 @@ def is_duplicate(article1: Dict, article2: Dict, title_threshold: float = 0.8, c
     # Calculate title similarity
     title_similarity = SequenceMatcher(None, title1, title2).ratio()
     
-    # If titles are very similar, consider it a duplicate immediately
+    # If titles are very similar, check description if available
     if title_similarity > title_threshold:
+        if desc1 and desc2:
+            desc_similarity = SequenceMatcher(None, desc1, desc2).ratio()
+            return desc_similarity > 0.6
         return True
-    
-    # If titles are somewhat similar, check content as well
-    if title_similarity > title_threshold * 0.75:
-        # Get content snippets (first part of content is usually most distinctive)
-        content1 = normalize_text(article1.get('content', ''))[:500]
-        content2 = normalize_text(article2.get('content', ''))[:500]
-        
-        # If no content available, rely only on title comparison
-        if not content1 or not content2:
-            return title_similarity > title_threshold * 0.9
-        
-        # Check content similarity
-        content_similarity = SequenceMatcher(None, content1, content2).ratio()
-        
-        # Weight title and content for final decision
-        combined_similarity = (title_similarity * 0.7) + (content_similarity * 0.3)
-        return combined_similarity > (title_threshold * 0.8)
     
     return False
 
