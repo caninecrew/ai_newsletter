@@ -579,7 +579,8 @@ def safe_fetch_news_articles(*args, **kwargs):
         else:
             logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
     
-    return fetch_news_articles(*args, **filtered_kwargs)
+    # Call the wrapped function with filtered arguments
+    return fetch_news_articles(**filtered_kwargs)
 
 def fetch_from_gnews() -> List[Dict]:
     """
