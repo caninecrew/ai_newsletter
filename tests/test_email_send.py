@@ -27,6 +27,10 @@ class MockSMTP:
         
     def quit(self):
         return None
+        
+    def noop(self):
+        """Mock NOOP command."""
+        return (250, b'250 OK')
 
 def test_send_empty_newsletter():
     """Test sending an empty newsletter with proper SMTP mocking."""
