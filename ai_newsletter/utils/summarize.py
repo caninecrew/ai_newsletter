@@ -123,30 +123,49 @@ def process_article_with_newspaper(url, retries=3, delay=2):
     Returns:
         tuple: (success, article_object or None, error_message or None)
     """
+    if not url:
+        return False, None, "No URL provided"
+
     for attempt in range(retries):
         try:
             article = Article(url, config=config)
+            
+            # Explicitly call download() first
             article.download()
+            if not article.html:
+                if attempt < retries - 1:
+                    time.sleep(delay * (attempt + 1))
+                    continue
+                return False, None, "Download failed - empty HTML"
+            
+            # Parse the downloaded content
             article.parse()
+            if not article.text:
+                if attempt < retries - 1:
+                    time.sleep(delay * (attempt + 1))
+                    continue
+                return False, None, "Parsing failed - no text content"
             
             # Only attempt NLP if we have enough content
-            if len(article.text) >= 100:
+            if len(article.text) >= SYSTEM_SETTINGS.get('min_content_length', 150):
                 try:
                     article.nlp()
                 except Exception as nlp_error:
-                    logger.warning(f"NLP failed but parsing succeeded: {nlp_error}")
+                    logger.warning(f"NLP failed but parsing succeeded for {url}: {nlp_error}")
                     # Continue with parsed content even if NLP fails
             
             return True, article, None
             
         except ArticleException as e:
-            if "Article html is empty" in str(e) and attempt < retries - 1:
+            if attempt < retries - 1:
+                logger.warning(f"Article extraction attempt {attempt + 1} failed for {url}: {e}")
                 time.sleep(delay * (attempt + 1))
                 continue
-            return False, None, f"Newspaper error: {str(e)}"
+            return False, None, f"Article extraction failed: {str(e)}"
             
         except Exception as e:
             if attempt < retries - 1:
+                logger.warning(f"Unexpected error during article processing attempt {attempt + 1} for {url}: {e}")
                 time.sleep(delay * (attempt + 1))
                 continue
             return False, None, f"Unexpected error: {str(e)}"
