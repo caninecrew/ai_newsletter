@@ -39,27 +39,6 @@ from ai_newsletter.feeds.gnews_api import GNewsAPI
 # --- Setup ---
 logger = setup_logger()
 
-def safe_fetch_news_articles(*args, **kwargs):
-    """
-    Safe wrapper for fetch_news_articles that filters out unexpected arguments.
-    
-    Returns:
-        Same return type as fetch_news_articles
-    """
-    sig = inspect.signature(fetch_news_articles)
-    valid_params = sig.parameters.keys()
-    
-    # Filter out invalid kwargs
-    filtered_kwargs = {}
-    for key, value in kwargs.items():
-        if key in valid_params:
-            filtered_kwargs[key] = value
-        else:
-            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
-    
-    # Call the wrapped function with filtered arguments
-    return fetch_news_articles(**filtered_kwargs)
-
 # --- Metrics Initialization ---
 FETCH_METRICS = {
     'start_time': None,
@@ -81,6 +60,28 @@ source_performance = defaultdict(lambda: {'total_time': 0.0, 'attempts': 0, 'suc
 
 # Create a shared session for feed fetching
 feed_session = create_session()
+
+def safe_fetch_news_articles(*args, **kwargs):
+    """
+    Safe wrapper for fetch_news_articles that filters out unexpected arguments.
+    
+    Args:
+        *args: Positional arguments (not used)
+        **kwargs: Keyword arguments to be filtered and passed to fetch_news_articles
+        
+    Returns:
+        tuple: Same return type as fetch_news_articles (list of articles, stats dict)
+    """
+    sig = inspect.signature(fetch_news_articles)
+    valid_params = sig.parameters.keys()
+    
+    # Filter out invalid kwargs
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+    for k in kwargs:
+        if k not in valid_params:
+            logger.warning(f"Ignoring unexpected parameter '{k}' in fetch_news_articles call")
+    
+    return fetch_news_articles(**filtered_kwargs)
 
 def fetch_article_content(article, max_retries=2):
     """Fetch article content using HTTP-based methods."""
@@ -500,7 +501,7 @@ def combine_feed_sources():
     if SYSTEM_SETTINGS.get("use_supplemental_feeds", False):
         if isinstance(SUPPLEMENTAL_FEEDS, dict):
             for category, feeds in SUPPLEMENTAL_FEEDS.items():
-                if isinstance(feeds, dict):
+                if isinstance(feeds, dict):  # Fixed extra parenthesis here
                     combined_feeds.update(feeds)
                 else:
                     logger.warning(f"Invalid feed structure in SUPPLEMENTAL_FEEDS for category '{category}': {feeds}")
@@ -629,19 +630,6 @@ if __name__ == "__main__":
         logger.info(f"  Fetch Method: {article.get('fetch_method')}")
         content_preview = (article.get('content') or "")[:100].replace('\n', ' ') + "..." if article.get('content') else "No Content"
         logger.info(f"  Content Preview: {content_preview}")
-
-import concurrent.futures
-import logging
-import time
-from typing import List, Dict
-from ..config.settings import GNEWS_CONFIG, FEED_SETTINGS, SYSTEM_SETTINGS
-from ai_newsletter.feeds.gnews_api import GNewsAPI
-from ..logging_cfg.logger import setup_logger
-
-logger = setup_logger()
-
-import inspect
-from functools import wraps
 
 def fetch_from_gnews() -> List[Dict]:
     """
