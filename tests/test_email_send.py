@@ -1,5 +1,6 @@
+"""Test email sending functionality."""
 from ai_newsletter.email.sender import send_email
-from ai_newsletter.formatting.formatter import build_empty_newsletter
+from ai_newsletter.formatting import build_empty_newsletter
 from unittest.mock import MagicMock, patch
 import smtplib
 import ssl
