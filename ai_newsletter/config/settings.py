@@ -41,78 +41,78 @@ NEWS_CATEGORIES = {
         "enabled": True,
         "queries": [
             "US national news",
-            "US government politics",
-            "US education k-12 higher education"
+            "US politics",
+            "US education"
         ]
     },
     "critical_international": {
         "enabled": True,
         "queries": [
-            "Kenya East Africa news",
-            "world war crisis election",
-            "religious freedom global missions"
+            "Kenya news",
+            "global crisis",
+            "religious freedom"
         ]
     },
     "business_technology": {
         "enabled": True,
         "queries": [
-            "nonprofit education business",
-            "AI technology cybersecurity",
-            "government civic technology"
+            "nonprofit business",
+            "AI cybersecurity",
+            "civic technology"
         ]
     },
     "faith_religion": {
         "enabled": True,
         "queries": [
-            "Protestant Nazarene church",
+            "Nazarene church",
             "religious liberty",
-            "Christian missions ministry"
+            "Christian ministry"
         ]
     },
     "scouting_youth": {
         "enabled": True,
         "queries": [
-            "Boy Scouts America Scouting",
-            "NYLT NAYLE youth leadership",
-            "outdoor youth programs camps"
+            "Boy Scouts America",
+            "youth leadership",
+            "youth camps"
         ]
     },
     "education_news": {
         "enabled": True,
         "queries": [
-            "Tennessee education policy k-12",
-            "teacher shortage certification",
-            "Tennessee Tech university education"
+            "Tennessee education",
+            "teacher shortage",
+            "university education"
         ]
     },
     "public_records": {
         "enabled": True,
         "queries": [
-            "FOIA open government transparency",
-            "public agency lawsuit investigation"
+            "FOIA transparency",
+            "agency investigation"
         ]
     },
     "local_regional": {
         "enabled": True,
         "queries": [
-            "Tennessee Middle Wilson Putnam County news",
-            "Cookeville Mt Juliet Wilson County"
+            "Tennessee County news",
+            "Cookeville news"
         ]
     },
     "outdoor_adventure": {
         "enabled": True,
         "queries": [
-            "hiking backpacking trails",
-            "national parks updates",
-            "outdoor safety equipment"
+            "hiking trails",
+            "national parks",
+            "outdoor safety"
         ]
     },
     "ethics_leadership": {
         "enabled": True,
         "queries": [
-            "leadership development trends",
-            "business government ethics",
-            "nonprofit volunteer leadership"
+            "leadership development",
+            "business ethics",
+            "nonprofit leadership"
         ]
     }
 }
