@@ -1,9 +1,10 @@
 """Test email sending functionality."""
 from ai_newsletter.email.sender import send_email
-from ai_newsletter.formatting import build_empty_newsletter
+from ai_newsletter.formatting.layout import build_empty_newsletter
 from unittest.mock import MagicMock, patch
 import smtplib
 import ssl
+import pytest
 
 def create_mock_smtp():
     """Create a properly configured SMTP mock."""
@@ -18,6 +19,7 @@ def create_mock_smtp():
     mock.__exit__.return_value = None
     return mock
 
+@pytest.mark.timeout(10)
 def test_send_empty_newsletter():
     """Test sending an empty newsletter with proper SMTP mocking."""
     html = build_empty_newsletter()
