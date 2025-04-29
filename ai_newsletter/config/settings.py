@@ -290,13 +290,14 @@ INCLUDE_INTERNATIONAL_KEYWORDS = [
     "global warming", "pandemic", "humanitarian", "AI", "artificial intelligence"
 ]
 
-# --- User Interests/Tags Definition ---
-# These tags are used for article classification and personalization
-USER_INTERESTS = [
-    "Scouting", "Education", "Policy", "AI", "Technology", "Business", 
-    "Civic Affairs", "Tennessee", "Global Missions", "Outdoor", "Backpacking",
-    "FOIA", "Transparency", "Government"
-]
+# --- User Interests for News Search ---
+USER_INTERESTS = {
+    'artificial_intelligence': True,
+    'machine_learning': True,
+    'cloud_computing': True,
+    'cybersecurity': True,
+    'software_development': True
+}
 
 # --- Personalization Tags with Emojis ---
 # Used for visual tagging of articles in the newsletter
