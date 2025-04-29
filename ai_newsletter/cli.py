@@ -59,7 +59,7 @@ def run_newsletter(args):
     try:
         # Fetch articles
         logger.info("Starting article fetch process")
-        articles = fetch_articles_from_all_feeds()
+        articles, fetch_stats = safe_fetch_news_articles()
         
         if not articles:
             logger.error("No articles fetched")
