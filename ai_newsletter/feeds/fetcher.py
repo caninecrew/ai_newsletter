@@ -27,8 +27,11 @@ from ai_newsletter.config.settings import (
     PRIMARY_NEWS_FEEDS,
     SECONDARY_FEEDS,
     SUPPLEMENTAL_FEEDS,
-    PROBLEM_SOURCES
+    PROBLEM_SOURCES,
+    GNEWS_CONFIG,
+    FEED_SETTINGS
 )
+from ai_newsletter.gnews_api import GNewsClient
 
 # --- Setup ---
 logger = setup_logger()
@@ -579,3 +582,119 @@ if __name__ == "__main__":
         logger.info(f"  Fetch Method: {article.get('fetch_method')}")
         content_preview = (article.get('content') or "")[:100].replace('\n', ' ') + "..." if article.get('content') else "No Content"
         logger.info(f"  Content Preview: {content_preview}")
+
+import concurrent.futures
+import logging
+import time
+from typing import List, Dict
+from ..config.settings import GNEWS_CONFIG, FEED_SETTINGS, SYSTEM_SETTINGS
+from .gnews_api import GNewsClient
+from ..logging_cfg.logger import setup_logger
+
+logger = setup_logger()
+
+# Metrics tracking
+FETCH_METRICS = {
+    'start_time': None,
+    'processing_time': 0,
+    'total_articles': 0,
+    'failed_sources': [],
+    'source_statistics': {},
+    'content_attempts': 0,
+    'content_success_requests': 0
+}
+
+def fetch_news_articles(max_articles=10):
+    """
+    Main function to fetch news articles using either GNews API or RSS feeds.
+    """
+    logger.info("Starting news fetch process...")
+    FETCH_METRICS['start_time'] = time.time()
+    
+    if GNEWS_CONFIG.get('enabled', True):
+        return fetch_from_gnews()
+    else:
+        # Fallback to existing RSS feed functionality
+        # ...existing RSS feed code...
+        pass
+
+def fetch_from_gnews() -> List[Dict]:
+    """
+    Fetch articles using the GNews API based on configured settings.
+    """
+    try:
+        gnews_client = GNewsClient()
+        all_articles = []
+        
+        # Fetch top headlines for enabled categories
+        for category, enabled in GNEWS_CONFIG['categories'].items():
+            if not enabled:
+                continue
+                
+            try:
+                articles = gnews_client.get_top_headlines(
+                    language=GNEWS_CONFIG.get('language', 'en'),
+                    country=GNEWS_CONFIG.get('country'),
+                    category=category if category != 'general' else None,
+                    max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
+                )
+                
+                if articles:
+                    all_articles.extend(articles)
+                    logger.info(f"Fetched {len(articles)} articles for category: {category}")
+                    
+            except Exception as e:
+                logger.error(f"Error fetching {category} headlines: {e}")
+                FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
+        
+        # Fetch articles for configured interest areas
+        for interest, enabled in FEED_SETTINGS.get('interests', {}).items():
+            if not enabled:
+                continue
+                
+            try:
+                query = interest.replace('_', ' ')  # Convert interest name to search query
+                articles = gnews_client.search_news(
+                    query=query,
+                    language=GNEWS_CONFIG.get('language', 'en'),
+                    country=GNEWS_CONFIG.get('country'),
+                    max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
+                )
+                
+                if articles:
+                    all_articles.extend(articles)
+                    logger.info(f"Fetched {len(articles)} articles for interest: {interest}")
+                    
+            except Exception as e:
+                logger.error(f"Error fetching articles for interest {interest}: {e}")
+                FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
+        
+        # Update metrics
+        end_time = time.time()
+        FETCH_METRICS['processing_time'] = end_time - FETCH_METRICS['start_time']
+        FETCH_METRICS['total_articles'] = len(all_articles)
+        
+        logger.info(f"Total fetch process completed in {FETCH_METRICS['processing_time']:.2f} seconds")
+        logger.info(f"Total articles fetched: {FETCH_METRICS['total_articles']}")
+        
+        return all_articles
+        
+    except Exception as e:
+        logger.error(f"Error in GNews fetch process: {e}")
+        return []
+
+def print_metrics_summary():
+    """Print a summary of the fetch metrics."""
+    summary = [
+        "=== Fetch Metrics Summary ===",
+        f"Total Processing Time: {FETCH_METRICS['processing_time']:.2f} seconds",
+        f"Total Articles: {FETCH_METRICS['total_articles']}",
+        f"Failed Sources: {len(FETCH_METRICS['failed_sources'])}"
+    ]
+    
+    if FETCH_METRICS['failed_sources']:
+        summary.append("\nFailed Sources:")
+        for source in FETCH_METRICS['failed_sources']:
+            summary.append(f"- {source}")
+            
+    return "\n".join(summary)
