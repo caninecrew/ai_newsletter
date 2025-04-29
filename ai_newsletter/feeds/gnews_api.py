@@ -39,6 +39,20 @@ class GNewsAPI:
             raise ValueError(f"Invalid search term: {query}")
         return query.strip()
     
+    def _validate_response(self, data: dict) -> None:
+        """Validate GNews API response data."""
+        if not isinstance(data, dict):
+            raise GNewsAPIError(f"Invalid response format. Expected dict, got {type(data)}")
+            
+        if 'errors' in data:
+            raise GNewsAPIError(f"API returned errors: {data['errors']}")
+            
+        if 'articles' not in data:
+            raise GNewsAPIError("Response missing 'articles' field")
+            
+        if not isinstance(data['articles'], list):
+            raise GNewsAPIError(f"Invalid articles format. Expected list, got {type(data['articles']}")
+    
     def _build_url(self, endpoint: str, params: Dict[str, Any]) -> str:
         """Build URL with proper encoding for GNews API."""
         # Log the request URL for debugging (without API key)
