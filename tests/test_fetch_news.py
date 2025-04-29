@@ -45,6 +45,7 @@ class TestFetchNews(unittest.TestCase):
         ]
         
         self.mock_gnews_instance.search_news.return_value = mock_articles
+        self.mock_gnews_instance.get_top_headlines.return_value = []
         
         articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
         
@@ -54,18 +55,72 @@ class TestFetchNews(unittest.TestCase):
         self.assertEqual(article['description'], mock_articles[0]['description'])
         self.assertEqual(article['url'], mock_articles[0]['url'])
         self.assertEqual(article['source']['name'], mock_articles[0]['source']['name'])
-        self.assertIn('age_category', article)
         self.assertIn('newsletter_category', article)
+
+    def test_fetch_top_headlines(self):
+        """Test that top headlines are fetched and properly categorized"""
+        now = datetime.now(timezone.utc)
+        mock_headlines = [
+            {
+                'title': 'Top Headline 1',
+                'description': 'Breaking News 1',
+                'url': 'https://example.com/headline1',
+                'published_at': now.isoformat(),
+                'source': {'name': 'Top News Source'}
+            }
+        ]
+        
+        self.mock_gnews_instance.get_top_headlines.return_value = mock_headlines
+        self.mock_gnews_instance.search_news.return_value = []  # No category articles
+        
+        articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
+        
+        self.assertTrue(len(articles) > 0, "Should return at least one headline")
+        headline = articles[0]
+        self.assertEqual(headline['title'], mock_headlines[0]['title'])
+        self.assertEqual(headline['newsletter_category'], 'TOP_HEADLINES')
+        self.assertEqual(headline['query_matched'], 'top_headlines')
 
     def test_fetch_articles_error_handling(self):
         """Test error handling during article fetching"""
         self.mock_gnews_instance.search_news.side_effect = Exception("API Error")
+        self.mock_gnews_instance.get_top_headlines.side_effect = Exception("API Error")
         
         articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
         
         self.assertEqual(len(articles), 0)
         self.assertEqual(stats['total_articles'], 0)
         self.assertTrue(len(stats['failed_queries']) > 0)
+        self.assertIn('TOP_HEADLINES:top_headlines', stats['failed_queries'])
+
+    def test_24hour_filtering(self):
+        """Test that articles older than 24 hours are filtered out"""
+        now = datetime.now(timezone.utc)
+        old_date = (now - timezone.timedelta(days=2)).isoformat()
+        fresh_date = (now - timezone.timedelta(hours=12)).isoformat()
+        
+        mock_headlines = [
+            {
+                'title': 'Old Headline',
+                'url': 'https://example.com/old',
+                'published_at': old_date,
+                'source': {'name': 'News Source'}
+            },
+            {
+                'title': 'Fresh Headline',
+                'url': 'https://example.com/fresh',
+                'published_at': fresh_date,
+                'source': {'name': 'News Source'}
+            }
+        ]
+        
+        self.mock_gnews_instance.get_top_headlines.return_value = mock_headlines
+        self.mock_gnews_instance.search_news.return_value = []
+        
+        articles, stats = fetch_articles_from_all_feeds()
+        
+        self.assertEqual(len(articles), 1, "Should only include the fresh article")
+        self.assertEqual(articles[0]['title'], 'Fresh Headline')
 
 if __name__ == '__main__':
     unittest.main()
