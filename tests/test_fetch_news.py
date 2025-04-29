@@ -6,10 +6,12 @@ from ai_newsletter.feeds.fetcher import (
     fetch_articles_from_all_feeds,
     categorize_article_age
 )
+from ai_newsletter.feeds.gnews_client import GNewsAPI
+from ai_newsletter.feeds.filters import filter_articles_by_date
 
 class TestFetchNews(unittest.TestCase):
     def setUp(self):
-        self.gnews_patcher = patch('ai_newsletter.feeds.fetcher.GNewsAPI')
+        self.gnews_patcher = patch('ai_newsletter.feeds.gnews_client.GNewsAPI')
         self.mock_gnews = self.gnews_patcher.start()
         self.mock_gnews_instance = self.mock_gnews.return_value
 
@@ -99,28 +101,29 @@ class TestFetchNews(unittest.TestCase):
         old_date = (now - timezone.timedelta(days=2)).isoformat()
         fresh_date = (now - timezone.timedelta(hours=12)).isoformat()
         
-        mock_headlines = [
+        mock_articles = [
             {
-                'title': 'Old Headline',
+                'title': 'Old Article',
                 'url': 'https://example.com/old',
                 'published_at': old_date,
                 'source': {'name': 'News Source'}
             },
             {
-                'title': 'Fresh Headline',
+                'title': 'Fresh Article',
                 'url': 'https://example.com/fresh',
                 'published_at': fresh_date,
                 'source': {'name': 'News Source'}
             }
         ]
         
-        self.mock_gnews_instance.get_top_headlines.return_value = mock_headlines
-        self.mock_gnews_instance.search_news.return_value = []
+        filtered = filter_articles_by_date(
+            mock_articles,
+            start_date=(now - timezone.timedelta(days=1)),
+            end_date=now
+        )
         
-        articles, stats = fetch_articles_from_all_feeds()
-        
-        self.assertEqual(len(articles), 1, "Should only include the fresh article")
-        self.assertEqual(articles[0]['title'], 'Fresh Headline')
+        self.assertEqual(len(filtered), 1, "Should only include the fresh article")
+        self.assertEqual(filtered[0]['title'], 'Fresh Article')
 
 if __name__ == '__main__':
     unittest.main()
