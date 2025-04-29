@@ -176,9 +176,11 @@ def format_article(article: Dict[str, Any], html: bool = False) -> str:
     date = parser.parse(article.get('published_at', '')).strftime('%B %d, %Y %H:%M UTC')
     description = article.get('description', 'No description available')
     url = article.get('url', '#')
+    summary = article.get('summary', '')
     
     # Handle HTML formatting
     if html:
+        summary_html = f'<p class="article-summary">{summary}</p>' if summary else ''
         return f"""
         <div class="article">
             <h2><a href="{url}">{title}</a></h2>
@@ -187,18 +189,23 @@ def format_article(article: Dict[str, Any], html: bool = False) -> str:
                 <span class="date">{date}</span>
             </p>
             <p class="description">{description}</p>
+            {summary_html}
             <hr>
         </div>
         """
     
     # Plain text formatting
-    return f"""
+    text_output = f"""
 {title}
 Source: {source}
 Date: {date}
-{description}
-Link: {url}
-"""
+{description}"""
+
+    if summary:
+        text_output += f"\nSummary: {summary}"
+        
+    text_output += f"\nLink: {url}"
+    return text_output
 
 def generate_newsletter_html(articles: List[Dict[str, Any]]) -> str:
     """Generate HTML content for the newsletter."""
@@ -718,45 +725,6 @@ def get_key_takeaways(content: str) -> str:
             <p class="no-content-notice">Key points not available. Please check the original article.</p>
         </div>
         """
-
-def get_why_this_matters(article: Dict) -> str:
-    """
-    Generate a 'Why This Matters' section for an article
-    
-    Args:
-        article: Article dictionary containing metadata
-        
-    Returns:
-        Formatted HTML string with why this matters content
-    """
-    # Extract relevant article metadata
-    section_key = article.get('section', 'GENERAL')
-    
-    # Define descriptions mapping
-    descriptions = {
-        'US_NEWS': 'This story has implications for domestic policy and American society.',
-        'WORLD_NEWS': 'This development could have global ramifications and affect international relations.',
-        'POLITICS': 'This could impact government policy and political landscape.',
-        'TECHNOLOGY': 'This advancement could shape the future of technology and its impact on society.',
-        'BUSINESS': 'This could affect markets, companies, and economic conditions.',
-        'LEFT_LEANING': 'This perspective offers insight into progressive policy positions.',
-        'CENTER': 'This balanced view helps understand different sides of the issue.',
-        'RIGHT_LEANING': 'This perspective offers insight into conservative policy positions.',
-        'PERSONALIZED': 'This story aligns with your expressed interests and may be particularly relevant to you.',
-        'LOCAL': 'This directly affects your local community and region.',
-        'GENERAL': 'This story represents an important development in its field.'
-    }
-    
-    why_matters = descriptions.get(section_key, 'This story represents a notable development in its field.')
-    
-    if why_matters:
-        return f"""
-        <div class="why-matters">
-            <h4>💡 Why This Matters:</h4>
-            <p>{why_matters}</p>
-        </div>
-        """
-    return ""
 
 def get_personalization_tags_html(article: Dict) -> str:
     """
