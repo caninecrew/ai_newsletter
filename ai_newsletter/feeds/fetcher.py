@@ -5,15 +5,18 @@ import random
 import re
 import ssl
 import certifi
+import inspect
 from datetime import datetime, timezone, timedelta
 import concurrent.futures
 from bs4 import BeautifulSoup
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
 import threading
 import hashlib
+from functools import wraps
 from urllib.parse import urlparse, parse_qs, urlunparse, unquote, urlencode
 from collections import defaultdict
 from difflib import SequenceMatcher
+from typing import List, Dict
 from ai_newsletter.utils.redirects import (
     resolve_google_redirect, 
     extract_article_content, 
