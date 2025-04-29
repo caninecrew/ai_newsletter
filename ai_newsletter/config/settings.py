@@ -5,17 +5,9 @@ import os
 from typing import Dict, Any, List, Optional
 from datetime import timedelta
 
-# System-wide settings
-SYSTEM_SETTINGS = {
-    'max_concurrent_requests': 5,
-    'request_timeout': 30,
-    'max_retries': 3,
-    'retry_delay': 1,
-}
-
 # GNews API Configuration
 GNEWS_CONFIG = {
-    'enabled': True,  # Set to False to fall back to RSS feeds
+    'enabled': True,
     'language': 'en',
     'country': 'us',  # Optional, can be None
     'max_articles_per_query': 10,
@@ -38,6 +30,10 @@ GNEWS_API_KEY = os.getenv('GNEWS_API_KEY')
 GNEWS_DEFAULT_LANGUAGE = "en"
 GNEWS_DEFAULT_MAX_RESULTS = 10
 GNEWS_EXCLUDED_DOMAINS: List[str] = []
+
+# Rate Limiting
+GNEWS_DAILY_LIMIT = 100  # Free tier limit
+GNEWS_REQUEST_DELAY = 1  # seconds between requests
 
 # Updated News Categories and Search Queries
 NEWS_CATEGORIES = {
@@ -121,44 +117,6 @@ NEWS_CATEGORIES = {
     }
 }
 
-# Rate Limiting
-GNEWS_DAILY_LIMIT = 100  # Free tier limit
-GNEWS_REQUEST_DELAY = 1  # seconds between requests
-
-# Feed settings (retained for compatibility/fallback)
-FEED_SETTINGS = {
-    'interests': {
-        'artificial_intelligence': True,
-        'machine_learning': True,
-        'cloud_computing': True,
-        'cybersecurity': True,
-        'software_development': True,
-    },
-    'update_interval': 3600,  # How often to check for new articles (in seconds)
-    'max_articles_per_feed': 10,
-    'min_article_length': 100,  # Minimum content length to consider
-}
-
-# Email settings
-EMAIL_SETTINGS = {
-    'smtp_server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
-    'smtp_port': int(os.getenv('SMTP_PORT', '587')),
-    'sender_email': os.getenv('SENDER_EMAIL'),
-    'smtp_username': os.getenv('SMTP_USERNAME'),
-    'smtp_password': os.getenv('SMTP_PASSWORD'),
-}
-
-# Email Settings
-EMAIL_SENDER = os.getenv('EMAIL_SENDER')
-EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
-EMAIL_RECIPIENTS = os.getenv('EMAIL_RECIPIENTS', '').split(',')
-SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-
-# Logging
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-
 # --- International News Filter Keywords ---
 # Used to filter international news by relevance to user interests
 INCLUDE_INTERNATIONAL_KEYWORDS = [
@@ -196,7 +154,7 @@ PERSONALIZATION_TAGS = {
     "Social Issues": "👥"
 }
 
-# --- Email Formatting Settings ---
+# --- Email Settings ---
 EMAIL_SETTINGS = {
     "max_articles_per_category": 4,         # Maximum articles for each category 
     "max_articles_per_source": 2,           # Maximum articles from any single source to prevent domination
@@ -209,26 +167,23 @@ EMAIL_SETTINGS = {
     "show_key_takeaways": True,
     "include_table_of_contents": True,
     "include_source_statistics": True,      # Include statistics about source distribution in email
-    "recipients": [],                       # Will be populated from environment variables
     "smtp": {
-        "host": "",                        # Will be populated from SMTP_SERVER env var
-        "port": 587,                       # Will be populated from SMTP_PORT env var
-        "username": "",                    # Will be populated from SMTP_EMAIL env var
-        "password": "",                    # Will be populated from SMTP_PASS env var
-        "sender": ""                       # Will be populated from SMTP_EMAIL env var
-    }
+        "host": os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+        "port": int(os.getenv('SMTP_PORT', '587')),
+        "username": os.getenv('SMTP_USERNAME'),
+        "password": os.getenv('SMTP_PASSWORD'),
+        "sender": os.getenv('EMAIL_SENDER')
+    },
+    "recipients": os.getenv('EMAIL_RECIPIENTS', '').split(',')
 }
 
 # --- System Settings ---
-# General system configuration options
 SYSTEM_SETTINGS = {
-    "log_level": "INFO",                   # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    "max_articles_to_process": 25,         # Maximum number of articles to process in one run
-    "max_retries": 2,                      # Maximum number of retries for failed API requests
+    "log_level": os.getenv('LOG_LEVEL', 'INFO'),
+    "max_retries": 3,                      # Maximum number of retries for failed API requests
+    "retry_delay": 1,                      # Delay between retries in seconds
     "use_central_timezone": True,          # Whether to convert all dates to Central Time
     "default_timezone": "America/Chicago", # Default timezone for date standardization
-    "cache_articles": True,                # Whether to cache articles to prevent duplicate processing
-    "cache_expiry_hours": 24              # How long to keep articles in cache
 }
 
 def get_settings() -> Dict[str, Any]:
@@ -236,6 +191,5 @@ def get_settings() -> Dict[str, Any]:
     return {
         'system': SYSTEM_SETTINGS,
         'gnews': GNEWS_CONFIG,
-        'feeds': FEED_SETTINGS,
-        'email': EMAIL_SETTINGS,
+        'email': EMAIL_SETTINGS
     }
