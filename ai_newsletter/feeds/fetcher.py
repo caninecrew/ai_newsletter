@@ -133,34 +133,46 @@ def fetch_articles_by_category() -> List[Dict[str, Any]]:
     
     # First, get top headlines
     try:
-        top_headlines = gnews.get_top_headlines(max_results=5)
+        top_headlines = gnews.get_top_headlines()
+        for article in top_headlines:
+            article['newsletter_category'] = 'TOP_HEADLINES'
+            article['query_matched'] = 'top_headlines'
         articles.extend(top_headlines)
         time.sleep(GNEWS_REQUEST_DELAY)  # Respect API rate limits
     except Exception as e:
         logger.error(f"Error fetching top headlines: {e}")
+        FETCH_METRICS['failed_queries'].append('TOP_HEADLINES:top_headlines')
 
     # Then fetch category-specific articles
     for category in NEWS_CATEGORIES:
         try:
-            category_articles = gnews.search_news(
-                query=f"({category}) AND (global OR international OR worldwide)",
-                max_results=5
-            )
+            query = f"({category}) AND (global OR international OR worldwide)"
+            category_articles = gnews.search_news(query)
+            
             # Filter for major international stories
             filtered_articles = [
                 article for article in category_articles
                 if is_major_international_story(article)
             ]
+            
+            # Add metadata
+            for article in filtered_articles:
+                article['newsletter_category'] = category.upper()
+                article['query_matched'] = query
+            
             articles.extend(filtered_articles)
             
             # Update metrics
             FETCH_METRICS['articles_per_category'][category] = len(filtered_articles)
             
+            if not filtered_articles:
+                FETCH_METRICS['empty_queries'].append(f"{category}:{query}")
+            
             time.sleep(GNEWS_REQUEST_DELAY)
             
         except Exception as e:
             logger.error(f"Error fetching {category} news: {e}")
-            FETCH_METRICS['failed_queries'].append(category)
+            FETCH_METRICS['failed_queries'].append(f"{category}:{query}")
 
     # Remove duplicates based on URL
     unique_articles = {article['url']: article for article in articles}.values()
