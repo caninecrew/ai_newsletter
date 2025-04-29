@@ -141,13 +141,18 @@ def fetch_from_gnews() -> List[Dict]:
         gnews_client = GNewsAPI()
         all_articles = []
         
+        logger.info("Starting GNews API article fetch process")
+        
         # Fetch top headlines for enabled categories
         if isinstance(GNEWS_CONFIG.get('categories'), dict):
+            logger.debug(f"Processing {len(GNEWS_CONFIG['categories'])} categories")
             for category, enabled in GNEWS_CONFIG['categories'].items():
                 if not enabled:
+                    logger.debug(f"Category {category} is disabled, skipping")
                     continue
                     
                 try:
+                    logger.debug(f"Fetching articles for category: {category}")
                     articles = gnews_client.get_top_headlines(
                         language=GNEWS_CONFIG.get('language', 'en'),
                         country=GNEWS_CONFIG.get('country'),
@@ -155,7 +160,11 @@ def fetch_from_gnews() -> List[Dict]:
                         max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
                     )
                     
+                    # Log response structure for debugging
+                    logger.debug(f"Category {category} response type: {type(articles)}")
                     if articles:
+                        logger.debug(f"First article structure: {type(articles[0])}") 
+                        logger.debug(f"Sample keys: {list(articles[0].keys())[:5]}")
                         all_articles.extend(articles)
                         logger.info(f"Fetched {len(articles)} articles for category: {category}")
                     else:
@@ -173,9 +182,15 @@ def fetch_from_gnews() -> List[Dict]:
             logger.warning("GNEWS_CONFIG categories is not a dictionary, skipping category fetching")
         
         # Fetch articles for configured interest areas
-        if isinstance(USER_INTERESTS, list):
-            for interest in USER_INTERESTS:
+        if isinstance(USER_INTERESTS, dict):
+            logger.debug(f"Processing {len(USER_INTERESTS)} interests")
+            for interest, enabled in USER_INTERESTS.items():
+                if not enabled:
+                    logger.debug(f"Interest {interest} is disabled, skipping")
+                    continue
+                    
                 try:
+                    logger.debug(f"Fetching articles for interest: {interest}")
                     # Convert interest name to search query
                     query = interest.replace('_', ' ')
                     articles = gnews_client.search_news(
@@ -185,7 +200,11 @@ def fetch_from_gnews() -> List[Dict]:
                         max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
                     )
                     
+                    # Log response structure for debugging
+                    logger.debug(f"Interest {interest} response type: {type(articles)}")
                     if articles:
+                        logger.debug(f"First article structure: {type(articles[0])}")
+                        logger.debug(f"Sample keys: {list(articles[0].keys())[:5]}")
                         all_articles.extend(articles)
                         logger.info(f"Fetched {len(articles)} articles for interest: {interest}")
                     else:
@@ -200,12 +219,13 @@ def fetch_from_gnews() -> List[Dict]:
                     FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
                     continue
         else:
-            logger.warning("USER_INTERESTS is not a list, skipping interest-based fetching")
+            logger.warning("USER_INTERESTS is not a dictionary, skipping interest-based fetching")
 
         if not all_articles:
             logger.warning("No articles were fetched from any source")
             return []
             
+        logger.info(f"Successfully fetched {len(all_articles)} total articles")
         return all_articles
         
     except Exception as e:
