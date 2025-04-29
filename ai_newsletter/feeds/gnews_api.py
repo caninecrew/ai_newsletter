@@ -53,9 +53,10 @@ class GNewsAPI:
         # Log the request URL for debugging (without API key)
         debug_params = params.copy()
         debug_params['apikey'] = 'REDACTED'
-        url = f"{self.BASE_URL}/{endpoint}?{urlencode(debug_params)}"
-        logger.debug(f"GNews API request URL: {url}")
-        return url
+        logger.debug(f"GNews API request URL (redacted): {self.BASE_URL}/{endpoint}?{urlencode(debug_params)}")
+        
+        # Build and return actual URL with API key
+        return f"{self.BASE_URL}/{endpoint}?{urlencode(params)}"
     
     def _validate_response(self, data: dict) -> None:
         """Validate GNews API response data."""
