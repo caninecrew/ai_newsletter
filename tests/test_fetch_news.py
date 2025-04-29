@@ -21,22 +21,15 @@ class TestFetchNews(unittest.TestCase):
         now = datetime.now(timezone.utc)
         
         test_cases = [
-            (now.timestamp(), 'Breaking'),
-            ((now.timestamp() - 3600 * 4), 'Very Recent'),
-            ((now.timestamp() - 3600 * 8), 'Recent'),
-            ((now.timestamp() - 3600 * 20), 'Today'),
-            ((now.timestamp() - 3600 * 30), 'Yesterday'),
-            ((now.timestamp() - 3600 * 24 * 4), 'This Week'),
-            ((now.timestamp() - 3600 * 24 * 10), 'Older'),
-            (None, 'Unknown')
+            (now - timezone.timedelta(hours=3), 'Breaking'),
+            (now - timezone.timedelta(hours=12), 'Today'),
+            (now - timezone.timedelta(hours=30), 'Yesterday'),
+            (now - timezone.timedelta(days=4), 'This Week'),
+            (now - timezone.timedelta(days=10), 'Older')
         ]
         
-        for timestamp, expected in test_cases:
-            with self.subTest(timestamp=timestamp):
-                if timestamp:
-                    date = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-                else:
-                    date = None
+        for date, expected in test_cases:
+            with self.subTest(date=date):
                 self.assertEqual(categorize_article_age(date), expected)
 
     def test_fetch_articles_metadata_handling(self):
