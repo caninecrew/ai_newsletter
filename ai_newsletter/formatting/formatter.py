@@ -690,6 +690,11 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
         if sections_with_articles == 0:
             html_output += """
             <div class="section">
+                <p><strong>No articles available:</strong> We couldn't find any articles meeting your criteria for today's date.
+                Please check back tomorrow for fresh news coverage.</p>
+            </div>
+            """
+        
         # Add footer
         html_output += """
             <div class="footer">
