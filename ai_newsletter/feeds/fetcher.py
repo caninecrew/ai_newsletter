@@ -39,6 +39,27 @@ from ai_newsletter.feeds.gnews_api import GNewsAPI
 # --- Setup ---
 logger = setup_logger()
 
+def safe_fetch_news_articles(*args, **kwargs):
+    """
+    Safe wrapper for fetch_news_articles that filters out unexpected arguments.
+    
+    Returns:
+        Same return type as fetch_news_articles
+    """
+    sig = inspect.signature(fetch_news_articles)
+    valid_params = sig.parameters.keys()
+    
+    # Filter out invalid kwargs
+    filtered_kwargs = {}
+    for key, value in kwargs.items():
+        if key in valid_params:
+            filtered_kwargs[key] = value
+        else:
+            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
+    
+    # Call the wrapped function with filtered arguments
+    return fetch_news_articles(**filtered_kwargs)
+
 # --- Metrics Initialization ---
 FETCH_METRICS = {
     'start_time': None,
@@ -558,27 +579,6 @@ logger = setup_logger()
 
 import inspect
 from functools import wraps
-
-def safe_fetch_news_articles(*args, **kwargs):
-    """
-    Safe wrapper for fetch_news_articles that filters out unexpected arguments.
-    
-    Returns:
-        Same return type as fetch_news_articles
-    """
-    sig = inspect.signature(fetch_news_articles)
-    valid_params = sig.parameters.keys()
-    
-    # Filter out invalid kwargs
-    filtered_kwargs = {}
-    for key, value in kwargs.items():
-        if key in valid_params:
-            filtered_kwargs[key] = value
-        else:
-            logger.warning(f"Ignoring unexpected parameter '{key}' in fetch_news_articles call")
-    
-    # Call the wrapped function with filtered arguments
-    return fetch_news_articles(**filtered_kwargs)
 
 def fetch_from_gnews() -> List[Dict]:
     """
