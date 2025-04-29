@@ -213,12 +213,17 @@ def format_article(article: Dict, html: bool = False) -> str:
     Returns:
         A formatted string representation of the article.
     """
+    # Extract data with GNews API compatibility
     title = article.get('title', 'No Title')
-    source = article.get('source', 'Unknown Source')
-    url = article.get('link', article.get('url', '#'))
-    # Use summary instead of content, fall back to content if summary doesn't exist
-    content = article.get('summary', article.get('content', 'No Content'))
-    published = article.get('published', 'Unknown Date')
+    source = article.get('source', {})
+    source_name = source.get('name', source) if isinstance(source, dict) else str(source)
+    url = article.get('url', article.get('link', '#'))
+    
+    # Use summary if available, fall back to content or description
+    content = article.get('summary', article.get('content', article.get('description', 'No Content')))
+    
+    # Handle both published_at and published fields
+    published = article.get('published_at', article.get('published', 'Unknown Date'))
     
     # Format the date using our new function
     formatted_date = format_date(published)
@@ -243,7 +248,7 @@ def format_article(article: Dict, html: bool = False) -> str:
         <div class="article">
             <h2 class="article-title"><a href="{url}" target="_blank">{title}</a></h2>
             <div class="article-meta">
-                <span class="source">{source}</span>
+                <span class="source">{source_name}</span>
                 <span class="published">{formatted_date}</span>
                 <div class="tags">{tags_html}</div>
             </div>
@@ -256,14 +261,14 @@ def format_article(article: Dict, html: bool = False) -> str:
             </div>
             
             <div class="article-actions">
-                <a href="javascript:void(0)" onclick="toggleSummary('{article_id}')" class="toggle-link">Read full summary</a>
+                <a href="javascript:void(0)" onclick="toggleSummary('{article_id}')" id="{article_id}-toggle" class="toggle-link">Read full summary</a>
                 <a href="{url}" target="_blank" class="read-source-link">Read original article →</a>
             </div>
         </div>
         """
     else:
         tags_text = ", ".join(tags)
-        return f"Title: {title}\nSource: {source}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
+        return f"Title: {title}\nSource: {source_name}\nTags: {tags_text}\nPublished: {formatted_date}\n\nKey Takeaways:\n- {content.split('.')[0]}.\n\n{content}\n\nRead more: {url}\n\n"
 
 def limit_articles_by_source(articles: List[Dict], max_per_source: int = 3) -> List[Dict]:
     """
