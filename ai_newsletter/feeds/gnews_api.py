@@ -19,6 +19,13 @@ class GNewsAPI:
     """Interface for fetching news from GNews API."""
     
     def __init__(self, language: str = 'en', country: str = 'US', max_results: int = 10):
+        """Initialize GNewsAPI with configuration.
+        
+        Args:
+            language: Language for news articles
+            country: Country for news articles
+            max_results: Maximum number of results to return
+        """
         self.gnews = gnews.GNews(language=language, country=country, max_results=max_results)
         self.major_keywords = [
             'global crisis',
@@ -37,23 +44,23 @@ class GNewsAPI:
         ]
 
     def search_news(self, query: str) -> List[Dict[str, Any]]:
-        """
-        Search for news articles using a query.
-        Now properly calls get_news() from gnews library.
-        """
-        return self.gnews.get_news(query)
+        """Search for news articles using a query."""
+        try:
+            return self.gnews.get_news(query)
+        except Exception as e:
+            logger.error(f"Failed to fetch news: {str(e)}")
+            raise GNewsAPIError(f"Failed to fetch news: {str(e)}")
 
     def get_top_headlines(self) -> List[Dict[str, Any]]:
-        """
-        Get top headlines.
-        Now properly calls get_top_news() from gnews library.
-        """
-        return self.gnews.get_top_news()
+        """Get top headlines."""
+        try:
+            return self.gnews.get_top_news()
+        except Exception as e:
+            logger.error(f"Failed to fetch top headlines: {str(e)}")
+            raise GNewsAPIError(f"Failed to fetch top headlines: {str(e)}")
 
     def is_major_story(self, article: Dict[str, Any]) -> bool:
-        """
-        Determine if a story is a major international event.
-        """
+        """Determine if a story is a major international event."""
         title = article.get('title', '').lower()
         description = article.get('description', '').lower()
         content = f"{title} {description}"
@@ -72,9 +79,7 @@ class GNewsAPI:
         return False
 
     def fetch_news(self) -> List[Dict[str, Any]]:
-        """
-        Fetch news articles, combining top headlines with major international stories.
-        """
+        """Fetch news articles, combining top headlines with major international stories."""
         # Get top headlines using the correct method
         top_headlines = self.get_top_headlines()
         
