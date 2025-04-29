@@ -277,43 +277,10 @@ def limit_articles_by_source(articles: List[Dict], max_per_source: int = 3) -> L
     
     return limited_articles
 
-def format_section_header(category: str) -> tuple[str, str]:
-    """
-    Create a section header with appropriate emoji based on category
-    
-    Args:
-        category: Category key from SECTION_CATEGORIES
-        
-    Returns:
-        Tuple of (emoji, title)
-    """
-    if category == 'US_NEWS':
-        return '🇺🇸', 'U.S. Headlines'
-    elif category == 'WORLD_NEWS':
-        return '🌎', 'World News'
-    elif category == 'POLITICS':
-        return '🏛️', 'Politics'
-    elif category == 'TECHNOLOGY':
-        return '💻', 'Technology'
-    elif category == 'BUSINESS':
-        return '📊', 'Business & Economy'
-    elif category == 'LEFT_LEANING':
-        return '📰', 'Center-Left Sources'
-    elif category == 'CENTER':
-        return '📰', 'Center Sources'
-    elif category == 'RIGHT_LEANING':
-        return '📰', 'Center-Right Sources'
-    elif category == 'PERSONALIZED':
-        return '📌', 'Personalized For You'
-    elif category == 'LOCAL':
-        return '🏙️', 'Local News'
-    else:
-        return '📰', 'Other News'
-
 def format_articles(articles: List[Dict], html: bool = False) -> str:
     """
     Formats a list of articles into a single string for display or email.
-    Organizes articles by category with clear section headings and visual separators.
+    Presents articles in a clean, simple list format without category headers.
 
     Args:
         articles: A list of dictionaries, each containing article details.
@@ -325,9 +292,6 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
     if not articles:
         return "No articles to display." if not html else "<p>No articles to display.</p>"
     
-    # Define the section order at the start
-    section_order = ['US_NEWS', 'POLITICS', 'WORLD_NEWS', 'BUSINESS', 'TECHNOLOGY', 'LOCAL', 'PERSONALIZED', 'LEFT_LEANING', 'CENTER', 'RIGHT_LEANING']
-    
     # Limit articles per source to maintain balance
     max_articles_per_source = EMAIL_SETTINGS.get("max_articles_per_source", 3)
     articles = limit_articles_by_source(articles, max_per_source=max_articles_per_source)
@@ -335,17 +299,6 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
     if html:
         # Set the time range (24 hours)
         time_range = f"{(datetime.now() - timedelta(hours=24)).strftime('%B %d')} - {datetime.now().strftime('%B %d, %Y')}"
-        
-        # Categorize articles
-        categories = {}
-        for article in articles:
-            category = categorize_article(article)
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(article)
-        
-        # Define the section order
-        section_order = ['US_NEWS', 'POLITICS', 'WORLD_NEWS', 'BUSINESS', 'TECHNOLOGY', 'LOCAL', 'PERSONALIZED', 'LEFT_LEANING', 'CENTER', 'RIGHT_LEANING']
         
         # Create HTML output with CSS styles
         html_output = f"""
@@ -365,7 +318,7 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
                 }}
                 .header {{
                     text-align: center;
-                    margin-bottom: 20px;
+                    margin-bottom: 30px;
                     border-bottom: 2px solid #f0f0f0;
                     padding-bottom: 20px;
                 }}
@@ -377,78 +330,10 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
                     color: #7f8c8d;
                     font-style: italic;
                 }}
-                .toc {{
-                    background-color: #f9f9f9;
-                    padding: 15px;
-                    border-radius: 8px;
-                    margin-bottom: 30px;
-                    border-left: 4px solid #3498db;
-                }}
-                .toc h2 {{
-                    margin-top: 0;
-                    margin-bottom: 15px;
-                    color: #3498db;
-                }}
-                .toc ul {{
-                    padding-left: 20px;
-                    margin-bottom: 5px;
-                }}
-                .toc li {{
-                    margin-bottom: 8px;
-                }}
-                .toc a {{
-                    text-decoration: none;
-                    color: #2980b9;
-                }}
-                .toc a:hover {{
-                    text-decoration: underline;
-                    color: #1abc9c;
-                }}
-                .section {{
-                    margin-bottom: 40px;
-                    border-radius: 8px;
-                    padding: 20px;
-                    background-color: #ffffff;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-                    position: relative;
-                    border-top: 4px solid #3498db;
-                }}
-                .section:before {{
-                    content: '';
-                    position: absolute;
-                    top: -15px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    width: 30px;
-                    height: 30px;
-                    background-color: white;
-                    border: 4px solid #3498db;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    z-index: 2;
-                }}
-                .section-header {{
-                    margin-top: 10px;
-                    margin-bottom: 20px;
-                    padding-bottom: 15px;
-                    border-bottom: 2px solid #e8e8e8;
-                    color: #2c3e50;
-                    text-align: center;
-                    font-size: 24px;
-                    font-weight: bold;
-                }}
-                .section-description {{
-                    font-style: italic;
-                    color: #7f8c8d;
-                    margin-bottom: 20px;
-                    text-align: center;
-                }}
                 .article {{
                     border-bottom: 1px solid #f0f0f0;
-                    padding-bottom: 20px;
-                    margin-bottom: 20px;
+                    padding-bottom: 25px;
+                    margin-bottom: 25px;
                 }}
                 .article:last-child {{
                     border-bottom: none;
@@ -471,24 +356,9 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
                     font-size: 14px;
                     color: #7f8c8d;
                     margin-bottom: 15px;
-                    display: flex;
-                    flex-wrap: wrap;
-                    justify-content: space-between;
-                    align-items: center;
                 }}
                 .article-content {{
                     margin-bottom: 15px;
-                }}
-                .read-more {{
-                    text-align: right;
-                }}
-                .read-more a {{
-                    color: #3498db;
-                    text-decoration: none;
-                    font-weight: bold;
-                }}
-                .read-more a:hover {{
-                    text-decoration: underline;
                 }}
                 .tag {{
                     display: inline-block;
@@ -503,8 +373,6 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
                 }}
                 .tags {{
                     margin-top: 8px;
-                    display: flex;
-                    flex-wrap: wrap;
                 }}
                 .footer {{
                     margin-top: 40px;
@@ -513,83 +381,6 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
                     color: #7f8c8d;
                     border-top: 1px solid #f0f0f0;
                     padding-top: 20px;
-                }}
-                .key-takeaways {{
-                    background-color: #f5f9ff;
-                    border-left: 4px solid #3498db;
-                    padding: 10px 15px;
-                    margin-bottom: 15px;
-                    border-radius: 4px;
-                }}
-                .key-takeaways h4 {{
-                    margin-top: 0;
-                    margin-bottom: 10px;
-                    color: #2c3e50;
-                }}
-                .takeaway-bullets {{
-                    padding-left: 20px;
-                    margin-top: 5px;
-                    margin-bottom: 10px;
-                }}
-                .takeaway-bullets li {{
-                    margin-bottom: 8px;
-                    line-height: 1.5;
-                }}
-                .full-summary {{
-                    border-top: 1px solid #eee;
-                    padding-top: 15px;
-                }}
-                .why-matters {{
-                    background-color: #f0fff4;
-                    border-left: 4px solid #2ecc71;
-                    padding: 10px 15px;
-                    margin: 15px 0;
-                    border-radius: 4px;
-                }}
-                .why-matters h4 {{
-                    margin-top: 0;
-                    margin-bottom: 10px;
-                    color: #27ae60;
-                }}
-                .why-matters p {{
-                    margin: 8px 0;
-                }}
-                .article-actions {{
-                    display: flex;
-                    justify-content: space-between;
-                    border-top: 1px solid #eee;
-                    padding-top: 15px;
-                    margin-top: 15px;
-                }}
-                .toggle-link, .read-source-link {{
-                    color: #3498db;
-                    text-decoration: none;
-                    font-size: 14px;
-                }}
-                .toggle-link:hover, .read-source-link:hover {{
-                    text-decoration: underline;
-                }}
-                .section-divider {{
-                    height: 30px;
-                    border-top: 1px solid #ddd;
-                    margin: 40px 0;
-                    text-align: center;
-                    position: relative;
-                }}
-                .section-divider:before {{
-                    content: "§";
-                    position: absolute;
-                    top: -15px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: white;
-                    padding: 0 10px;
-                    font-size: 20px;
-                    color: #aaa;
-                }}
-                .no-content-notice {{
-                    font-style: italic;
-                    color: #888;
                 }}
             </style>
             <script type="text/javascript">
@@ -611,58 +402,11 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
                 <h1>Your Daily News Summary</h1>
                 <p class="date">News from {time_range}</p>
             </div>
-        
-            <div class="toc">
-                <h2>📋 In Today's Newsletter</h2>
-                <ul>
         """
         
-        # Only include sections with articles in TOC
-        sections_with_articles = 0
-        for section_key in section_order:
-            if section_key in categories and categories[section_key]:
-                emoji, title = format_section_header(section_key)
-                article_count = len(categories[section_key])
-                html_output += f'<li><a href="#{section_key}-section">{emoji} {title} ({article_count})</a></li>'
-                sections_with_articles += 1
-        
-        html_output += """
-                </ul>
-            </div>
-        """
-        
-        # Add each section in the specified order, but only if it has articles
-        first_section = True
-        for section_key in section_order:
-            if section_key in categories and categories[section_key]:
-                emoji, title = format_section_header(section_key)
-                
-                # Add section divider except for the first section
-                if not first_section:
-                    html_output += '<div class="section-divider"></div>'
-                else:
-                    first_section = False
-                
-                html_output += f"""
-                <div id="{section_key}-section" class="section">
-                    <h2 class="section-header">{emoji} {title}</h2>
-                    <p class="section-description">{get_section_description(section_key)}</p>
-                """
-                
-                # Add articles
-                for article in categories[section_key]:
-                    html_output += format_article(article, html=True)
-                
-                html_output += "</div>"
-        
-        # If no sections had articles, show a message
-        if sections_with_articles == 0:
-            html_output += """
-            <div class="section">
-                <p><strong>No articles available:</strong> We couldn't find any articles meeting your criteria for today's date.
-                Please check back tomorrow for fresh news coverage.</p>
-            </div>
-            """
+        # Add all articles in a single list
+        for article in articles:
+            html_output += format_article(article, html=True)
         
         # Add footer
         html_output += """
@@ -676,25 +420,11 @@ def format_articles(articles: List[Dict], html: bool = False) -> str:
         
         return html_output
     else:
-        # Plain text format - simpler implementation
-        categorized = {}
-        for article in articles:
-            category = categorize_article(article)
-            if category not in categorized:
-                categorized[category] = []
-            categorized[category].append(article)
-        
+        # Plain text format - simple list
         output = "YOUR DAILY NEWS SUMMARY\n\n"
         
-        for section_key in section_order:
-            if section_key in categorized and categorized[section_key]:
-                emoji, title = format_section_header(section_key)
-                output += f"====== {emoji} {title} ======\n\n"
-                
-                for article in categorized[section_key]:
-                    output += format_article(article, html=False) + "\n---\n"
-                
-                output += "\n"
+        for article in articles:
+            output += format_article(article, html=False) + "\n---\n\n"
         
         return output
 
@@ -963,75 +693,42 @@ def get_key_takeaways(content: str) -> str:
 
 def get_why_this_matters(article: Dict) -> str:
     """
-    Generate a "Why This Matters" section for the article based on its content and tags.
+    Generate a 'Why This Matters' section for an article
     
     Args:
-        article: The article dictionary with content, tags, etc.
+        article: Article dictionary containing metadata
         
     Returns:
-        HTML formatted explanation of why this article matters
+        Formatted HTML string with why this matters content
     """
-    title = article.get('title', '').lower()
-    content = article.get('content', '').lower()
-    tags = identify_tags(article)
-    combined_text = f"{title} {content}"
+    # Extract relevant article metadata
+    section_key = article.get('section', 'GENERAL')
     
-    # Map impact explanations to keywords
-    impact_map = {
-        "economy": "This could impact markets, businesses, and potentially your financial outlook.",
-        "election": "This may influence upcoming elections and political landscape shifts.",
-        "climate": "This highlights ongoing environmental challenges that affect global sustainability.",
-        "health": "This development could affect public health policies or medical practices.",
-        "technology": "This represents a shift in technology that might change how we interact with digital tools.",
-        "policy": "This policy change may have direct effects on regulations or governance.",
-        "law": "This legal development could set precedents affecting rights and responsibilities.",
-        "education": "This could impact educational institutions, students, or learning approaches.",
-        "global": "This international development may have broader geopolitical implications.",
-        "local": "This local issue might directly affect your community or region."
+    # Define descriptions mapping
+    descriptions = {
+        'US_NEWS': 'This story has implications for domestic policy and American society.',
+        'WORLD_NEWS': 'This development could have global ramifications and affect international relations.',
+        'POLITICS': 'This could impact government policy and political landscape.',
+        'TECHNOLOGY': 'This advancement could shape the future of technology and its impact on society.',
+        'BUSINESS': 'This could affect markets, companies, and economic conditions.',
+        'LEFT_LEANING': 'This perspective offers insight into progressive policy positions.',
+        'CENTER': 'This balanced view helps understand different sides of the issue.',
+        'RIGHT_LEANING': 'This perspective offers insight into conservative policy positions.',
+        'PERSONALIZED': 'This story aligns with your expressed interests and may be particularly relevant to you.',
+        'LOCAL': 'This directly affects your local community and region.',
+        'GENERAL': 'This story represents an important development in its field.'
     }
     
-    # Check for matches in the text
-    matches = []
-    for keyword, explanation in impact_map.items():
-        if keyword in combined_text:
-            matches.append(explanation)
+    why_matters = descriptions.get(section_key, 'This story represents a notable development in its field.')
     
-    # Add tag-based explanations
-    tag_impact = {
-        "Legal": "This legal development may set precedents that influence future cases or regulations.",
-        "Education": "This could impact students, educators, or learning institutions in your community.",
-        "Healthcare": "This health-related news could affect medical practices or patient care standards.",
-        "Economy": "This economic trend may influence markets, jobs, or your personal finances.",
-        "Global Affairs": "This international development could reshape diplomatic relations or global trade.",
-        "Technology": "This tech advancement might change how people interact with devices or services.",
-        "Politics": "This political shift could impact governance or upcoming electoral outcomes.",
-        "Environment": "This environmental news may affect sustainability efforts or climate policies."
-    }
-    
-    for tag in tags:
-        if tag in tag_impact:
-            matches.append(tag_impact[tag])
-    
-    # If we don't have matches, provide generic explanation based on section
-    if not matches:
-        section = categorize_article(article)
-        if section == 'WORLD_NEWS':
-            matches.append("This international development could have widespread implications for global politics or economics.")
-        elif section == 'US_NEWS':
-            matches.append("This domestic issue may affect national policies or public opinion.")
-        else:
-            matches.append("This story relates to topics you've shown interest in and may have relevance to your professional or personal life.")
-    
-    # Take up to 2 unique explanations
-    unique_matches = list(set(matches))[:2]
-    explanation_html = "".join([f"<p>{explanation}</p>" for explanation in unique_matches])
-    
-    return f"""
-    <div class="why-matters">
-        <h4>💡 Why This Matters:</h4>
-        {explanation_html}
-    </div>
-    """
+    if why_matters:
+        return f"""
+        <div class="why-matters">
+            <h4>💡 Why This Matters:</h4>
+            <p>{why_matters}</p>
+        </div>
+        """
+    return ""
 
 def get_personalization_tags_html(article: Dict) -> str:
     """
