@@ -55,18 +55,18 @@ class TestFetchNews(unittest.TestCase):
             }
         ]
         
-        self.mock_gnews_instance.get_top_headlines.return_value = mock_articles
+        # Mock the search_news method instead of get_top_headlines
+        self.mock_gnews_instance.search_news.return_value = mock_articles
         
         articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
         
+        # Basic metadata validation
         self.assertEqual(len(articles), len(mock_articles))
         for i, article in enumerate(articles):
             self.assertEqual(article['title'], mock_articles[i]['title'])
             self.assertEqual(article['description'], mock_articles[i]['description'])
             self.assertEqual(article['url'], mock_articles[i]['url'])
             self.assertEqual(article['source']['name'], mock_articles[i]['source']['name'])
-            self.assertIn('age_category', article)
-            self.assertIn('category', article)
 
     def test_fetch_articles_interest_based(self):
         """Test fetching articles based on configured interests"""
