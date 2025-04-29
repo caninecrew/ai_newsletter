@@ -51,7 +51,7 @@ class GNewsAPI:
             raise GNewsAPIError("Response missing 'articles' field")
             
         if not isinstance(data['articles'], list):
-            raise GNewsAPIError(f"Invalid articles format. Expected list, got {type(data['articles']}")
+            raise GNewsAPIError(f"Invalid articles format. Expected list, got {type(data['articles'])}")
     
     def _build_url(self, endpoint: str, params: Dict[str, Any]) -> str:
         """Build URL with proper encoding for GNews API."""
