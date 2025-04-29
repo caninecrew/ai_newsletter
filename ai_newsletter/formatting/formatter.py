@@ -5,7 +5,6 @@ from difflib import SequenceMatcher
 import hashlib
 import pytz
 from dateutil import parser, tz as dateutil_tz
-import pandas as pd
 from ai_newsletter.logging_cfg.logger import setup_logger, DEFAULT_TZ
 from ai_newsletter.config.settings import USER_INTERESTS, PERSONALIZATION_TAGS, EMAIL_SETTINGS
 from bs4 import BeautifulSoup
@@ -138,7 +137,7 @@ def format_date(date_str: str) -> str:
             # Try parsing with dateutil first
             try:
                 parsed_date = parser.parse(date_str)
-                if parsed_date.tzinfo is None:
+                if (parsed_date.tzinfo is None):
                     parsed_date = parsed_date.replace(tzinfo=DEFAULT_TZ)
             except:
                 # Fall back to manual parsing if dateutil fails
