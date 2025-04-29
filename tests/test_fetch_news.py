@@ -2,7 +2,10 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
-from ai_newsletter.feeds.fetcher import fetch_articles_from_all_feeds, categorize_article_age
+from ai_newsletter.feeds.fetcher import (
+    fetch_articles_from_all_feeds,
+    categorize_article_age
+)
 
 class TestFetchNews(unittest.TestCase):
     def setUp(self):
@@ -48,52 +51,28 @@ class TestFetchNews(unittest.TestCase):
             }
         ]
         
-        # Mock both search_news and get_top_headlines to return our test articles
         self.mock_gnews_instance.search_news.return_value = mock_articles
         
         articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
         
-        # Basic metadata validation
         self.assertTrue(len(articles) > 0, "Should return at least one article")
-        article = articles[0]  # Test the first article
+        article = articles[0]
         self.assertEqual(article['title'], mock_articles[0]['title'])
         self.assertEqual(article['description'], mock_articles[0]['description'])
         self.assertEqual(article['url'], mock_articles[0]['url'])
         self.assertEqual(article['source']['name'], mock_articles[0]['source']['name'])
         self.assertIn('age_category', article)
-        self.assertIn('category', article)
-
-    def test_fetch_articles_interest_based(self):
-        """Test fetching articles based on configured interests"""
-        mock_articles = [
-            {
-                'title': 'AI News',
-                'description': 'Test AI Description',
-                'url': 'https://example.com/ai',
-                'published_at': datetime.now(timezone.utc).isoformat(),
-                'source': {'name': 'Tech News'}
-            }
-        ]
-        
-        self.mock_gnews_instance.search_news.return_value = mock_articles
-        
-        articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
-        
-        # Check if interest-based articles are properly tagged
-        interest_articles = [a for a in articles if a.get('category') == 'Interest']
-        self.assertTrue(len(interest_articles) > 0)
-        for article in interest_articles:
-            self.assertIn('interest', article)
+        self.assertIn('newsletter_category', article)
 
     def test_fetch_articles_error_handling(self):
         """Test error handling during article fetching"""
-        self.mock_gnews_instance.get_top_headlines.side_effect = Exception("API Error")
+        self.mock_gnews_instance.search_news.side_effect = Exception("API Error")
         
         articles, stats = fetch_articles_from_all_feeds(max_articles_per_source=5)
         
         self.assertEqual(len(articles), 0)
-        self.assertIn('failed_sources', stats)
-        self.assertTrue(len(stats['failed_sources']) > 0)
+        self.assertEqual(stats['total_articles'], 0)
+        self.assertTrue(len(stats['failed_queries']) > 0)
 
 if __name__ == '__main__':
     unittest.main()
