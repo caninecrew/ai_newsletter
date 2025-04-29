@@ -142,50 +142,70 @@ def fetch_from_gnews() -> List[Dict]:
         all_articles = []
         
         # Fetch top headlines for enabled categories
-        for category, enabled in GNEWS_CONFIG['categories'].items():
-            if not enabled:
-                continue
-                
-            try:
-                articles = gnews_client.get_top_headlines(
-                    language=GNEWS_CONFIG.get('language', 'en'),
-                    country=GNEWS_CONFIG.get('country'),
-                    category=category if category != 'general' else None,
-                    max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
-                )
-                
-                if articles:
-                    all_articles.extend(articles)
-                    logger.info(f"Fetched {len(articles)} articles for category: {category}")
+        if isinstance(GNEWS_CONFIG.get('categories'), dict):
+            for category, enabled in GNEWS_CONFIG['categories'].items():
+                if not enabled:
+                    continue
                     
-            except Exception as e:
-                logger.error(f"Error fetching {category} headlines: {e}")
-                FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
-                continue
+                try:
+                    articles = gnews_client.get_top_headlines(
+                        language=GNEWS_CONFIG.get('language', 'en'),
+                        country=GNEWS_CONFIG.get('country'),
+                        category=category if category != 'general' else None,
+                        max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
+                    )
+                    
+                    if articles:
+                        all_articles.extend(articles)
+                        logger.info(f"Fetched {len(articles)} articles for category: {category}")
+                    else:
+                        logger.warning(f"No articles found for category: {category}")
+                        
+                except GNewsAPIError as e:
+                    logger.error(f"GNews API error fetching {category} headlines: {e}")
+                    FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error fetching {category} headlines: {e}")
+                    FETCH_METRICS['failed_sources'].append(f"GNews-{category}")
+                    continue
+        else:
+            logger.warning("GNEWS_CONFIG categories is not a dictionary, skipping category fetching")
         
         # Fetch articles for configured interest areas
-        for interest, enabled in USER_INTERESTS.items():
-            if not enabled:
-                continue
-                
-            try:
-                query = interest.replace('_', ' ')  # Convert interest name to search query
-                articles = gnews_client.search_news(
-                    query=query,
-                    language=GNEWS_CONFIG.get('language', 'en'),
-                    country=GNEWS_CONFIG.get('country'),
-                    max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
-                )
-                
-                if articles:
-                    all_articles.extend(articles)
-                    logger.info(f"Fetched {len(articles)} articles for interest: {interest}")
+        if isinstance(USER_INTERESTS, list):
+            for interest in USER_INTERESTS:
+                try:
+                    # Convert interest name to search query
+                    query = interest.replace('_', ' ')
+                    articles = gnews_client.search_news(
+                        query=query,
+                        language=GNEWS_CONFIG.get('language', 'en'),
+                        country=GNEWS_CONFIG.get('country'),
+                        max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
+                    )
                     
-            except Exception as e:
-                logger.error(f"Error fetching articles for interest {interest}: {e}")
-                FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
-                continue
-        
+                    if articles:
+                        all_articles.extend(articles)
+                        logger.info(f"Fetched {len(articles)} articles for interest: {interest}")
+                    else:
+                        logger.warning(f"No articles found for interest: {interest}")
+                        
+                except GNewsAPIError as e:
+                    logger.error(f"GNews API error fetching articles for interest {interest}: {e}")
+                    FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error fetching articles for interest {interest}: {e}")
+                    FETCH_METRICS['failed_sources'].append(f"GNews-{interest}")
+                    continue
+        else:
+            logger.warning("USER_INTERESTS is not a list, skipping interest-based fetching")
+
+        if not all_articles:
+            logger.warning("No articles were fetched from any source")
+            return []
+            
         return all_articles
         
     except Exception as e:
