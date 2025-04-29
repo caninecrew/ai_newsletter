@@ -345,28 +345,12 @@ EMAIL_SETTINGS = {
 # General system configuration options
 SYSTEM_SETTINGS = {
     "log_level": "INFO",                   # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    "article_fetch_timeout": 15,           # Timeout in seconds for article fetching
     "max_articles_to_process": 25,         # Maximum number of articles to process in one run
-    "max_retries": 2,                      # Maximum number of retries for failed requests
-    "session_reuse": True,                 # Whether to reuse HTTP sessions between categories
-    "skip_empty_feeds": True,              # Whether to skip or flag empty feeds without spamming logs
-    "max_parallel_workers": 5,             # Number of parallel workers for concurrent processing
-    "max_primary_articles_per_feed": 2,    # Maximum number of articles to fetch per primary feed
-    "max_secondary_articles_per_feed": 1,  # Maximum number of articles to fetch per secondary feed
-    "report_slow_sources": True,           # Whether to report slow sources in logs
-    "use_newspaper3k": True,               # Whether to use newspaper3k for article extraction
-    "cache_articles": True,                # Whether to cache articles to prevent duplicate processing
-    "cache_expiry_hours": 24,              # How long to keep articles in cache
+    "max_retries": 2,                      # Maximum number of retries for failed API requests
     "use_central_timezone": True,          # Whether to convert all dates to Central Time
     "default_timezone": "America/Chicago", # Default timezone for date standardization
-    "prioritize_primary_feeds": True,      # Whether to prioritize PRIMARY_NEWS_FEEDS over others
-    "use_supplemental_feeds": False,       # Whether to use SUPPLEMENTAL_FEEDS when primary feeds are empty
-    "http_request_delay": 1,               # Delay between requests to the same domain in seconds
-    "http_timeout": 15,                    # HTTP request timeout in seconds
-    "max_redirects": 5,                    # Maximum number of redirects to follow
-    "verify_ssl": True,                    # Whether to verify SSL certificates
-    "requests_html_timeout": 20,           # Timeout for requests-html rendering in seconds
-    "min_content_length": 150              # Minimum length of article content to be considered valid
+    "cache_articles": True,                # Whether to cache articles to prevent duplicate processing
+    "cache_expiry_hours": 24              # How long to keep articles in cache
 }
 
 # --- Problematic Sources ---
