@@ -2,7 +2,7 @@
 # This file contains configurable settings for the newsletter system
 
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from datetime import timedelta
 
 # System-wide settings
@@ -33,6 +33,28 @@ GNEWS_CONFIG = {
     'excluded_domains': [],  # List of domains to exclude from results
 }
 
+# GNews API Settings
+GNEWS_API_KEY = os.getenv('GNEWS_API_KEY')
+GNEWS_DEFAULT_LANGUAGE = "en"
+GNEWS_DEFAULT_MAX_RESULTS = 10
+GNEWS_EXCLUDED_DOMAINS: List[str] = []
+
+# News Search Settings
+NEWS_CATEGORIES = [
+    "world",
+    "nation",
+    "business",
+    "technology",
+    "entertainment",
+    "sports",
+    "science",
+    "health"
+]
+
+# Rate Limiting
+GNEWS_DAILY_LIMIT = 100  # Free tier limit
+GNEWS_REQUEST_DELAY = 1  # seconds between requests
+
 # Feed settings (retained for compatibility/fallback)
 FEED_SETTINGS = {
     'interests': {
@@ -55,6 +77,17 @@ EMAIL_SETTINGS = {
     'smtp_username': os.getenv('SMTP_USERNAME'),
     'smtp_password': os.getenv('SMTP_PASSWORD'),
 }
+
+# Email Settings
+EMAIL_SENDER = os.getenv('EMAIL_SENDER')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
+EMAIL_RECIPIENTS = os.getenv('EMAIL_RECIPIENTS', '').split(',')
+SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+
+# Logging
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
 # --- News Source Configuration ---
 # Using Google News RSS feeds as primary source for reliable aggregated content
