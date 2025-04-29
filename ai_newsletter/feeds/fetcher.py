@@ -588,7 +588,7 @@ import logging
 import time
 from typing import List, Dict
 from ..config.settings import GNEWS_CONFIG, FEED_SETTINGS, SYSTEM_SETTINGS
-from .gnews_api import GNewsAPI
+from ai_newsletter.feeds.gnews_api import GNewsAPI
 from ..logging_cfg.logger import setup_logger
 
 logger = setup_logger()
