@@ -5,6 +5,8 @@ from typing import List, Dict, Optional, Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib.parse import quote_plus
+from dateutil import parser as dateutil_parser
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +71,11 @@ class GNewsAPI:
         Raises:
             GNewsAPIError: If the API request fails or returns invalid data
         """
+        # URL encode the query to handle special characters
+        encoded_query = quote_plus(query)
+        
         params = {
-            'q': query,
+            'q': encoded_query,
             'lang': language,
             'max': min(max_results, 100),  # API limit is 100
             'apikey': self.api_key
@@ -171,23 +176,32 @@ class GNewsAPI:
                 continue
                 
             try:
+                # Pre-validate required fields
+                title = article.get('title', '').strip()
+                description = article.get('description', '').strip()
+                published_at = article.get('publishedAt')
+                
+                if not title:
+                    logger.warning(f"Skipping article with empty title: {url}")
+                    continue
+                
+                # Parse date with more robust method
+                parsed_date = self._parse_date(published_at) if published_at else None
+                if not parsed_date:
+                    logger.warning(f"Article date parsing failed: {url}")
+                
                 processed_article = {
-                    'title': article.get('title', '').strip(),
-                    'description': article.get('description', '').strip(),
+                    'title': title,
+                    'description': description,
                     'url': url,
                     'link': url,  # For compatibility
                     'source': {
                         'name': article.get('source', {}).get('name', '').strip() if isinstance(article.get('source'), dict) else str(article.get('source', '')).strip(),
                         'url': article.get('source', {}).get('url', '').strip() if isinstance(article.get('source'), dict) else ''
                     },
-                    'published_at': self._parse_date(article.get('publishedAt', ''))
+                    'published_at': parsed_date.isoformat() if parsed_date else None
                 }
                 
-                # Skip articles with empty titles
-                if not processed_article['title']:
-                    logger.warning(f"Skipping article with empty title: {url}")
-                    continue
-                    
                 processed_articles.append(processed_article)
                 
             except Exception as e:
@@ -197,12 +211,13 @@ class GNewsAPI:
         return processed_articles
     
     def _parse_date(self, date_str: str) -> Optional[datetime]:
-        """Parse API date string into datetime object."""
+        """Parse API date string into datetime object using dateutil."""
         if not date_str:
             return None
             
         try:
-            return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            # Use dateutil.parser for more robust date parsing
+            return dateutil_parser.parse(date_str)
         except ValueError as e:
             logger.warning(f"Failed to parse date: {date_str} - {str(e)}")
             return None
