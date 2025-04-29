@@ -2,10 +2,8 @@
 import time
 import logging
 from datetime import datetime, timezone, timedelta
-import concurrent.futures
 from typing import List, Dict, Tuple
 from dateutil import parser as dateutil_parser, tz as dateutil_tz
-from ai_newsletter.utils.redirects import extract_article_content
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import (
     SYSTEM_SETTINGS,
@@ -23,9 +21,7 @@ FETCH_METRICS = {
     'processing_time': 0,
     'total_articles': 0,
     'failed_sources': [],
-    'source_statistics': {},
-    'content_attempts': 0,
-    'content_success_requests': 0
+    'empty_sources': []
 }
 
 CENTRAL = dateutil_tz.gettz('America/Chicago') or timezone.utc
@@ -35,7 +31,6 @@ def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict], Dict]:
     Safely fetch news articles with parameter validation.
     
     Valid parameters:
-    - fetch_content (bool): Whether to fetch full article content
     - max_articles_per_source (int): Maximum articles to fetch per source
     - language (str): Language code for articles (e.g., 'en')
     - country (str): Country code for articles
@@ -43,19 +38,15 @@ def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict], Dict]:
     Returns:
         tuple: (list of articles, fetch statistics dictionary)
     """
-    # Define valid parameters and their types
     valid_params = {
-        'fetch_content': bool,
         'max_articles_per_source': int,
         'language': str,
         'country': str
     }
     
-    # Filter out invalid parameters
     filtered_kwargs = {}
     for key, value in kwargs.items():
         if key in valid_params:
-            # Type validation
             if not isinstance(value, valid_params[key]):
                 logger.warning(f"Parameter '{key}' has invalid type. Expected {valid_params[key].__name__}, got {type(value).__name__}")
                 continue
@@ -69,69 +60,28 @@ def safe_fetch_news_articles(**kwargs) -> Tuple[List[Dict], Dict]:
         logger.error(f"Error in safe_fetch_news_articles: {str(e)}", exc_info=True)
         return [], {'error': str(e)}
 
-def fetch_article_content(article: Dict, max_retries: int = 2) -> Dict:
-    """Fetch article content using HTTP-based methods."""
-    url = article.get('url', article.get('link'))
-    if not url:
-        logger.warning("Article missing URL/link field, skipping content fetch")
-        return article
-
-    source = article.get('source', {})
-    source_name = source.get('name', source) if isinstance(source, dict) else str(source)
-
-    FETCH_METRICS['content_attempts'] = FETCH_METRICS.get('content_attempts', 0) + 1
-    start_time = time.time()
-    success = False
-
-    try:
-        # Extract content using our methods
-        content_data = extract_article_content(url, timeout=SYSTEM_SETTINGS.get('http_timeout', 15))
+def categorize_article_age(published_date):
+    """Categorizes article age relative to now."""
+    if not published_date:
+        return 'Unknown'
         
-        if content_data and content_data.get('text'):
-            article['content'] = content_data['text']
-            article['fetch_method'] = content_data['fetch_method']
-            article['authors'] = content_data.get('authors')
-            article['meta_description'] = content_data.get('meta_description')
-            
-            # Update article title if we found a better one
-            if content_data.get('title') and len(content_data['title']) > len(article.get('title', '')):
-                article['title'] = content_data['title']
-                
-            success = True
-            FETCH_METRICS['content_success_requests'] = FETCH_METRICS.get('content_success_requests', 0) + 1
-            logger.info(f"Successfully fetched content with {content_data['fetch_method']}: {url}")
-        else:
-            logger.warning(f"Failed to extract content from {url}")
-
-    except Exception as e:
-        logger.error(f"Error fetching content for {url}: {e}")
-
-    # Update stats
-    end_time = time.time()
-    duration = end_time - start_time
+    now = datetime.now(timezone.utc)
+    age = now - published_date
     
-    if source_name not in FETCH_METRICS['source_statistics']:
-        FETCH_METRICS['source_statistics'][source_name] = {
-            'fetch_time': 0,
-            'success': 0,
-            'failures': 0,
-            'articles': 0
-        }
-    
-    stats = FETCH_METRICS['source_statistics'][source_name]
-    stats['fetch_time'] += duration
-    if success:
-        stats['success'] += 1
+    if age < timedelta(hours=1):
+        return 'Breaking'
+    elif age < timedelta(hours=6):
+        return 'Very Recent'
+    elif age < timedelta(hours=12):
+        return 'Recent'
+    elif age < timedelta(days=1):
+        return 'Today'
+    elif age < timedelta(days=2):
+        return 'Yesterday'
+    elif age < timedelta(days=7):
+        return 'This Week'
     else:
-        stats['failures'] += 1
-
-    # Add age categorization
-    if article.get('published_at'):
-        article['age_category'] = categorize_article_age(article['published_at'])
-    else:
-        article['age_category'] = 'Unknown'
-
-    return article
+        return 'Older'
 
 def fetch_from_gnews() -> List[Dict]:
     """
@@ -160,15 +110,15 @@ def fetch_from_gnews() -> List[Dict]:
                         max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
                     )
                     
-                    # Log response structure for debugging
-                    logger.debug(f"Category {category} response type: {type(articles)}")
                     if articles:
-                        logger.debug(f"First article structure: {type(articles[0])}") 
-                        logger.debug(f"Sample keys: {list(articles[0].keys())[:5]}")
+                        # Add category to each article
+                        for article in articles:
+                            article['category'] = category
                         all_articles.extend(articles)
                         logger.info(f"Fetched {len(articles)} articles for category: {category}")
                     else:
                         logger.warning(f"No articles found for category: {category}")
+                        FETCH_METRICS['empty_sources'].append(f"GNews-{category}")
                         
                 except GNewsAPIError as e:
                     logger.error(f"GNews API error fetching {category} headlines: {e}")
@@ -191,7 +141,6 @@ def fetch_from_gnews() -> List[Dict]:
                     
                 try:
                     logger.debug(f"Fetching articles for interest: {interest}")
-                    # Convert interest name to search query
                     query = interest.replace('_', ' ')
                     articles = gnews_client.search_news(
                         query=query,
@@ -200,15 +149,16 @@ def fetch_from_gnews() -> List[Dict]:
                         max_results=GNEWS_CONFIG.get('max_articles_per_query', 10)
                     )
                     
-                    # Log response structure for debugging
-                    logger.debug(f"Interest {interest} response type: {type(articles)}")
                     if articles:
-                        logger.debug(f"First article structure: {type(articles[0])}")
-                        logger.debug(f"Sample keys: {list(articles[0].keys())[:5]}")
+                        # Add interest and category to each article
+                        for article in articles:
+                            article['interest'] = interest
+                            article['category'] = 'Interest'
                         all_articles.extend(articles)
                         logger.info(f"Fetched {len(articles)} articles for interest: {interest}")
                     else:
                         logger.warning(f"No articles found for interest: {interest}")
+                        FETCH_METRICS['empty_sources'].append(f"GNews-{interest}")
                         
                 except GNewsAPIError as e:
                     logger.error(f"GNews API error fetching articles for interest {interest}: {e}")
@@ -225,6 +175,13 @@ def fetch_from_gnews() -> List[Dict]:
             logger.warning("No articles were fetched from any source")
             return []
             
+        # Add age categorization to all articles
+        for article in all_articles:
+            if article.get('published_at'):
+                article['age_category'] = categorize_article_age(article['published_at'])
+            else:
+                article['age_category'] = 'Unknown'
+        
         logger.info(f"Successfully fetched {len(all_articles)} total articles")
         return all_articles
         
@@ -232,12 +189,11 @@ def fetch_from_gnews() -> List[Dict]:
         logger.error(f"Error in GNews fetch process: {e}")
         return []
 
-def fetch_articles_from_all_feeds(fetch_content: bool = True, max_articles_per_source: int = 5) -> Tuple[List[Dict], Dict]:
+def fetch_articles_from_all_feeds(max_articles_per_source: int = 5) -> Tuple[List[Dict], Dict]:
     """
     Main function to fetch all articles using GNews API.
     
     Args:
-        fetch_content: Whether to fetch full article content
         max_articles_per_source: Maximum articles to fetch per source
         
     Returns:
@@ -246,37 +202,11 @@ def fetch_articles_from_all_feeds(fetch_content: bool = True, max_articles_per_s
     logger.info("Starting news fetch process...")
     FETCH_METRICS['start_time'] = time.time()
 
-    all_articles = []
-    
     try:
-        articles = fetch_from_gnews()
-        all_articles.extend(articles)
+        all_articles = fetch_from_gnews()
     except Exception as e:
         logger.error(f"Error fetching from GNews API: {e}")
-
-    # Fetch full content if requested
-    if fetch_content and all_articles:
-        logger.info(f"Fetching full content for {len(all_articles)} articles...")
-        processed_articles = []
-
-        content_max_workers = min(10, len(all_articles))
-        logger.info(f"Using {content_max_workers} workers for content fetching")
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=content_max_workers) as executor:
-            future_to_article = {
-                executor.submit(fetch_article_content, article): article 
-                for article in all_articles
-            }
-            for future in concurrent.futures.as_completed(future_to_article):
-                original_article = future_to_article[future]
-                try:
-                    processed_article = future.result()
-                    processed_articles.append(processed_article)
-                except Exception as exc:
-                    logger.error(f"Content fetch failed for {original_article.get('url', 'unknown URL')}: {exc}")
-                    processed_articles.append(original_article)
-
-        all_articles = processed_articles
+        all_articles = []
 
     # Update metrics and return
     end_time = time.time()
@@ -293,42 +223,18 @@ def fetch_articles_from_all_feeds(fetch_content: bool = True, max_articles_per_s
         "processing_time": FETCH_METRICS.get("processing_time", 0),
     }
 
-    # Print details of a few articles
+    # Log sample articles for debugging
     for i, article in enumerate(all_articles[:3]):
         logger.info(f"\nArticle {i+1}:")
         logger.info(f"  Title: {article.get('title')}")
+        logger.info(f"  Description: {article.get('description')}")
         logger.info(f"  Link: {article.get('url', article.get('link'))}")
         logger.info(f"  Source: {article.get('source', {}).get('name', 'Unknown Source')}")
         logger.info(f"  Published: {article.get('published_at')}")
-        logger.info(f"  Age Category: {article.get('age_category')}")
-        logger.info(f"  Fetch Method: {article.get('fetch_method')}")
-        content_preview = (article.get('content') or "")[:100].replace('\n', ' ') + "..." if article.get('content') else "No Content"
-        logger.info(f"  Content Preview: {content_preview}")
+        logger.info(f"  Category: {article.get('category', 'Uncategorized')}")
+        logger.info(f"  Age Category: {article.get('age_category', 'Unknown')}")
 
     return all_articles, fetch_stats
-
-def categorize_article_age(published_date):
-    """Categorizes article age relative to now."""
-    if not published_date:
-        return 'Unknown'
-        
-    now = datetime.now(timezone.utc)
-    age = now - published_date
-    
-    if age < timedelta(hours=1):
-        return 'Breaking'
-    elif age < timedelta(hours=6):
-        return 'Very Recent'
-    elif age < timedelta(hours=12):
-        return 'Recent'
-    elif age < timedelta(days=1):
-        return 'Today'
-    elif age < timedelta(days=2):
-        return 'Yesterday'
-    elif age < timedelta(days=7):
-        return 'This Week'
-    else:
-        return 'Older'
 
 # --- Test Execution ---
 if __name__ == "__main__":
@@ -339,11 +245,10 @@ if __name__ == "__main__":
     logger.info("--- Starting Standalone Fetch Test ---")
 
     # Example: Fetch articles with content
-    fetched_articles, fetch_stats = fetch_articles_from_all_feeds(fetch_content=True, max_articles_per_source=2) # Limit articles per feed for test
+    fetched_articles, fetch_stats = fetch_articles_from_all_feeds(max_articles_per_source=2) # Limit articles per feed for test
 
     logger.info(f"--- Fetch Test Completed ---")
-    logger.info(f"Total articles fetched with content: {len([a for a in fetched_articles if a.get('content')])}")
-    logger.info(f"Total articles fetched (including without content): {len(fetched_articles)}")
+    logger.info(f"Total articles fetched: {len(fetched_articles)}")
 
     # Print details of a few articles
     for i, article in enumerate(fetched_articles[:3]):
@@ -353,6 +258,4 @@ if __name__ == "__main__":
         logger.info(f"  Source: {article.get('source', {}).get('name', 'Unknown Source')}")
         logger.info(f"  Published: {article.get('published_at')}")
         logger.info(f"  Age Category: {article.get('age_category')}")
-        logger.info(f"  Fetch Method: {article.get('fetch_method')}")
-        content_preview = (article.get('content') or "")[:100].replace('\n', ' ') + "..." if article.get('content') else "No Content"
-        logger.info(f"  Content Preview: {content_preview}")
+        logger.info(f"  Category: {article.get('category')}")
