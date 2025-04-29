@@ -12,8 +12,8 @@ logger = setup_logger()
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = OpenAI()
+# Initialize OpenAI client with API key
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 def summarize_articles(articles: List[Dict], max_summary_length=150, min_summary_length=50) -> List[Dict]:
     """
