@@ -169,7 +169,7 @@ def format_date(date_str: str) -> str:
         logger.warning(f"Date parsing error: {e}")
         return date_str
 
-def format_article(article: Dict[str, Any]) -> str:
+def format_article(article: Dict[str, Any], html: bool = False) -> str:
     """Format a single article for the email newsletter."""
     title = article.get('title', 'No Title')
     source = article.get('source', {}).get('name', 'Unknown Source')
@@ -177,17 +177,28 @@ def format_article(article: Dict[str, Any]) -> str:
     description = article.get('description', 'No description available')
     url = article.get('url', '#')
     
+    # Handle HTML formatting
+    if html:
+        return f"""
+        <div class="article">
+            <h2><a href="{url}">{title}</a></h2>
+            <p class="meta">
+                <span class="source">{source}</span> | 
+                <span class="date">{date}</span>
+            </p>
+            <p class="description">{description}</p>
+            <hr>
+        </div>
+        """
+    
+    # Plain text formatting
     return f"""
-    <div class="article">
-        <h2><a href="{url}">{title}</a></h2>
-        <p class="meta">
-            <span class="source">{source}</span> | 
-            <span class="date">{date}</span>
-        </p>
-        <p class="description">{description}</p>
-        <hr>
-    </div>
-    """
+{title}
+Source: {source}
+Date: {date}
+{description}
+Link: {url}
+"""
 
 def generate_newsletter_html(articles: List[Dict[str, Any]]) -> str:
     """Generate HTML content for the newsletter."""
