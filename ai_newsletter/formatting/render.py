@@ -46,9 +46,6 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
         # Add tags with emojis
         tags = get_personalization_tags_html(article)
         
-        # Get full summary block
-        summary_block = format_summary_block(article)
-        
         # Generate article HTML with inline styles for better email client compatibility
         return f"""
         <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
@@ -61,7 +58,6 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
                 <h4 style="margin: 0 0 10px 0; color: #2c3e50;">Key Takeaways</h4>
                 {bullets_html}
             </div>
-            {summary_block}
         </div>
         """
     
