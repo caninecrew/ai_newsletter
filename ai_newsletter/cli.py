@@ -14,6 +14,7 @@ from ai_newsletter.llm import summarize_article
 from ai_newsletter.feeds.filters import filter_articles_by_date
 from ai_newsletter.formatting import build_newsletter
 from ai_newsletter.email.sender import send_email
+from ai_newsletter.deploy.url_builder import build_newsletter_url
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import EMAIL_SETTINGS
 
@@ -32,10 +33,28 @@ failed_articles_global = []  # To store failed articles for summary
 
 def parse_feed_args():
     """Parse command line arguments for feed configuration"""
-    parser = argparse.ArgumentParser(description="Generate and send AI Newsletter.")
-    parser.add_argument("--start_date", help="Start date for filtering articles (YYYY-MM-DD)")
-    parser.add_argument("--end_date", help="End date for filtering articles (YYYY-MM-DD)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--start-date', help='Start date for article filtering (YYYY-MM-DD)')
+    parser.add_argument('--end-date', help='End date for article filtering (YYYY-MM-DD)')
     return parser.parse_args()
+
+def ensure_output_dir():
+    """Create output directory if it doesn't exist."""
+    os.makedirs('output', exist_ok=True)
+
+def save_newsletter_html(content: str, filename: str = 'newsletter.html'):
+    """Save newsletter HTML to output directory.
+    
+    Args:
+        content: HTML content to save
+        filename: Name of the output file
+    """
+    ensure_output_dir()
+    output_path = os.path.join('output', filename)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    logger.info(f"Newsletter HTML saved to {output_path}")
+    return output_path
 
 def run_newsletter(args=None):
     """Run the newsletter generation process"""
@@ -95,15 +114,21 @@ def generate_newsletter(start_date=None, end_date=None):
         logger.info("Formatting newsletter...")
         newsletter_content = build_newsletter(articles)
 
-        # 5. Send newsletter
+        # 5. Save HTML output
         if newsletter_content:
+            output_path = save_newsletter_html(newsletter_content)
+            logger.info(f"Newsletter HTML saved to {output_path}")
+
+            # 6. Send newsletter
             logger.info("Sending newsletter...")
             # Use timezone-aware dates for subject
             now = datetime.now(CENTRAL)
             yesterday = now - timedelta(days=1)
+            date_str = now.strftime("%Y-%m-%d")
             subject = f"AI Newsletter: {yesterday.strftime('%B %d')} - {now.strftime('%B %d, %Y')}"
+            hosted_url = build_newsletter_url(now)
 
-            send_email(subject=subject, body=newsletter_content)
+            send_email(subject=subject, body=newsletter_content, hosted_url=hosted_url)
             logger.info("Newsletter sent successfully")
         else:
             logger.warning("No content generated after formatting. Newsletter not sent.")
