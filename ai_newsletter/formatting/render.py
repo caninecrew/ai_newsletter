@@ -22,22 +22,44 @@ from ai_newsletter.logging_cfg.logger import setup_logger
 logger = setup_logger()
 
 def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) -> str:
-    """Format a single article with a clean, minimal layout."""
+    """Format a single article with enhanced metadata display."""
     title = article.get('title', 'No Title')
-    source = article.get('source', {}).get('name', 'Unknown Source')
-    date = format_date(article.get('published_at', ''))
     url = article.get('url', '#')
     summary = article.get('summary', '')
+    
+    # Get source information
+    source_data = article.get('source', {})
+    source_name = source_data.get('name', 'Unknown Source')
+    source_category = source_data.get('category', '')
+    source_reliability = source_data.get('reliability_score', None)
+    
+    # Get metadata and format date
+    metadata = article.get('metadata', {})
+    date_confidence = metadata.get('date_confidence', 0.0)
+    date_extracted = metadata.get('date_extracted', False)
+    formatted_date = article.get('published_at', 'Unknown Date')
+    
+    # Date confidence indicator
+    date_indicator = ""
+    if not date_extracted:
+        date_indicator = ' <span class="date-status low">(Estimated)</span>'
+    elif date_confidence < 0.7:
+        date_indicator = f' <span class="date-status medium">(~{date_confidence:.0%} confident)</span>'
+    
+    # Source reliability indicator
+    source_indicator = ""
+    if source_reliability is not None:
+        reliability_class = 'high' if source_reliability >= 0.7 else 'medium' if source_reliability >= 0.4 else 'low'
+        source_indicator = f' <span class="reliability {reliability_class}">({source_reliability:.0%} reliable)</span>'
     
     # Extract bullet points from summary
     bullet_points = []
     if summary:
         sentences = [s.strip() for s in summary.split('.') if len(s.strip()) > 0]
-        # Take 1 bullet if first sentence is long, otherwise take up to max_takeaways
         bullet_points = sentences[:1] if len(sentences[0]) > 100 else sentences[:max_takeaways]
     
     if html:
-        # Format bullet points if any
+        # Format bullet points
         bullets_html = ""
         if bullet_points:
             bullets = "\n".join([f"<li>{point.strip()}.</li>" for point in bullet_points])
@@ -46,12 +68,21 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
         # Add tags with emojis
         tags = get_personalization_tags_html(article)
         
-        # Generate article HTML with inline styles for better email client compatibility
+        # Build source info with confidence indicators
+        source_html = f'{source_name}{source_indicator}'
+        if source_category:
+            source_html += f' <span class="source-category">({source_category})</span>'
+        
         return f"""
         <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
-            <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">{title}</h3>
+            <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+                {title}
+            </h3>
             <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
-                {source} • {date} • <a href="{url}" class="read-more" style="color: #3b82f6; text-decoration: none; font-weight: 500;">🔗 Read Full Article</a>
+                {source_html} • {formatted_date}{date_indicator} • 
+                <a href="{url}" class="read-more" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+                    🔗 Read Full Article
+                </a>
             </div>
             <div class="tags" style="margin: 10px 0;">{tags}</div>
             <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
@@ -60,12 +91,18 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
             </div>
         </div>
         """
-    
-    # Plain text format with structured layout
-    text_bullets = "\n".join([f"* {point.strip()}." for point in bullet_points])
-    return f"""
+    else:
+        # Plain text format
+        text_bullets = "\n".join([f"* {point.strip()}." for point in bullet_points])
+        source_text = f"{source_name}"
+        if source_category:
+            source_text += f" ({source_category})"
+        if source_reliability is not None:
+            source_text += f" ({source_reliability:.0%} reliable)"
+        
+        return f"""
 {title}
-Source: {source} | {date}
+Source: {source_text} | {formatted_date}{' (Estimated)' if not date_extracted else ''}
 Link: {url}
 
 Key Takeaways:
