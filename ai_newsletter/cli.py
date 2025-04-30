@@ -12,11 +12,11 @@ from dateutil import tz
 from ai_newsletter.feeds import safe_fetch_news_articles
 from ai_newsletter.llm import summarize_article
 from ai_newsletter.feeds.filters import filter_articles_by_date
-from ai_newsletter.formatting import build_newsletter
 from ai_newsletter.email.sender import send_email
 from ai_newsletter.deploy.url_builder import build_newsletter_url
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import EMAIL_SETTINGS
+from ai_newsletter.formatting.template_renderer import render_newsletter
 
 # Load environment variables
 load_dotenv()
@@ -110,24 +110,31 @@ def generate_newsletter(start_date=None, end_date=None):
                 article['summary'] = article.get('description', '')
                 article['summary_method'] = 'description_fallback'
 
-        # 4. Format newsletter
+        # 4. Format newsletter using Jinja2 template
         logger.info("Formatting newsletter...")
-        newsletter_content = build_newsletter(articles)
+        # Use timezone-aware dates
+        now = datetime.now(CENTRAL)
+        yesterday = now - timedelta(days=1)
+        date_str = now.strftime("%Y-%m-%d")
+        display_date = f"{yesterday.strftime('%B %d')} - {now.strftime('%B %d, %Y')}"
+        subject = f"AI Newsletter: {display_date}"
+        hosted_url = build_newsletter_url(now)
+
+        # Render newsletter HTML
+        newsletter_content = render_newsletter(
+            articles=articles,
+            date=display_date,
+            max_articles=EMAIL_SETTINGS.get("max_articles_total", 10),
+            hosted_url=hosted_url
+        )
 
         # 5. Save HTML output
         if newsletter_content:
             output_path = save_newsletter_html(newsletter_content)
             logger.info(f"Newsletter HTML saved to {output_path}")
 
-            # 6. Send newsletter
+            # 6. Send newsletter using saved HTML
             logger.info("Sending newsletter...")
-            # Use timezone-aware dates for subject
-            now = datetime.now(CENTRAL)
-            yesterday = now - timedelta(days=1)
-            date_str = now.strftime("%Y-%m-%d")
-            subject = f"AI Newsletter: {yesterday.strftime('%B %d')} - {now.strftime('%B %d, %Y')}"
-            hosted_url = build_newsletter_url(now)
-
             send_email(subject=subject, body=newsletter_content, hosted_url=hosted_url)
             logger.info("Newsletter sent successfully")
         else:
