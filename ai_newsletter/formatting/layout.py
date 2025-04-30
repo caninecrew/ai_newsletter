@@ -36,6 +36,7 @@ def wrap_with_css(content: str) -> str:
                 margin: 0;
                 color: #1a202c;
                 font-size: 24px;
+                font-weight: 600;
             }}
             
             .date {{
@@ -57,13 +58,17 @@ def wrap_with_css(content: str) -> str:
                 margin-bottom: 16px;
                 font-size: 20px;
                 color: #1a202c;
-                display: flex;
-                align-items: center;
-                gap: 8px;
+                font-weight: 600;
             }}
 
             .trending {{
                 border-left: 4px solid #3b82f6;
+            }}
+            
+            .section-intro {{
+                font-size: 14px;
+                color: #64748b;
+                margin-bottom: 16px;
             }}
             
             .highlights {{
@@ -73,12 +78,18 @@ def wrap_with_css(content: str) -> str:
             }}
             
             .highlights li {{
-                padding: 8px 0;
+                padding: 12px 0;
                 border-bottom: 1px solid #e2e8f0;
             }}
             
             .highlights li:last-child {{
                 border-bottom: none;
+            }}
+            
+            .source-mini {{
+                color: #64748b;
+                font-size: 13px;
+                font-weight: normal;
             }}
             
             .article {{
@@ -107,6 +118,7 @@ def wrap_with_css(content: str) -> str:
             .read-more {{
                 color: #3b82f6;
                 text-decoration: none;
+                font-weight: 500;
             }}
             
             .read-more:hover {{
@@ -124,8 +136,8 @@ def wrap_with_css(content: str) -> str:
             }}
             
             .takeaway-bullets {{
-                margin: 12px 0;
-                padding-left: 24px;
+                margin: 12px 0 0 0;
+                padding-left: 20px;
                 color: #475569;
                 font-size: 14px;
             }}
@@ -141,15 +153,18 @@ def wrap_with_css(content: str) -> str:
             .more-stories {{
                 text-align: center;
                 padding: 16px;
-                background: white;
-                border-radius: 8px;
-                margin-top: 24px;
                 color: #64748b;
+                font-size: 14px;
             }}
             
             .more-stories a {{
                 color: #3b82f6;
                 text-decoration: none;
+                font-weight: 500;
+            }}
+            
+            .more-stories a:hover {{
+                text-decoration: underline;
             }}
             
             .footer {{
@@ -159,6 +174,33 @@ def wrap_with_css(content: str) -> str:
                 border-top: 1px solid #e2e8f0;
                 color: #64748b;
                 font-size: 14px;
+            }}
+            
+            .footer a {{
+                color: #3b82f6;
+                text-decoration: none;
+            }}
+            
+            .footer a:hover {{
+                text-decoration: underline;
+            }}
+            
+            @media (max-width: 600px) {{
+                body {{
+                    padding: 16px;
+                }}
+                
+                .section {{
+                    padding: 16px;
+                }}
+                
+                .article-title {{
+                    font-size: 15px;
+                }}
+                
+                .takeaway-bullets {{
+                    font-size: 13px;
+                }}
             }}
         </style>
     </head>
