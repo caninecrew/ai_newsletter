@@ -15,7 +15,12 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pytz>=2024.1",
     "requests>=2.31.0",
-    "country-list>=1.1.0"
+    "country-list>=1.1.0",
+    # Future web integration dependencies
+    "ftputil>=5.0.4",  # For FTP deployment
+    "jinja2>=3.1.2",   # For archive index templates
+    "whoosh>=2.7.4",   # For archive search functionality
+    "sitemap-generator>=0.9.0"  # For SEO sitemap generation
 ]
 
 [build-system]
@@ -28,4 +33,11 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
     "pytest-timeout>=2.1.0"  # Added for handling test timeouts
+]
+
+web = [
+    "ftputil>=5.0.4",
+    "jinja2>=3.1.2",
+    "whoosh>=2.7.4",
+    "sitemap-generator>=0.9.0"
 ]
