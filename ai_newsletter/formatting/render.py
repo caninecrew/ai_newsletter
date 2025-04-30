@@ -2,6 +2,7 @@
 from typing import List, Dict, DefaultDict
 from datetime import datetime
 from collections import defaultdict
+from bs4 import BeautifulSoup
 from ai_newsletter.core.types import Article
 from ai_newsletter.config.settings import EMAIL_SETTINGS
 from ai_newsletter.formatting.components import format_summary_block
@@ -45,19 +46,42 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
         # Add tags with emojis
         tags = get_personalization_tags_html(article)
         
+        # Get full summary block
+        summary_block = format_summary_block(article)
+        
+        # Generate article HTML with inline styles for better email client compatibility
         return f"""
-        <div class="article">
-            <h3 class="article-title">{title}</h3>
-            <div class="article-meta">
-                {source} • {date} • <a href="{url}" class="read-more">🔗 Read Full Article</a>
+        <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+            <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">{title}</h3>
+            <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+                {source} • {date} • <a href="{url}" class="read-more" style="color: #3b82f6; text-decoration: none; font-weight: 500;">🔗 Read Full Article</a>
             </div>
-            {tags}
-            {bullets_html}
+            <div class="tags" style="margin: 10px 0;">{tags}</div>
+            <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #2c3e50;">Key Takeaways</h4>
+                {bullets_html}
+            </div>
+            {summary_block}
         </div>
         """
     
-    # Plain text format
-    return f"{title}\nSource: {source} | {date}\nLink: {url}"
+    # Plain text format with structured layout
+    text_bullets = "\n".join([f"* {point.strip()}." for point in bullet_points])
+    return f"""
+{title}
+Source: {source} | {date}
+Link: {url}
+
+Key Takeaways:
+{text_bullets}
+
+{summary}
+"""
+
+def prettify_html(html: str) -> str:
+    """Clean up and prettify HTML code."""
+    soup = BeautifulSoup(html, 'html.parser')
+    return soup.prettify()
 
 def build_newsletter(articles: List[Article]) -> str:
     """Build a complete newsletter with clean formatting and no category sections."""
@@ -79,15 +103,15 @@ def build_newsletter(articles: List[Article]) -> str:
     more_link = ""
     if total_articles > max_total:
         more_link = f"""
-        <div class="more-stories">
-            <p>...and {total_articles - max_total} more stories. <a href="#">View full digest →</a></p>
+        <div class="more-stories" style="text-align: center; padding: 16px; margin-top: 24px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px;">
+            <p>...and {total_articles - max_total} more stories. <a href="#" style="color: #3b82f6; text-decoration: none; font-weight: 500;">View full digest →</a></p>
         </div>
         """
 
-    # Assemble digest content
+    # Assemble digest content with inline styles
     digest_html = f"""
-    <div class="digest">
-        <h2>Today's Key Stories</h2>
+    <div class="digest" style="background-color: #ffffff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+        <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 600; color: #1a202c; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0;">Today's Key Stories</h2>
         {articles_html}
         {more_link}
     </div>
@@ -100,4 +124,17 @@ def build_newsletter(articles: List[Article]) -> str:
         {build_footer()}
     """
 
-    return wrap_with_css(content)
+    # Wrap with CSS and clean up the HTML
+    newsletter_html = wrap_with_css(content)
+    return prettify_html(newsletter_html)
+
+def save_newsletter_html(newsletter_content: str, output_path: str) -> None:
+    """Save the rendered newsletter HTML to a file.
+    
+    Args:
+        newsletter_content: The fully rendered HTML content
+        output_path: Path where to save the HTML file
+    """
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(newsletter_content)
+    logger.info(f"Newsletter HTML saved to {output_path}")
