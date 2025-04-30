@@ -31,205 +31,148 @@ CENTRAL = dateutil_tz.gettz("America/Chicago")
 
 def setup_email_settings():
     """Initialize email settings from environment variables"""
-    # Get recipient emails from environment
-    recipient_str = os.getenv("RECIPIENT_EMAIL", "")
-    recipients = [email.strip() for email in recipient_str.split(',') if email.strip()]
-    EMAIL_SETTINGS['recipients'] = recipients
-
-    # Set up SMTP settings
-    EMAIL_SETTINGS['smtp'].update({
-        'host': os.getenv("SMTP_SERVER", ""),
-        'port': int(os.getenv("SMTP_PORT", "587")),
-        'username': os.getenv("SMTP_EMAIL", ""),
-        'password': os.getenv("SMTP_PASS", ""),
-        'sender': os.getenv("SMTP_EMAIL", "")
-    })
-
-    return bool(recipients and EMAIL_SETTINGS['smtp']['host'] and EMAIL_SETTINGS['smtp']['username'])
+    return {
+        'smtp_server': os.getenv('SMTP_SERVER'),
+        'smtp_port': int(os.getenv('SMTP_PORT', '587')),
+        'smtp_user': os.getenv('SMTP_EMAIL'),
+        'smtp_pass': os.getenv('SMTP_PASS'),
+        'from_email': os.getenv('SMTP_EMAIL'),
+        'to_email': os.getenv('RECIPIENT_EMAIL'),
+    }
 
 def create_secure_smtp_context():
     """Create a secure SSL context for SMTP"""
-    context = ssl.create_default_context(cafile=certifi.where())
+    context = ssl.create_default_context(
+        purpose=ssl.Purpose.SERVER_AUTH,
+        cafile=certifi.where()
+    )
     context.verify_mode = ssl.CERT_REQUIRED
-    context.check_hostname = True
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
 
 def create_smtp_connection(smtp_settings):
     """Create and configure SMTP connection with retry logic"""
-    logger.debug(f"Attempting SMTP connection to {smtp_settings['host']}:{smtp_settings['port']}")
-    
-    try:
-        context = create_secure_smtp_context()
-        
-        # Use SMTP_SSL for port 465
-        if smtp_settings['port'] == 465:
-            logger.debug("Using SMTP_SSL connection")
-            server = smtplib.SMTP_SSL(smtp_settings['host'], smtp_settings['port'], 
-                                    timeout=SMTP_TIMEOUT, context=context)
-        else:
-            # Use STARTTLS for other ports (587, 25)
-            logger.debug("Using SMTP with STARTTLS")
-            server = smtplib.SMTP(smtp_settings['host'], smtp_settings['port'], 
-                                timeout=SMTP_TIMEOUT)
+    retry_count = 0
+    while retry_count < MAX_RETRIES:
+        try:
+            context = create_secure_smtp_context()
+            server = smtplib.SMTP(
+                smtp_settings['smtp_server'],
+                smtp_settings['smtp_port'],
+                timeout=SMTP_TIMEOUT
+            )
             server.starttls(context=context)
-        
-        logger.debug(f"Authenticating with username: {smtp_settings['username']}")
-        server.login(smtp_settings['username'], smtp_settings['password'])
-        
-        # Test connection with NOOP
-        server.noop()
-        logger.debug("SMTP connection and authentication successful")
-        return server
-        
-    except smtplib.SMTPAuthenticationError as e:
-        logger.exception("SMTP authentication failed. Check credentials and ensure 'Less secure app access' or App Password is configured")
-        raise
-    except smtplib.SMTPConnectError as e:
-        logger.exception(f"Failed to connect to SMTP server: {smtp_settings['host']}:{smtp_settings['port']}")
-        raise
-    except Exception as e:
-        logger.exception("Unexpected error during SMTP connection setup")
-        raise
+            server.login(smtp_settings['smtp_user'], smtp_settings['smtp_pass'])
+            return server
+        except (socket_error, smtplib.SMTPException) as e:
+            retry_count += 1
+            if retry_count == MAX_RETRIES:
+                raise
+            logger.warning(f"SMTP connection attempt {retry_count} failed: {str(e)}")
+            time.sleep(RETRY_DELAY)
 
-def send_email(subject: str, body: str, recipients: list = None, smtp_settings: dict = None) -> bool:
-    """Send an email via SMTP with retry logic and secure connection.
+def add_hosted_link(html_content: str, hosted_url: str) -> str:
+    """Add a link to the hosted version at the top of the newsletter.
+    
+    Args:
+        html_content: Original HTML newsletter content
+        hosted_url: URL to the hosted version
+        
+    Returns:
+        str: HTML with hosted link added
+    """
+    hosted_link = f"""
+    <div style="text-align: center; padding: 10px; margin: 10px 0; background-color: #f8fafc; border-radius: 8px;">
+        <p style="margin: 0; color: #64748b;">
+            Having trouble viewing this email? 
+            <a href="{hosted_url}" style="color: #3b82f6; text-decoration: none;">View it in your browser →</a>
+        </p>
+    </div>
+    """
+    
+    # Insert after the header div
+    soup = BeautifulSoup(html_content, 'html.parser')
+    header = soup.find('div', class_='header')
+    if header:
+        header.insert_after(BeautifulSoup(hosted_link, 'html.parser'))
+        return str(soup)
+    return hosted_link + html_content
+
+def send_email(subject: str, body: str, hosted_url: str = None):
+    """Send the newsletter email.
     
     Args:
         subject: Email subject line
-        body: Email body content (HTML)
-        recipients: List of recipient email addresses. If not provided, uses settings
-        smtp_settings: SMTP settings dict. If not provided, uses settings
-        
-    Returns:
-        bool: True if email was sent successfully, False otherwise
+        body: HTML content of the email
+        hosted_url: Optional URL to hosted version of newsletter
     """
-    # Use settings from config if not provided
-    if recipients is None:
-        recipients = EMAIL_SETTINGS['recipients']
-    if smtp_settings is None:
-        smtp_settings = EMAIL_SETTINGS['smtp']
+    smtp_settings = setup_email_settings()
     
-    # Validate settings
-    if not recipients:
-        logger.error("No recipients specified")
-        return False
-        
-    required_settings = ['host', 'port', 'username', 'password', 'sender']
-    missing_settings = [s for s in required_settings if not smtp_settings.get(s)]
-    if missing_settings:
-        logger.error(f"Missing required SMTP settings: {', '.join(missing_settings)}")
-        return False
-
+    # Create message
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = formataddr(('AI Newsletter', smtp_settings['from_email']))
+    msg['To'] = smtp_settings['to_email']
+    msg['Date'] = formatdate(localtime=True)
+    
+    # Add hosted link if provided
+    if hosted_url:
+        body = add_hosted_link(body, hosted_url)
+    
+    # Attach HTML version
+    msg.attach(MIMEText(body, 'html'))
+    
+    # Create plain text version
+    plain_text = strip_html(body)
+    msg.attach(MIMEText(plain_text, 'plain'))
+    
+    # Send email with retry logic
+    server = None
     try:
-        # Prepare the email
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = formataddr(("AI Newsletter", smtp_settings['sender']))
-        msg['Date'] = formatdate(localtime=True)
-        msg['To'] = ', '.join(recipients)
+        server = create_smtp_connection(smtp_settings)
+        server.send_message(msg)
+        logger.info("Email sent successfully")
         
-        # Add body - both text and HTML versions
-        text_part = MIMEText(strip_html(body), 'plain', 'utf-8')
-        html_part = MIMEText(body, 'html', 'utf-8')
-        msg.attach(text_part)
-        msg.attach(html_part)
-
-        logger.debug(f"Prepared email message to {len(recipients)} recipients")
-        logger.debug(f"Email headers: Subject='{subject}', From='{smtp_settings['sender']}', To='{msg['To']}'")
-
-        # Try to send email with retries
-        for attempt in range(MAX_RETRIES):
-            try:
-                with create_smtp_connection(smtp_settings) as server:
-                    logger.debug("Attempting to send message...")
-                    response = server.send_message(msg)
-                    
-                    if response:
-                        # send_message returns a dict of failed recipients
-                        failed_recipients = list(response.keys())
-                        if failed_recipients:
-                            logger.error(f"Failed to deliver to some recipients: {failed_recipients}")
-                            return False
-                    
-                    logger.info(f"Email sent successfully to {len(recipients)} recipients")
-                    return True
-                    
-            except smtplib.SMTPRecipientsRefused as e:
-                logger.exception("All recipients were refused")
-                return False
-            except smtplib.SMTPResponseException as e:
-                logger.exception(f"SMTP error code {e.smtp_code}: {e.smtp_error}")
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
-                else:
-                    return False
-            except (smtplib.SMTPException, socket_error) as e:
-                logger.exception(f"SMTP error on attempt {attempt + 1}")
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
-                else:
-                    return False
-                    
     except Exception as e:
-        logger.exception("Unexpected error while preparing or sending email")
-        return False
+        logger.error(f"Failed to send email: {str(e)}")
+        raise
+        
+    finally:
+        if server:
+            server.quit()
 
 def strip_html(html_content):
-    """Convert HTML to plain text.
-    
-    Args:
-        html_content: HTML string to convert
-        
-    Returns:
-        str: Plain text version of the HTML content
-    """
+    """Convert HTML to plain text."""
     if not html_content:
         return ""
-        
-    # Parse HTML with BeautifulSoup
+    
     soup = BeautifulSoup(html_content, 'html.parser')
     
     # Remove script and style elements
     for script in soup(["script", "style"]):
         script.decompose()
-        
-    # Get text
+    
+    # Get text and clean up
     text = soup.get_text()
-    
-    # Break into lines and remove leading/trailing space
     lines = (line.strip() for line in text.splitlines())
-    
-    # Break multi-headlines into a line each
     chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
     
-    # Drop blank lines and join
     return '\n'.join(chunk for chunk in chunks if chunk)
 
 def test_send_email():
+    """Send a test email to verify configuration."""
+    subject = "📧 AI Newsletter - Test Email"
+    body = """
+    <h1>Test Email</h1>
+    <p>This is a test email to verify your newsletter configuration.</p>
+    <p>If you received this, your email settings are working correctly!</p>
     """
-    Sends a test email to verify the email sending functionality.
-    """
-    if not setup_email_settings():
-        logger.error("Email settings not properly configured")
-        return False
-
-    subject = "✅ Test Email"
-    body = f"This is a test email sent using the configured SMTP settings."
-
+    
     try:
-        logger.info("Sending test email to validate configuration")
-        success = send_email(
-            subject=subject,
-            body=body
-        )
-        if success:
-            logger.info("✅ Test email sent successfully.")
-        else:
-            logger.error("❌ Failed to send test email.")
-        return success
+        send_email(subject=subject, body=body)
+        logger.info("Test email sent successfully")
+        return True
     except Exception as e:
-        logger.error(f"❌ Failed to send test email: {e}", exc_info=True)
+        logger.error(f"Test email failed: {str(e)}")
         return False
 
 # Initialize email settings when module is imported
