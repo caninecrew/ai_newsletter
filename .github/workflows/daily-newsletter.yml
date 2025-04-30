@@ -31,15 +31,15 @@ jobs:
       
       - name: Generate newsletter
         env:
-          RECIPIENT_EMAIL: ${{ secrets.SMTP_TO }}
-          SMTP_SERVER: ${{ secrets.SMTP_HOST }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_EMAIL: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASS: ${{ secrets.SMTP_PASSWORD }}
-          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
-          NEWSLETTER_DOMAIN: "samuelrumbley.com"
+          NEWSLETTER_DOMAIN: ${{ secrets.NEWSLETTER_DOMAIN }}
+          NEWS_SOURCE: ${{ secrets.NEWS_SOURCE }}
         run: |
           echo "Starting newsletter script..."
           python main.py
