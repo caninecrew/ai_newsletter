@@ -1,17 +1,10 @@
 """Formatting package exports."""
-from ai_newsletter.formatting.components import (
-    format_summary_block, 
-    get_tags_html
-)
+from ai_newsletter.formatting.components import format_summary_block
 from ai_newsletter.formatting.layout import (
     wrap_with_css, 
     build_header, 
     build_footer, 
     build_empty_newsletter
-)
-from ai_newsletter.formatting.render import (
-    format_article, 
-    build_newsletter
 )
 from ai_newsletter.formatting.categorization import (
     categorize_article,
@@ -29,6 +22,7 @@ from ai_newsletter.formatting.deduplication import (
 )
 from ai_newsletter.formatting.tags import (
     identify_tags,
+    get_tag_html,
     get_personalization_tags_html
 )
 from ai_newsletter.formatting.text_utils import (
@@ -41,43 +35,33 @@ from ai_newsletter.formatting.formatter import (
 )
 
 __all__ = [
-    # Components
-    'format_summary_block',
-    'get_tags_html',
-    
-    # Layout
+    # Layout components
     'wrap_with_css',
     'build_header',
     'build_footer',
     'build_empty_newsletter',
+    'format_summary_block',
     
-    # Render
+    # Article processing
     'format_article',
-    'build_newsletter',
-    
-    # Categorization
+    'format_articles',
     'categorize_article',
     'get_section_description',
     'SECTION_CATEGORIES',
     
-    # Date utils
+    # Date handling
     'format_date',
     'filter_articles_by_date',
     
-    # Deduplication
+    # Content processing
     'deduplicate_articles',
     'limit_articles_by_source',
     'is_duplicate',
-    
-    # Tags
-    'identify_tags',
-    'get_personalization_tags_html',
-    
-    # Text utils
     'strip_html',
     'get_key_takeaways',
     
-    # High-level formatting
-    'format_article',
-    'format_articles'
+    # Tag management
+    'identify_tags',
+    'get_tag_html',
+    'get_personalization_tags_html'
 ]
