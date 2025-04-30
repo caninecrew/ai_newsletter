@@ -1,9 +1,10 @@
 """High-level formatting coordination."""
-from typing import List, Dict
+from typing import List, Dict, DefaultDict
+from collections import defaultdict
 from ai_newsletter.logging_cfg.logger import setup_logger
 from ai_newsletter.config.settings import EMAIL_SETTINGS
 from ai_newsletter.formatting.categorization import categorize_article
-from ai_newsletter.formatting.date_utils import format_date, filter_articles_by_date
+from ai_newsletter.formatting.date_utils import format_date
 from ai_newsletter.formatting.deduplication import deduplicate_articles, limit_articles_by_source
 from ai_newsletter.formatting.tags import get_personalization_tags_html, identify_tags
 from ai_newsletter.formatting.text_utils import strip_html, get_key_takeaways
@@ -15,59 +16,106 @@ def format_article(article: Dict, html: bool = False) -> str:
     title = article.get('title', 'No Title')
     source = article.get('source', {}).get('name', 'Unknown Source')
     date = format_date(article.get('published_at', ''))
-    description = article.get('description', 'No description available')
     url = article.get('url', '#')
     summary = article.get('summary', '')
-    tags = get_personalization_tags_html(article)
     
-    # Handle HTML formatting
+    # Extract 1-2 key takeaways from the summary
+    takeaways = []
+    if summary:
+        sentences = summary.split('. ')
+        takeaways = sentences[:2] if len(sentences[0]) < 100 else sentences[:1]
+    
     if html:
-        summary_html = f'<p class="article-summary">{summary}</p>' if summary else ''
-        takeaways = get_key_takeaways(summary or description)
+        # Format tags with emojis
+        tags = get_personalization_tags_html(article)
+        
+        # Create bullet points for takeaways
+        takeaways_html = ""
+        if takeaways:
+            bullet_points = "".join([f"<li>{point.strip()}.</li>" for point in takeaways])
+            takeaways_html = f"""
+            <ul class="takeaway-bullets">
+                {bullet_points}
+            </ul>
+            """
+        
         return f"""
         <div class="article">
-            <h2><a href="{url}">{title}</a></h2>
-            <p class="meta">
-                <span class="source">{source}</span> | 
-                <span class="date">{date}</span>
-            </p>
+            <h3 class="article-title">
+                {title}
+            </h3>
+            <div class="article-meta">
+                {source} • {date} • <a href="{url}" class="read-more">🔗 Read More</a>
+            </div>
             {tags}
-            <p class="description">{description}</p>
-            {summary_html}
-            {takeaways}
-            <hr>
+            {takeaways_html}
         </div>
         """
     
     # Plain text formatting
-    text_output = f"""
-{title}
-Source: {source}
-Date: {date}
-{description}"""
-
-    if summary:
-        text_output += f"\nSummary: {summary}"
-        
-    text_output += f"\nLink: {url}"
-    return text_output
+    return f"{title}\nSource: {source} | {date}\n{summary}\nLink: {url}"
 
 def format_articles(articles: List[Dict], html: bool = False) -> str:
-    """Format a list of articles into a single string."""
+    """Format articles into sections with topic grouping."""
     if not articles:
         return "No articles to display." if not html else "<p>No articles to display.</p>"
     
-    # Limit articles per source to maintain balance
-    max_articles_per_source = EMAIL_SETTINGS.get("max_articles_per_source", 3)
-    articles = limit_articles_by_source(articles, max_per_source=max_articles_per_source)
-    articles = deduplicate_articles(articles)
+    # Apply article limits and deduplication
+    max_total = EMAIL_SETTINGS.get("max_articles_total", 10)
+    articles = deduplicate_articles(articles)[:max_total]
     
-    # Format all articles
-    formatted_articles = []
+    # Group articles by category
+    categories: DefaultDict[str, list] = defaultdict(list)
     for article in articles:
-        formatted_articles.append(format_article(article, html=html))
+        category = categorize_article(article)
+        categories[category].append(article)
     
+    # Format articles by category
     if html:
-        return "\n".join(formatted_articles)
-    else:
-        return "\n---\n".join(formatted_articles)
+        sections = []
+        # Add trending/highlighted section first if we have enough articles
+        if len(articles) > 3:
+            sections.append("""
+            <div class="section trending">
+                <h2>📊 Top Stories</h2>
+                <p class="section-intro">Key developments you should know about:</p>
+                <ul class="highlights">
+                    {}
+                </ul>
+            </div>
+            """.format("".join([f"<li>{art['title']}</li>" for art in articles[:3]])))
+        
+        # Format each category section
+        category_emojis = {
+            'WORLD_NEWS': '🌍',
+            'US_NEWS': '🗽',
+            'POLITICS': '🏛️',
+            'TECHNOLOGY': '⚡',
+            'BUSINESS': '💼',
+            'PERSONALIZED': '📌'
+        }
+        
+        for category, category_articles in categories.items():
+            if category_articles:
+                emoji = category_emojis.get(category, '📰')
+                section_title = f"{emoji} {category.replace('_', ' ').title()}"
+                articles_html = "\n".join([format_article(a, html=True) for a in category_articles])
+                sections.append(f"""
+                <div class="section">
+                    <h2>{section_title}</h2>
+                    {articles_html}
+                </div>
+                """)
+        
+        # Add "more stories" section if we had to cut articles
+        if len(articles) > max_total:
+            remaining = len(articles) - max_total
+            sections.append(f"""
+            <div class="more-stories">
+                <p>...and {remaining} more stories. <a href="#">View full digest →</a></p>
+            </div>
+            """)
+        
+        return "\n".join(sections)
+    
+    return "\n---\n".join([format_article(a, html=False) for a in articles])
