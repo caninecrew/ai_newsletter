@@ -171,6 +171,56 @@ def wrap_with_css(content: str) -> str:
                 text-decoration: none;
             }}
 
+            /* Metadata confidence indicators */
+            .date-status {{
+                display: inline-block;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 12px;
+            }}
+            
+            .date-status.low {{
+                background-color: #fee2e2;
+                color: #991b1b;
+            }}
+            
+            .date-status.medium {{
+                background-color: #fef3c7;
+                color: #92400e;
+            }}
+            
+            .date-status.high {{
+                background-color: #dcfce7;
+                color: #166534;
+            }}
+            
+            .reliability {{
+                display: inline-block;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 12px;
+            }}
+            
+            .reliability.low {{
+                background-color: #fee2e2;
+                color: #991b1b;
+            }}
+            
+            .reliability.medium {{
+                background-color: #fef3c7;
+                color: #92400e;
+            }}
+            
+            .reliability.high {{
+                background-color: #dcfce7;
+                color: #166534;
+            }}
+            
+            .source-category {{
+                color: #64748b;
+                font-style: italic;
+            }}
+            
             /* Mobile optimizations */
             @media screen and (max-width: 600px) {{
                 .email-wrapper {{
@@ -192,6 +242,12 @@ def wrap_with_css(content: str) -> str:
 
                 .article-meta, .takeaway-bullets li {{
                     font-size: 13px;
+                }}
+                
+                .date-status, .reliability {{
+                    display: inline;
+                    padding: 1px 4px;
+                    font-size: 11px;
                 }}
             }}
         </style>
