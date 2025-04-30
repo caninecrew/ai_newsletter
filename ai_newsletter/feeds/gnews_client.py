@@ -167,14 +167,20 @@ class GNewsAPI:
             'global impact'
         ]
         
+        # Common country names to check for international context
+        countries = {
+            'united states', 'china', 'russia', 'india', 'japan', 'germany', 
+            'united kingdom', 'france', 'italy', 'canada', 'brazil', 'australia', 
+            'south korea', 'spain', 'mexico', 'indonesia', 'netherlands', 
+            'saudi arabia', 'turkey', 'switzerland'
+        }
+        
         # Check for major keywords
         if any(keyword.lower() in content for keyword in major_keywords):
             return True
             
         # Check for multiple country mentions
-        from country_list import countries_for_language
-        countries = dict(countries_for_language('en')).values()
-        country_mentions = sum(1 for country in countries if country.lower() in content)
+        country_mentions = sum(1 for country in countries if country in content)
         if country_mentions >= 2:
             return True
             
