@@ -27,7 +27,6 @@ jobs:
       - name: Set DATE env var
         run: |
           echo "DATE=$(date +%F)" >> $GITHUB_ENV
-          echo "NEWSLETTER_URL=https://samuelrumbley.com/newsletters/${{ env.DATE }}.html" >> $GITHUB_ENV
       
       - name: Generate newsletter
         env:
@@ -38,6 +37,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
+          NEWSLETTER_DOMAIN: ${{ secrets.NEWSLETTER_DOMAIN }}
         run: |
           echo "Starting newsletter script..."
           python main.py
@@ -47,14 +47,16 @@ jobs:
           mkdir -p output
           cp email.html output/newsletter.html
       
-      - name: Checkout GitHub Pages repo
+      - name: Checkout Pages repo
         uses: actions/checkout@v3
         with:
-          repository: caninecrew/caninecrew.github.io
+          repository: ${{ secrets.PAGES_REPO }}
           token: ${{ secrets.GH_PAT }}
           path: pages-repo
 
       - name: Deploy newsletter HTML
+        env:
+          NEWSLETTER_DOMAIN: ${{ secrets.NEWSLETTER_DOMAIN }}
         run: |
           mkdir -p pages-repo/newsletters
           cp output/newsletter.html "pages-repo/newsletters/${{ env.DATE }}.html"
@@ -64,20 +66,6 @@ jobs:
           git add newsletters/
           git commit -m "Deploy newsletter for ${{ env.DATE }}" || echo "No changes"
           git push
-
-      - name: Send email with hosted URL
-        env:
-          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-        run: |
-          python -c "from ai_newsletter import send_email; send_email(
-            subject=f'AI Newsletter: {env.DATE}', 
-            body=open('output/newsletter.html').read(),
-            hosted_url='${{ env.NEWSLETTER_URL }}'
-          )"
 
       - name: Archive logs
         if: always()
@@ -93,4 +81,4 @@ jobs:
         if: success()
         run: |
           echo "Newsletter generated and deployed successfully at $(date)"
-          echo "Available at ${{ env.NEWSLETTER_URL }}"
+          echo "Available at https://${{ secrets.NEWSLETTER_DOMAIN }}/newsletters/${{ env.DATE }}.html"
