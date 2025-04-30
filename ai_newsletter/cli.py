@@ -56,6 +56,33 @@ def save_newsletter_html(content: str, filename: str = 'newsletter.html'):
     logger.info(f"Newsletter HTML saved to {output_path}")
     return output_path
 
+def sanitize_article(article: dict) -> dict:
+    """Ensure article has all required fields with proper structure.
+    
+    Args:
+        article: Raw article dictionary
+        
+    Returns:
+        Dict with sanitized fields
+    """
+    # Ensure source is a dict with a name field
+    if not isinstance(article.get('source'), dict):
+        article['source'] = {'name': str(article.get('source', 'Unknown Source'))}
+    elif not article['source'].get('name'):
+        article['source']['name'] = 'Unknown Source'
+    
+    # Ensure other required fields
+    if not article.get('title'):
+        article['title'] = 'Untitled Article'
+    if not article.get('url'):
+        article['url'] = '#'
+    if not article.get('published_at'):
+        article['published_at'] = datetime.now(CENTRAL).isoformat()
+    if not article.get('summary'):
+        article['summary'] = article.get('description', '')
+        
+    return article
+
 def run_newsletter(args=None):
     """Run the newsletter generation process"""
     try:
@@ -109,6 +136,9 @@ def generate_newsletter(start_date=None, end_date=None):
             else:
                 article['summary'] = article.get('description', '')
                 article['summary_method'] = 'description_fallback'
+                
+            # Sanitize article data
+            article = sanitize_article(article)
 
         # 4. Format newsletter using Jinja2 template
         logger.info("Formatting newsletter...")
