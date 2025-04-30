@@ -14,8 +14,7 @@ dependencies = [
     "python-dateutil>=2.8.2",
     "python-dotenv>=1.0.0",
     "pytz>=2024.1",
-    "requests>=2.31.0",
-    "country-list>=1.1.0"
+    "requests>=2.31.0"
 ]
 
 [build-system]
