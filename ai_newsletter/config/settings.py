@@ -186,10 +186,31 @@ SYSTEM_SETTINGS = {
     "default_timezone": "America/Chicago", # Default timezone for date standardization
 }
 
+# --- Web Archive Settings ---
+WEB_ARCHIVE_SETTINGS = {
+    "enabled": False,  # Set to True when web integration is implemented
+    "base_url": "https://samuelrumbley.com",
+    "archive_path": "/newsletters",
+    "days_to_keep": 365,  # Keep one year of archives
+    "max_archives_listed": 30,  # Number of archives to show in index
+    "archive_features": {
+        "search_enabled": False,  # Future feature
+        "topic_index_enabled": False,  # Future feature
+        "rss_feed_enabled": False,  # Future feature
+        "api_access_enabled": False  # Future feature
+    },
+    "seo": {
+        "generate_sitemap": False,  # Future feature
+        "meta_description": "AI Newsletter Archives - Daily technology and AI news summaries",
+        "meta_keywords": "AI, technology, news, newsletter, artificial intelligence"
+    }
+}
+
 def get_settings() -> Dict[str, Any]:
     """Returns all settings as a dictionary."""
     return {
         'system': SYSTEM_SETTINGS,
         'gnews': GNEWS_CONFIG,
-        'email': EMAIL_SETTINGS
+        'email': EMAIL_SETTINGS,
+        'web': WEB_ARCHIVE_SETTINGS
     }
