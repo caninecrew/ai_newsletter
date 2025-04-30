@@ -12,193 +12,10 @@ def wrap_with_css(content: str) -> str:
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Your Daily News Summary</title>
-        <style type="text/css">
-            /* Base styles */
-            body {{
-                margin: 0;
-                padding: 0;
-                min-width: 100%;
-                font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-                line-height: 1.5;
-                color: #1a202c;
-                background-color: #f8fafc;
-                -webkit-font-smoothing: antialiased;
-            }}
-
-            /* Email container */
-            .email-wrapper {{
-                width: 100%;
-                margin: 0;
-                padding: 20px;
-                background-color: #f8fafc;
-            }}
-            
-            .email-content {{
-                max-width: 600px;
-                margin: 0 auto;
-            }}
-
-            /* Header styles */
-            .header {{
-                text-align: center;
-                padding: 24px;
-                background-color: #ffffff;
-                border-radius: 8px;
-                margin-bottom: 24px;
-                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-            }}
-
-            .header h1 {{
-                margin: 0;
-                font-size: 24px;
-                font-weight: 600;
-                color: #1a202c;
-            }}
-
-            .date {{
-                margin-top: 8px;
-                color: #64748b;
-                font-size: 14px;
-            }}
-
-            /* Digest content */
-            .digest {{
-                background-color: #ffffff;
-                border-radius: 8px;
-                padding: 24px;
-                margin-bottom: 24px;
-                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-            }}
-
-            .digest h2 {{
-                margin: 0 0 24px 0;
-                font-size: 20px;
-                font-weight: 600;
-                color: #1a202c;
-                padding-bottom: 16px;
-                border-bottom: 1px solid #e2e8f0;
-            }}
-
-            /* Article styling */
-            .article {{
-                padding: 20px 0;
-                border-bottom: 1px solid #e2e8f0;
-            }}
-
-            .article:last-child {{
-                border-bottom: none;
-                padding-bottom: 0;
-            }}
-
-            .article-title {{
-                margin: 0 0 8px 0;
-                font-size: 16px;
-                font-weight: 600;
-                color: #1a202c;
-                line-height: 1.4;
-            }}
-
-            .article-meta {{
-                font-size: 14px;
-                color: #64748b;
-                margin-bottom: 12px;
-            }}
-
-            .read-more {{
-                color: #3b82f6;
-                text-decoration: none;
-                font-weight: 500;
-            }}
-
-            /* Tags styling */
-            .tag {{
-                display: inline-block;
-                padding: 2px 8px;
-                margin: 0 4px 4px 0;
-                border-radius: 12px;
-                background-color: #f1f5f9;
-                color: #475569;
-                font-size: 12px;
-            }}
-
-            /* Bullet points */
-            .takeaway-bullets {{
-                margin: 12px 0 0 0;
-                padding-left: 20px;
-                list-style-type: disc;
-                color: #475569;
-            }}
-
-            .takeaway-bullets li {{
-                margin-bottom: 8px;
-                font-size: 14px;
-                line-height: 1.5;
-            }}
-
-            .takeaway-bullets li:last-child {{
-                margin-bottom: 0;
-            }}
-
-            /* More stories section */
-            .more-stories {{
-                text-align: center;
-                padding: 16px;
-                margin-top: 24px;
-                border-top: 1px solid #e2e8f0;
-                color: #64748b;
-                font-size: 14px;
-            }}
-
-            .more-stories a {{
-                color: #3b82f6;
-                text-decoration: none;
-                font-weight: 500;
-            }}
-
-            /* Footer */
-            .footer {{
-                text-align: center;
-                padding: 24px;
-                color: #64748b;
-                font-size: 14px;
-                background-color: #ffffff;
-                border-radius: 8px;
-                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-            }}
-
-            .footer a {{
-                color: #3b82f6;
-                text-decoration: none;
-            }}
-
-            /* Mobile optimizations */
-            @media screen and (max-width: 600px) {{
-                .email-wrapper {{
-                    padding: 12px;
-                }}
-
-                .header, .digest, .footer {{
-                    padding: 16px;
-                    margin-bottom: 16px;
-                }}
-
-                .article {{
-                    padding: 16px 0;
-                }}
-
-                .article-title {{
-                    font-size: 15px;
-                }}
-
-                .article-meta, .takeaway-bullets li {{
-                    font-size: 13px;
-                }}
-            }}
-        </style>
     </head>
-    <body>
-        <div class="email-wrapper">
-            <div class="email-content">
+    <body style="margin: 0; padding: 0; min-width: 100%; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; line-height: 1.5; color: #1a202c; background-color: #f8fafc; -webkit-font-smoothing: antialiased;">
+        <div class="email-wrapper" style="width: 100%; margin: 0; padding: 20px; background-color: #f8fafc;">
+            <div class="email-content" style="max-width: 600px; margin: 0 auto;">
                 {content}
             </div>
         </div>
@@ -213,20 +30,20 @@ def build_header() -> str:
     date_range = f"{yesterday.strftime('%B %d')} - {now.strftime('%B %d, %Y')}"
     
     return f"""
-    <div class="header">
-        <h1>🗞️ Daily News Digest</h1>
-        <div class="date">{date_range}</div>
+    <div class="header" style="text-align: center; padding: 24px; background-color: #ffffff; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #1a202c;">🗞️ Daily News Digest</h1>
+        <div class="date" style="margin-top: 8px; color: #64748b; font-size: 14px;">{date_range}</div>
     </div>
     """
 
 def build_footer() -> str:
     """Generate the newsletter footer."""
     return """
-    <div class="footer">
-        <p>This digest was automatically curated for you</p>
-        <p>
-            <a href="#customize">Customize Topics</a> • 
-            <a href="#unsubscribe">Unsubscribe</a>
+    <div class="footer" style="text-align: center; padding: 24px; color: #64748b; font-size: 14px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+        <p style="margin: 0 0 8px 0;">This digest was automatically curated for you</p>
+        <p style="margin: 0;">
+            <a href="#customize" style="color: #3b82f6; text-decoration: none;">Customize Topics</a> • 
+            <a href="#unsubscribe" style="color: #3b82f6; text-decoration: none;">Unsubscribe</a>
         </p>
     </div>
     """
@@ -235,9 +52,9 @@ def build_empty_newsletter() -> str:
     """Generate a polite 'no new stories' page."""
     return wrap_with_css(f"""
         {build_header()}
-        <div class="digest">
-            <h2>No New Stories Today</h2>
-            <p>We couldn't find any new articles matching your interests today. Check back tomorrow!</p>
+        <div class="digest" style="background-color: #ffffff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+            <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #1a202c;">No New Stories Today</h2>
+            <p style="margin: 0; color: #64748b;">We couldn't find any new articles matching your interests today. Check back tomorrow!</p>
         </div>
         {build_footer()}
     """)
