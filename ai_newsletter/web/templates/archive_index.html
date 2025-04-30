@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Newsletter Archives</title>
+    <meta name="description" content="Archive of AI Newsletter - Daily technology and AI news summaries">
+    <meta name="keywords" content="AI, technology, news, newsletter, artificial intelligence">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a202c;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8fafc;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #718096;
+            font-size: 1.1em;
+        }
+        
+        .archive-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .archive-item {
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+        
+        .archive-item:hover {
+            border-color: #3182ce;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .archive-date {
+            color: #718096;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        
+        .archive-link {
+            color: #2c5282;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .archive-link:hover {
+            text-decoration: underline;
+        }
+        
+        .search-box {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .search-input {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #3182ce;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+        }
+        
+        @media (max-width: 640px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>AI Newsletter Archives</h1>
+            <p>Browse past issues of our daily AI and technology news digest</p>
+        </div>
+        
+        <!-- Search box (future feature) -->
+        <div class="search-box">
+            <input type="search" 
+                   class="search-input" 
+                   placeholder="Search archives... (Coming soon)" 
+                   disabled
+                   title="Search functionality coming soon">
+        </div>
+        
+        <ul class="archive-list">
+            {% for date, url in archives %}
+            <li class="archive-item">
+                <div class="archive-date">{{ date.strftime('%B %d, %Y') }}</div>
+                <a href="{{ url }}" class="archive-link">
+                    AI Newsletter - {{ date.strftime('%B %d, %Y') }} Edition
+                </a>
+            </li>
+            {% endfor %}
+            
+            {% if not archives %}
+            <li class="archive-item">
+                <p>No archived newsletters available yet.</p>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+</body>
+</html>
