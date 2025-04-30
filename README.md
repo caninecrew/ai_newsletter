@@ -1,6 +1,6 @@
 # AI Newsletter Project
 
-A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email.
+A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email, with web-hosted archives.
 
 ## Overview
 
@@ -10,6 +10,7 @@ This project automatically generates and sends a daily news digest by:
 3. Applying smart categorization and deduplication
 4. Delivering formatted newsletters via email
 5. Running automated daily delivery through GitHub Actions
+6. Archiving newsletters on samuelrumbley.com for web access
 
 ## Project Structure
 
@@ -42,6 +43,13 @@ ai_newsletter/
 - Clean, responsive email layout
 - Clickable Table of Contents
 
+### Web Integration
+- Automatic archiving of newsletters to samuelrumbley.com
+- Responsive web design for newsletter archives
+- Historical newsletter browsing
+- Permanent link generation for each issue
+- Web-optimized newsletter formatting
+
 ### Technical Features
 - OpenAI API integration for summarization
 - Timezone-aware date handling
@@ -51,12 +59,18 @@ ai_newsletter/
 
 ## Requirements
 
+### Core Requirements
 - Python 3.11+
 - Required packages listed in `requirements.txt`
 - Access to:
   - GNews API
   - OpenAI API
   - SMTP server for email delivery
+
+### Web Hosting Requirements
+- Access to samuelrumbley.com hosting
+- FTP or SSH access for deployment
+- SSL certificate for secure hosting
 
 ## Installation
 
@@ -80,6 +94,7 @@ SMTP_PORT=587
 SMTP_EMAIL=your_email
 SMTP_PASS=your_password
 RECIPIENT_EMAIL=recipient_email
+NEWSLETTER_DOMAIN=samuelrumbley.com
 ```
 
 ## Configuration
@@ -97,6 +112,13 @@ Customize email settings including:
 - Content balance preferences
 - Layout and formatting options
 - SMTP configuration
+
+### Web Hosting Settings
+Configure web hosting parameters in `config/settings.py`:
+- Archive retention period
+- URL structure
+- Web-specific styling
+- Hosting credentials
 
 ### User Interests
 Define interests for personalized content filtering:
@@ -122,7 +144,23 @@ python main.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD
 The project includes GitHub Actions workflows for:
 - Daily newsletter generation (8:00 AM CT)
 - Email system testing
+- Web archive deployment
 - Error monitoring and logging
+
+## Web Access
+
+### Newsletter Archives
+- All newsletters are archived at `https://samuelrumbley.com/newsletters/`
+- Individual issues available at `https://samuelrumbley.com/newsletters/YYYY-MM-DD.html`
+- Mobile-responsive design
+- Search and filtering capabilities (planned)
+
+### Archive Features
+- Permanent links for sharing
+- Historical browsing
+- Categorized archives
+- Full-text search (planned)
+- Topic indexing (planned)
 
 ## Testing
 
@@ -135,6 +173,7 @@ Key test areas:
 - Email delivery (`test_email_send.py`)
 - News fetching (`test_fetch_news.py`)
 - Content filtering (`test_fetcher_validation.py`)
+- Web archive deployment (planned)
 
 ## Architecture
 
@@ -154,7 +193,13 @@ Key test areas:
    - Responsive styling
    - Multi-part email creation
 
-4. **Deployment**
+4. **Web Integration**
+   - Newsletter archiving
+   - Static file generation
+   - Archive management
+   - URL routing
+
+5. **Deployment**
    - GitHub Actions automation
    - Error handling
    - Logging and monitoring
@@ -165,6 +210,7 @@ Key test areas:
 3. AI-powered summarization
 4. Newsletter formatting
 5. Email delivery
+6. Web archive deployment
 
 ## Best Practices
 
@@ -174,6 +220,26 @@ Key test areas:
 - Comprehensive logging
 - Test coverage
 - Code documentation
+- Web accessibility standards
+- SEO optimization
+
+## Security Considerations
+
+### API Security
+- Secure storage of API keys
+- Rate limiting implementation
+- Request validation
+
+### Email Security
+- TLS encryption
+- Authentication handling
+- Anti-spam compliance
+
+### Web Security
+- HTTPS enforcement
+- Content Security Policy
+- XSS prevention
+- CORS configuration
 
 ## Contributing
 
@@ -182,6 +248,35 @@ Key test areas:
 3. Make your changes
 4. Submit a pull request
 
+### Development Guidelines
+- Follow PEP 8 style guide
+- Write unit tests for new features
+- Update documentation
+- Test web compatibility
+
+## Roadmap
+
+### Planned Features
+- Full-text search for archives
+- Topic-based navigation
+- RSS feed integration
+- API access
+- Advanced analytics
+- User preferences portal
+
+### In Progress
+- Web archive deployment
+- Search functionality
+- Mobile optimization
+- Performance improvements
+
 ## License
 
 MIT License - See LICENSE file for details
+
+## Support
+
+For issues and feature requests:
+- Submit GitHub issues
+- Review documentation
+- Contact contributors
