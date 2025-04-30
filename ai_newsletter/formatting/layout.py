@@ -10,81 +10,155 @@ def wrap_with_css(content: str) -> str:
     <html>
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Your Daily News Summary</title>
         <style>
             body {{
-                font-family: Arial, Helvetica, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                 line-height: 1.6;
-                color: #333;
+                color: #2c3e50;
                 max-width: 800px;
                 margin: 0 auto;
                 padding: 20px;
+                background-color: #f8fafc;
             }}
+            
             .header {{
                 text-align: center;
                 margin-bottom: 30px;
-                border-bottom: 2px solid #f0f0f0;
-                padding-bottom: 20px;
+                padding: 20px;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             }}
+            
             .header h1 {{
-                color: #2c3e50;
-                margin-bottom: 10px;
+                margin: 0;
+                color: #1a202c;
+                font-size: 24px;
             }}
+            
             .date {{
-                color: #7f8c8d;
-                font-style: italic;
+                color: #64748b;
+                font-size: 14px;
+                margin-top: 8px;
             }}
+            
+            .section {{
+                background: white;
+                border-radius: 8px;
+                padding: 24px;
+                margin-bottom: 24px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }}
+            
+            .section h2 {{
+                margin-top: 0;
+                margin-bottom: 16px;
+                font-size: 20px;
+                color: #1a202c;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+
+            .trending {{
+                border-left: 4px solid #3b82f6;
+            }}
+            
+            .highlights {{
+                list-style: none;
+                padding: 0;
+                margin: 16px 0;
+            }}
+            
+            .highlights li {{
+                padding: 8px 0;
+                border-bottom: 1px solid #e2e8f0;
+            }}
+            
+            .highlights li:last-child {{
+                border-bottom: none;
+            }}
+            
             .article {{
-                border-bottom: 1px solid #f0f0f0;
-                padding-bottom: 25px;
-                margin-bottom: 25px;
+                padding: 16px 0;
+                border-bottom: 1px solid #e2e8f0;
             }}
+            
             .article:last-child {{
                 border-bottom: none;
-                margin-bottom: 0;
+                padding-bottom: 0;
             }}
+            
             .article-title {{
-                margin-top: 0;
-                margin-bottom: 10px;
-                color: #2c3e50;
+                margin: 0 0 8px 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: #1a202c;
             }}
-            .article-title a {{
-                color: #2c3e50;
-                text-decoration: none;
-            }}
-            .article-title a:hover {{
-                color: #3498db;
-                text-decoration: underline;
-            }}
+            
             .article-meta {{
                 font-size: 14px;
-                color: #7f8c8d;
-                margin-bottom: 15px;
+                color: #64748b;
+                margin-bottom: 12px;
             }}
+            
+            .read-more {{
+                color: #3b82f6;
+                text-decoration: none;
+            }}
+            
+            .read-more:hover {{
+                text-decoration: underline;
+            }}
+            
             .tag {{
                 display: inline-block;
-                background-color: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 30px;
-                padding: 2px 10px;
-                margin-right: 5px;
-                margin-bottom: 5px;
+                padding: 2px 8px;
+                margin: 0 4px 4px 0;
+                border-radius: 16px;
+                background-color: #f1f5f9;
+                color: #475569;
                 font-size: 12px;
-                color: #495057;
             }}
-            .article-summary {{
-                margin: 15px 0;
-                padding: 15px;
-                background-color: #f8f9fa;
-                border-left: 3px solid #3498db;
-            }}
-            .footer {{
-                margin-top: 40px;
-                text-align: center;
+            
+            .takeaway-bullets {{
+                margin: 12px 0;
+                padding-left: 24px;
+                color: #475569;
                 font-size: 14px;
-                color: #7f8c8d;
-                border-top: 1px solid #f0f0f0;
+            }}
+            
+            .takeaway-bullets li {{
+                margin-bottom: 8px;
+            }}
+            
+            .takeaway-bullets li:last-child {{
+                margin-bottom: 0;
+            }}
+            
+            .more-stories {{
+                text-align: center;
+                padding: 16px;
+                background: white;
+                border-radius: 8px;
+                margin-top: 24px;
+                color: #64748b;
+            }}
+            
+            .more-stories a {{
+                color: #3b82f6;
+                text-decoration: none;
+            }}
+            
+            .footer {{
+                text-align: center;
+                margin-top: 40px;
                 padding-top: 20px;
+                border-top: 1px solid #e2e8f0;
+                color: #64748b;
+                font-size: 14px;
             }}
         </style>
     </head>
@@ -102,8 +176,8 @@ def build_header() -> str:
     
     return f"""
     <div class="header">
-        <h1>Your Daily News Summary</h1>
-        <div class="date">News from {date_range}</div>
+        <h1>Daily News Digest</h1>
+        <div class="date">{date_range}</div>
     </div>
     """
 
@@ -111,17 +185,18 @@ def build_footer() -> str:
     """Generate the newsletter footer."""
     return """
     <div class="footer">
-        <p>This newsletter was automatically curated based on your interests.</p>
-        <p>To unsubscribe, please reply with "unsubscribe" in the subject line.</p>
+        <p>This digest was automatically curated for you.</p>
+        <p>To customize your topics or unsubscribe, click <a href="#preferences">here</a>.</p>
     </div>
     """
 
 def build_empty_newsletter() -> str:
     """Generate a polite 'no new stories' page."""
-    return wrap_with_css("""
-        <div class="header">
-            <h1>No New Stories Today</h1>
+    return wrap_with_css(f"""
+        {build_header()}
+        <div class="section">
+            <h2>No New Stories Today</h2>
+            <p>We couldn't find any new articles matching your interests today. Check back tomorrow!</p>
         </div>
-        <p>We couldn't find any new articles to share with you today. Check back tomorrow for the latest updates!</p>
-        """ + build_footer()
-    )
+        {build_footer()}
+    """)
