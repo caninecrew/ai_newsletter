@@ -33,6 +33,10 @@ from ai_newsletter.formatting.render import (
     format_article,
     build_newsletter
 )
+from ai_newsletter.formatting.template_renderer import (
+    render_newsletter,
+    get_template_environment
+)
 
 __all__ = [
     # Layout components
@@ -40,11 +44,13 @@ __all__ = [
     'build_header',
     'build_footer',
     'build_empty_newsletter',
-    'format_summary_block',
     
-    # Article processing
+    # Article rendering
+    'format_summary_block',
     'format_article',
     'build_newsletter',
+    
+    # Article processing
     'categorize_article',
     'get_section_description',
     'SECTION_CATEGORIES',
@@ -63,5 +69,9 @@ __all__ = [
     # Tag management
     'identify_tags',
     'get_tag_html',
-    'get_personalization_tags_html'
+    'get_personalization_tags_html',
+    
+    # Template rendering
+    'render_newsletter',
+    'get_template_environment'
 ]
