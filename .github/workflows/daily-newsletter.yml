@@ -27,17 +27,19 @@ jobs:
       - name: Set DATE env var
         run: |
           echo "DATE=$(date +%F)" >> $GITHUB_ENV
+          echo "NEWSLETTER_URL=https://samuelrumbley.com/newsletters/${{ env.DATE }}.html" >> $GITHUB_ENV
       
       - name: Generate newsletter
         env:
-          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          RECIPIENT_EMAIL: ${{ secrets.SMTP_TO }}
+          SMTP_SERVER: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_EMAIL: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASS: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
-          NEWSLETTER_DOMAIN: ${{ secrets.NEWSLETTER_DOMAIN }}
+          NEWSLETTER_DOMAIN: "samuelrumbley.com"
         run: |
           echo "Starting newsletter script..."
           python main.py
@@ -47,16 +49,14 @@ jobs:
           mkdir -p output
           cp email.html output/newsletter.html
       
-      - name: Checkout Pages repo
+      - name: Checkout GitHub Pages repo
         uses: actions/checkout@v3
         with:
-          repository: ${{ secrets.PAGES_REPO }}
+          repository: caninecrew/caninecrew.github.io
           token: ${{ secrets.GH_PAT }}
           path: pages-repo
 
       - name: Deploy newsletter HTML
-        env:
-          NEWSLETTER_DOMAIN: ${{ secrets.NEWSLETTER_DOMAIN }}
         run: |
           mkdir -p pages-repo/newsletters
           cp output/newsletter.html "pages-repo/newsletters/${{ env.DATE }}.html"
@@ -81,4 +81,4 @@ jobs:
         if: success()
         run: |
           echo "Newsletter generated and deployed successfully at $(date)"
-          echo "Available at https://${{ secrets.NEWSLETTER_DOMAIN }}/newsletters/${{ env.DATE }}.html"
+          echo "Available at ${{ env.NEWSLETTER_URL }}"
