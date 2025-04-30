@@ -75,41 +75,41 @@ def format_article(article: Dict, html: bool = False) -> str:
     return f"{title}\nSource: {source} | {date}\nLink: {url}"
 
 def build_newsletter(articles: List[Article]) -> str:
-    """Build a complete newsletter with enhanced formatting and organization."""
+    """Build a complete newsletter with clean formatting and no category sections."""
     if not articles:
         return build_empty_newsletter()
-    
+
     # Limit total articles and deduplicate
     max_total = EMAIL_SETTINGS.get("max_articles_total", 10)
     articles = deduplicate_articles(articles)
     total_articles = len(articles)
-    articles = articles[:max_total]
-    
-    # Group by category
-    categories: DefaultDict[str, list] = defaultdict(list)
-    for article in articles:
-        category = categorize_article(article)
-        categories[category].append(article)
-    
-    sections = []
-    
-    # Add category sections
-    for category, category_articles in categories.items():
-        if category_articles:
-            articles_html = "\n".join([format_article(a, html=True) for a in category_articles])
-            section_title = category.replace('_', ' ').title()
-            sections.append(f"""
-            <div class="section">
-                <h2>{section_title}</h2>
-                {articles_html}
-            </div>
-            """)
-        
-    # Combine all sections
+    display_articles = articles[:max_total]
+
+    # Build main article section
+    articles_html = "\n".join([
+        format_article(a, html=True, max_takeaways=2) for a in display_articles
+    ])
+
+    # Add a "more articles" link if needed
+    extra_count = total_articles - max_total
+    more_link = ""
+    if extra_count > 0:
+        more_link = f'<p><a href="{EMAIL_SETTINGS.get("full_digest_url", "#")}">…and {extra_count} more articles</a></p>'
+
+    # Assemble digest content
+    digest_html = f"""
+    <div class="digest">
+        <h2>🗞️ Daily News Summary</h2>
+        {articles_html}
+        {more_link}
+    </div>
+    """
+
+    # Final content layout
     content = f"""
         {build_header()}
-        {" ".join(sections)}
+        {digest_html}
         {build_footer()}
     """
-    
+
     return wrap_with_css(content)
