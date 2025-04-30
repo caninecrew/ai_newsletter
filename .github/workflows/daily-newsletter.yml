@@ -3,14 +3,14 @@ name: Daily AI Newsletter
 on:
   schedule:
     - cron: '14 8 * * *'  # Run at 8:00 AM Central Time daily
-  workflow_dispatch:      # Allow manual trigger for testing
+  workflow_dispatch:       # Allow manual trigger for testing
 
 jobs:
-  send-newsletter:
+  generate-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
+      - name: Checkout newsletter code
         uses: actions/checkout@v3
         
       - name: Set up Python
@@ -24,25 +24,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Check for critical files
+      - name: Set DATE env var
         run: |
-          echo "Checking for required files..."
-          ls -la
-          if [ ! -f "main.py" ]; then
-            echo "ERROR: main.py not found!"
-            exit 1
-          fi
-          if [ ! -f "requirements.txt" ]; then
-            echo "ERROR: requirements.txt not found!"
-            exit 1
-          fi
-          if [ ! -f "ai_newsletter/config/settings.py" ]; then
-            echo "ERROR: ai_newsletter/config/settings.py not found!"
-            exit 1
-          fi
-          echo "All required files found."
+          echo "DATE=$(date +%F)" >> $GITHUB_ENV
+          echo "NEWSLETTER_URL=https://samuelrumbley.com/newsletters/${{ env.DATE }}.html" >> $GITHUB_ENV
       
-      - name: Run newsletter script
+      - name: Generate newsletter
         env:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
@@ -53,13 +40,47 @@ jobs:
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
         run: |
           echo "Starting newsletter script..."
-          # Create empty logs.txt file if it doesn't exist
-          touch logs.txt
-          # Run with error handling
-          python main.py || { echo "Script failed with exit code $?"; exit 1; }
+          python main.py
           
+      - name: Create output directory
+        run: |
+          mkdir -p output
+          cp email.html output/newsletter.html
+      
+      - name: Checkout GitHub Pages repo
+        uses: actions/checkout@v3
+        with:
+          repository: caninecrew/caninecrew.github.io
+          token: ${{ secrets.GH_PAT }}
+          path: pages-repo
+
+      - name: Deploy newsletter HTML
+        run: |
+          mkdir -p pages-repo/newsletters
+          cp output/newsletter.html "pages-repo/newsletters/${{ env.DATE }}.html"
+          cd pages-repo
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add newsletters/
+          git commit -m "Deploy newsletter for ${{ env.DATE }}" || echo "No changes"
+          git push
+
+      - name: Send email with hosted URL
+        env:
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: |
+          python -c "from ai_newsletter import send_email; send_email(
+            subject=f'AI Newsletter: {env.DATE}', 
+            body=open('output/newsletter.html').read(),
+            hosted_url='${{ env.NEWSLETTER_URL }}'
+          )"
+
       - name: Archive logs
-        if: always()  # Run even if the newsletter script fails
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: newsletter-logs
@@ -69,8 +90,7 @@ jobs:
           retention-days: 7
 
       - name: Report completion status
-        if: ${{ success() }}
+        if: success()
         run: |
-          echo "Newsletter generated and sent successfully at $(date)"
-          echo "Latest entries from logs.txt:"
-          tail -n 5 logs.txt
+          echo "Newsletter generated and deployed successfully at $(date)"
+          echo "Available at ${{ env.NEWSLETTER_URL }}"
