@@ -6,7 +6,12 @@ from ai_newsletter.core.types import Article
 from ai_newsletter.config.settings import EMAIL_SETTINGS
 from ai_newsletter.formatting.components import format_summary_block
 from ai_newsletter.formatting.date_utils import format_date
-from ai_newsletter.formatting.layout import wrap_with_css, build_header, build_footer
+from ai_newsletter.formatting.layout import (
+    wrap_with_css,
+    build_header,
+    build_footer,
+    build_empty_newsletter
+)
 from ai_newsletter.formatting.text_utils import get_key_takeaways
 from ai_newsletter.formatting.categorization import categorize_article
 from ai_newsletter.formatting.deduplication import deduplicate_articles
