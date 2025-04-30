@@ -47,26 +47,26 @@ jobs:
           
       - name: Create output directory
         run: |
-          mkdir -p output
-          cp email.html output/newsletter.html
+          mkdir -p output/newsletters
+          cp email.html "output/newsletters/${{ env.DATE }}.html"
+          
+      # Future web deployment steps (commented out until implementation)
+      #- name: Generate archive index
+      #  run: python -c "from ai_newsletter.web.archive import generate_archive_index; generate_archive_index()"
       
-      - name: Checkout GitHub Pages repo
-        uses: actions/checkout@v3
-        with:
-          repository: caninecrew/caninecrew.github.io
-          token: ${{ secrets.GH_PAT }}
-          path: pages-repo
-
-      - name: Deploy newsletter HTML
-        run: |
-          mkdir -p pages-repo/newsletters
-          cp output/newsletter.html "pages-repo/newsletters/${{ env.DATE }}.html"
-          cd pages-repo
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add newsletters/
-          git commit -m "Deploy newsletter for ${{ env.DATE }}" || echo "No changes"
-          git push
+      #- name: Deploy to web server
+      #  if: ${{ secrets.WEB_DEPLOY_ENABLED == 'true' }}
+      #  uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      #  with:
+      #    server: ${{ secrets.FTP_SERVER }}
+      #    username: ${{ secrets.FTP_USERNAME }}
+      #    password: ${{ secrets.FTP_PASSWORD }}
+      #    local-dir: ./output/newsletters/
+      #    server-dir: /newsletters/
+      
+      #- name: Cleanup old archives
+      #  if: ${{ secrets.WEB_DEPLOY_ENABLED == 'true' }}
+      #  run: python -c "from ai_newsletter.web.archive import cleanup_old_archives; cleanup_old_archives()"
 
       - name: Archive logs
         if: always()
@@ -81,5 +81,5 @@ jobs:
       - name: Report completion status
         if: success()
         run: |
-          echo "Newsletter generated and deployed successfully at $(date)"
+          echo "Newsletter generated and archived successfully at $(date)"
           echo "Available at ${{ env.NEWSLETTER_URL }}"
