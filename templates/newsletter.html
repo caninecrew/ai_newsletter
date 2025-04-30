@@ -1,0 +1,72 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Your Daily News Summary</title>
+</head>
+<body style="margin: 0; padding: 0; min-width: 100%; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; line-height: 1.5; color: #1a202c; background-color: #f8fafc; -webkit-font-smoothing: antialiased;">
+    <div class="email-wrapper" style="width: 100%; margin: 0; padding: 20px; background-color: #f8fafc;">
+        <div class="email-content" style="max-width: 600px; margin: 0 auto;">
+            {# Header #}
+            <div class="header" style="text-align: center; padding: 24px; background-color: #ffffff; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #1a202c;">🗞️ Daily News Digest</h1>
+                <div class="date" style="margin-top: 8px; color: #64748b; font-size: 14px;">{{ date }}</div>
+            </div>
+
+            {# Web View Link #}
+            {% if hosted_url %}
+            <div style="text-align: center; padding: 10px; margin: 10px 0; background-color: #f8fafc; border-radius: 8px;">
+                <p style="margin: 0; color: #64748b;">
+                    Having trouble viewing this email? 
+                    <a href="{{ hosted_url }}" style="color: #3b82f6; text-decoration: none;">View it in your browser →</a>
+                </p>
+            </div>
+            {% endif %}
+
+            {# Articles #}
+            <div class="digest" style="background-color: #ffffff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+                <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 600; color: #1a202c; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0;">Today's Key Stories</h2>
+                {% if articles %}
+                    {% for article in articles %}
+                    <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+                        <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">{{ article.title }}</h3>
+                        <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+                            {{ article.source.name }} • {{ article.published_at|format_date }} • 
+                            <a href="{{ article.url }}" class="read-more" style="color: #3b82f6; text-decoration: none; font-weight: 500;">🔗 Read Full Article</a>
+                        </div>
+                        <div class="tags" style="margin: 10px 0;">{{ article|render_tags|safe }}</div>
+                        <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+                            <h4 style="margin: 0 0 10px 0; color: #2c3e50;">Key Takeaways</h4>
+                            <ul class="takeaway-bullets" style="margin: 0; padding-left: 20px;">
+                                {% for point in article.summary|get_takeaways %}
+                                <li style="margin-bottom: 8px; font-size: 14px; line-height: 1.5;">{{ point }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {{ article|format_summary_block|safe }}
+                    </div>
+                    {% endfor %}
+
+                    {% if total_articles > max_articles %}
+                    <div class="more-stories" style="text-align: center; padding: 16px; margin-top: 24px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px;">
+                        <p>...and {{ total_articles - max_articles }} more stories. <a href="#" style="color: #3b82f6; text-decoration: none; font-weight: 500;">View full digest →</a></p>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <p style="margin: 0; color: #64748b;">We couldn't find any new articles matching your interests today. Check back tomorrow!</p>
+                {% endif %}
+            </div>
+
+            {# Footer #}
+            <div class="footer" style="text-align: center; padding: 24px; color: #64748b; font-size: 14px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+                <p style="margin: 0 0 8px 0;">This digest was automatically curated for you</p>
+                <p style="margin: 0;">
+                    <a href="#customize" style="color: #3b82f6; text-decoration: none;">Customize Topics</a> • 
+                    <a href="#unsubscribe" style="color: #3b82f6; text-decoration: none;">Unsubscribe</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
