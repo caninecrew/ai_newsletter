@@ -20,39 +20,26 @@ from ai_newsletter.logging_cfg.logger import setup_logger
 
 logger = setup_logger()
 
-def format_article(article: Dict, html: bool = False) -> str:
-    """Format a single article for the email newsletter with concise layout."""
+def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) -> str:
+    """Format a single article with a clean, minimal layout."""
     title = article.get('title', 'No Title')
     source = article.get('source', {}).get('name', 'Unknown Source')
     date = format_date(article.get('published_at', ''))
     url = article.get('url', '#')
     summary = article.get('summary', '')
-    category = categorize_article(article)
     
-    # Extract 1-2 key bullet points from summary
+    # Extract bullet points from summary
     bullet_points = []
     if summary:
-        # Split into sentences and clean them
         sentences = [s.strip() for s in summary.split('.') if len(s.strip()) > 0]
-        # Take 1 bullet if first sentence is long, otherwise take 2
-        bullet_points = sentences[:1] if len(sentences[0]) > 100 else sentences[:2]
+        # Take 1 bullet if first sentence is long, otherwise take up to max_takeaways
+        bullet_points = sentences[:1] if len(sentences[0]) > 100 else sentences[:max_takeaways]
     
     if html:
-        # Get category emoji
-        category_emojis = {
-            'WORLD_NEWS': '🌍',
-            'US_NEWS': '🗽',
-            'POLITICS': '🏛️',
-            'TECHNOLOGY': '⚡',
-            'BUSINESS': '💼',
-            'PERSONALIZED': '📌'
-        }
-        category_emoji = category_emojis.get(category, '📰')
-        
         # Format bullet points if any
         bullets_html = ""
         if bullet_points:
-            bullets = "".join([f"<li>{point.strip()}.</li>" for point in bullet_points])
+            bullets = "\n".join([f"<li>{point.strip()}.</li>" for point in bullet_points])
             bullets_html = f'<ul class="takeaway-bullets">{bullets}</ul>'
         
         # Add tags with emojis
@@ -60,11 +47,9 @@ def format_article(article: Dict, html: bool = False) -> str:
         
         return f"""
         <div class="article">
-            <h3 class="article-title">
-                {category_emoji} {title}
-            </h3>
+            <h3 class="article-title">{title}</h3>
             <div class="article-meta">
-                {source} • {date} • <a href="{url}" class="read-more">🔗 Read More</a>
+                {source} • {date} • <a href="{url}" class="read-more">🔗 Read Full Article</a>
             </div>
             {tags}
             {bullets_html}
@@ -91,15 +76,18 @@ def build_newsletter(articles: List[Article]) -> str:
     ])
 
     # Add a "more articles" link if needed
-    extra_count = total_articles - max_total
     more_link = ""
-    if extra_count > 0:
-        more_link = f'<p><a href="{EMAIL_SETTINGS.get("full_digest_url", "#")}">…and {extra_count} more articles</a></p>'
+    if total_articles > max_total:
+        more_link = f"""
+        <div class="more-stories">
+            <p>...and {total_articles - max_total} more stories. <a href="#">View full digest →</a></p>
+        </div>
+        """
 
     # Assemble digest content
     digest_html = f"""
     <div class="digest">
-        <h2>🗞️ Daily News Summary</h2>
+        <h2>Today's Key Stories</h2>
         {articles_html}
         {more_link}
     </div>
