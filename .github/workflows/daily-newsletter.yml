@@ -24,10 +24,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Set DATE env var
+      - name: Set DATE and newsletter URL
         run: |
-          echo "DATE=$(date +%F)" >> $GITHUB_ENV
-          echo "NEWSLETTER_URL=https://samuelrumbley.com/newsletters/${{ env.DATE }}.html" >> $GITHUB_ENV
+          DATE=$(date +%Y-%m-%d)
+          echo "DATE=$DATE" >> $GITHUB_ENV
+          echo "NEWSLETTER_URL=https://samuelrumbley.com/newsletters/$DATE.html" >> $GITHUB_ENV
       
       - name: Generate newsletter
         env:

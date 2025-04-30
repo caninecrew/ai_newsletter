@@ -24,7 +24,7 @@ load_dotenv()
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 KEEPALIVE_INTERVAL = 60
-SMTP_TIMEOUT = 30
+SMTP_TIMEOUT = 60  # Increased timeout
 
 # Define Central timezone
 CENTRAL = dateutil_tz.gettz("America/Chicago")
@@ -33,7 +33,7 @@ def setup_email_settings():
     """Initialize email settings from environment variables"""
     return {
         'smtp_server': os.getenv('SMTP_SERVER'),
-        'smtp_port': int(os.getenv('SMTP_PORT', '587')),
+        'smtp_port': int(os.getenv('SMTP_PORT', '465')),  # Default to SSL port
         'smtp_user': os.getenv('SMTP_EMAIL'),
         'smtp_pass': os.getenv('SMTP_PASS'),
         'from_email': os.getenv('SMTP_EMAIL'),
@@ -47,6 +47,7 @@ def create_secure_smtp_context():
         cafile=certifi.where()
     )
     context.verify_mode = ssl.CERT_REQUIRED
+    context.check_hostname = True
     return context
 
 def create_smtp_connection(smtp_settings):
@@ -55,20 +56,25 @@ def create_smtp_connection(smtp_settings):
     while retry_count < MAX_RETRIES:
         try:
             context = create_secure_smtp_context()
-            server = smtplib.SMTP(
+            
+            # Use SMTP_SSL for more reliable connection
+            server = smtplib.SMTP_SSL(
                 smtp_settings['smtp_server'],
                 smtp_settings['smtp_port'],
-                timeout=SMTP_TIMEOUT
+                timeout=SMTP_TIMEOUT,
+                context=context
             )
-            server.starttls(context=context)
+            
+            # Login
             server.login(smtp_settings['smtp_user'], smtp_settings['smtp_pass'])
             return server
+            
         except (socket_error, smtplib.SMTPException) as e:
             retry_count += 1
             if retry_count == MAX_RETRIES:
                 raise
             logger.warning(f"SMTP connection attempt {retry_count} failed: {str(e)}")
-            time.sleep(RETRY_DELAY)
+            time.sleep(RETRY_DELAY * retry_count)  # Exponential backoff
 
 def add_hosted_link(html_content: str, hosted_url: str) -> str:
     """Add a link to the hosted version at the top of the newsletter.
@@ -138,7 +144,10 @@ def send_email(subject: str, body: str, hosted_url: str = None):
         
     finally:
         if server:
-            server.quit()
+            try:
+                server.quit()
+            except:
+                pass
 
 def strip_html(html_content):
     """Convert HTML to plain text."""
