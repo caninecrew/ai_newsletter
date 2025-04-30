@@ -1,135 +1,187 @@
-# AI Newsletter Automation
+# AI Newsletter Project
 
-This project automatically creates and sends a personalized daily news digest via email. It now fetches recent news articles based on user-defined keywords using the [GNews API](https://gnews.io/), replacing the previous RSS feed scraping approach.
+A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email.
+
+## Overview
+
+This project automatically generates and sends a daily news digest by:
+1. Fetching articles from GNews API and reliable news sources
+2. Using OpenAI's API for intelligent article summarization
+3. Applying smart categorization and deduplication
+4. Delivering formatted newsletters via email
+5. Running automated daily delivery through GitHub Actions
+
+## Project Structure
+
+```
+ai_newsletter/
+├── config/               # Configuration and settings
+├── core/                # Core types and constants
+├── deploy/              # Deployment utilities
+├── email/              # Email formatting and sending
+├── feeds/              # News fetching and filtering
+├── formatting/         # Newsletter layout and styling
+├── llm/                # LLM integration (OpenAI)
+├── logging_cfg/        # Logging configuration
+└── utils/              # Utility functions
+```
 
 ## Features
 
-- Fetches news articles by keyword.
-- Supports optional language and country filters.
-- Returns structured article data (title, description, url, source, publication date).
-- Handles API errors gracefully.
-- Categorizes articles into sections (global news, domestic headlines, personalized interests, etc.).
-- Highlights key takeaways in a TL;DR style with expandable content.
-- Adds "Why This Matters" context to each article.
-- Includes a clickable Table of Contents for easy navigation.
-- Filters for articles published in the last 24 hours.
-- Deduplicates similar articles to avoid redundancy.
-- Formats content into a clean, professional HTML email newsletter.
-- Automatically sends at 8:00 AM daily using GitHub Actions.
+### Content Management
+- Intelligent article fetching using GNews API
+- Smart deduplication to avoid redundant content
+- Article categorization (World News, Technology, Business, etc.)
+- Source balancing across political perspectives
+- Content filtering by date and relevance
 
-## Installation Instructions
+### Enhanced Formatting
+- Key Takeaways sections for quick reading
+- "Why This Matters" contextual insights
+- Personalized content tags with emojis
+- Clean, responsive email layout
+- Clickable Table of Contents
 
-1. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Technical Features
+- OpenAI API integration for summarization
+- Timezone-aware date handling
+- Error logging and monitoring
+- Retry mechanisms for API calls
+- Caching for improved performance
 
-## Environment Setup
+## Requirements
 
-1. Create a `.env` file in the project root directory.
-2. Add the following environment variable:
-   ```
-   GNEWS_API_KEY=your_gnews_api_key_here
-   ```
+- Python 3.11+
+- Required packages listed in `requirements.txt`
+- Access to:
+  - GNews API
+  - OpenAI API
+  - SMTP server for email delivery
 
-## Usage Instructions
+## Installation
 
-To fetch news articles using the GNews API, use the following example:
-
-```python
-from ai_newsletter.feeds.gnews_api import GNewsAPI
-
-gnews_client = GNewsAPI()
-articles = gnews_client.search_news(keyword="AI technology", language="en", max_results=5)
-for article in articles:
-    print(article['title'])
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd ai_newsletter
 ```
 
-## Notes/Limitations
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-- The GNews API free tier has a limit of 100 requests per day. Plan your usage accordingly.
+3. Create a `.env` file with required credentials:
+```env
+GNEWS_API_KEY=your_gnews_api_key
+OPENAI_API_KEY=your_openai_api_key
+SMTP_SERVER=your_smtp_server
+SMTP_PORT=587
+SMTP_EMAIL=your_email
+SMTP_PASS=your_password
+RECIPIENT_EMAIL=recipient_email
+```
 
-## Future Improvements
+## Configuration
 
-- Fallback to RSS feeds if the GNews API fails.
-- Add support for other news APIs (like NewsAPI.org) via modular adapters.
+### News Categories
+Configure news categories and search queries in `config/settings.py`:
+- Major domestic news
+- International coverage
+- Business and technology
+- Specialized topics (configurable)
 
-## How It Works
+### Email Settings
+Customize email settings including:
+- Maximum articles per category/source
+- Content balance preferences
+- Layout and formatting options
+- SMTP configuration
 
-1. **Article Collection**: Fetches articles from GNews API defined in `fetch_news.py`
-2. **Date Filtering**: Filters for articles published in the last 24 hours
-3. **Deduplication**: Removes redundant articles with similar content
-4. **Summarization**: Creates concise summaries of each article using OpenAI's API
-5. **Categorization**: Sorts articles into different sections based on content and source
-6. **Enhancement**: Adds key takeaways, "Why This Matters" sections, and personalization tags
-7. **Formatting**: Creates a professionally formatted HTML email with consistent styling
-8. **Delivery**: Sends the final newsletter via email
+### User Interests
+Define interests for personalized content filtering:
+- Technology areas (AI, Cloud, etc.)
+- Business sectors
+- Geographic regions
+- Custom topics
 
-## Email Format
+## Usage
 
-The newsletter is formatted with the following elements:
-- **Header**: Title and date of the newsletter
-- **Table of Contents**: Clickable links to each section with article counts
-- **Article Sections**: 
-  - 🌍 Super Major International News
-  - 🏛️ Major Domestic Headlines
-  - 📌 Personalized Interest Stories
-  - 🦊 Fox News Exclusive Reporting
-- **Article Format**:
-  - Title and source
-  - Personalization tags with emojis
-  - Key takeaways (TL;DR style)
-  - Expandable full summary
-  - "Why This Matters" section
-  - Link to original article
+### Manual Execution
+Run the newsletter generator:
+```bash
+python main.py
+```
 
-## Automation with GitHub Actions
+### Command Line Options
+```bash
+python main.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+```
 
-This newsletter runs automatically at 8:00 AM UTC daily through GitHub Actions. The workflow:
-- Checks out the repository code
-- Sets up Python and required dependencies
-- Runs the newsletter script
-- Archives logs for troubleshooting
+### Automated Execution
+The project includes GitHub Actions workflows for:
+- Daily newsletter generation (8:00 AM CT)
+- Email system testing
+- Error monitoring and logging
 
-## Setup Instructions
+## Testing
 
-1. **Fork this repository** to your GitHub account
-2. **Add the following secrets** to your repository:
-   - `RECIPIENT_EMAIL`: Email address to receive the newsletter
-   - `SMTP_EMAIL`: Sender email address
-   - `SMTP_SERVER`: SMTP server (e.g., smtp.gmail.com)
-   - `SMTP_PORT`: SMTP port (typically 587 for TLS or 465 for SSL)
-   - `SMTP_PASS`: Password for the sender email
-   - `OPENAI_API_KEY`: Your OpenAI API key for article summarization
+Run the test suite:
+```bash
+pytest tests/
+```
 
-3. **Enable GitHub Actions** in your repository settings
-4. **Test the workflow** by manually triggering it via the "Actions" tab
+Key test areas:
+- Email delivery (`test_email_send.py`)
+- News fetching (`test_fetch_news.py`)
+- Content filtering (`test_fetcher_validation.py`)
 
-## Customizing Your Newsletter
+## Architecture
 
-- Edit `USER_INTERESTS` in `formatter.py` to personalize your content
-- Modify `PERSONALIZATION_TAGS` in `formatter.py` to change tag emojis
-- Update RSS feeds in `fetch_news.py` to change news sources
-- Adjust styling in the HTML template in `formatter.py`
+### Core Components
+1. **Feed Management**
+   - GNews API integration
+   - Article filtering and validation
+   - Source categorization
 
-## Components
+2. **Content Processing**
+   - OpenAI-powered summarization
+   - Deduplication logic
+   - Category classification
 
-- `fetch_news.py`: Collects articles from GNews API
-- `summarize.py`: Processes and summarizes article content using OpenAI's API
-- `formatter.py`: Formats articles into an HTML email with enhanced features
-- `send_email.py`: Handles email delivery via SMTP
-- `main.py`: Coordinates the entire process
-- `.github/workflows/daily-newsletter.yml`: GitHub Actions workflow for automation
+3. **Email Generation**
+   - HTML template rendering
+   - Responsive styling
+   - Multi-part email creation
 
-## Updates
+4. **Deployment**
+   - GitHub Actions automation
+   - Error handling
+   - Logging and monitoring
 
-### Configuration
-- Migrated from RSS feed scraping to GNews API for improved reliability and structured data.
+### Data Flow
+1. Article collection from GNews API
+2. Filtering and deduplication
+3. AI-powered summarization
+4. Newsletter formatting
+5. Email delivery
 
-### Enhancements
-- Implemented OpenAI API for summarization.
-- Added caching mechanisms to reduce API calls and improve performance.
-- Improved error logging and monitoring for GitHub Actions workflows.
+## Best Practices
 
-### GitHub Actions
-- Enhanced workflow to include error notifications and retry logic for failed tasks.
+- Rate limiting for API calls
+- Error handling and retries
+- Secure credential management
+- Comprehensive logging
+- Test coverage
+- Code documentation
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## License
+
+MIT License - See LICENSE file for details
