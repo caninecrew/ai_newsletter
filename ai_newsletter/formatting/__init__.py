@@ -29,9 +29,9 @@ from ai_newsletter.formatting.text_utils import (
     strip_html,
     get_key_takeaways
 )
-from ai_newsletter.formatting.formatter import (
+from ai_newsletter.formatting.render import (
     format_article,
-    format_articles
+    build_newsletter
 )
 
 __all__ = [
@@ -44,7 +44,7 @@ __all__ = [
     
     # Article processing
     'format_article',
-    'format_articles',
+    'build_newsletter',
     'categorize_article',
     'get_section_description',
     'SECTION_CATEGORIES',
