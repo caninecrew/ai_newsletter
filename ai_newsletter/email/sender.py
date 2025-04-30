@@ -1,7 +1,9 @@
+"""Email sending functionality with proper MIME handling."""
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr, formatdate
+from email.utils import formataddr, formatdate, make_msgid
+from email.header import Header
 import os
 from dotenv import load_dotenv
 from ai_newsletter.logging_cfg.logger import setup_logger
@@ -24,7 +26,7 @@ load_dotenv()
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 KEEPALIVE_INTERVAL = 60
-SMTP_TIMEOUT = 60  # Increased timeout
+SMTP_TIMEOUT = 60
 
 # Define Central timezone
 CENTRAL = dateutil_tz.gettz("America/Chicago")
@@ -33,7 +35,7 @@ def setup_email_settings():
     """Initialize email settings from environment variables"""
     return {
         'smtp_server': os.getenv('SMTP_SERVER'),
-        'smtp_port': int(os.getenv('SMTP_PORT', '465')),  # Default to SSL port
+        'smtp_port': int(os.getenv('SMTP_PORT', '465')),
         'smtp_user': os.getenv('SMTP_EMAIL'),
         'smtp_pass': os.getenv('SMTP_PASS'),
         'from_email': os.getenv('SMTP_EMAIL'),
@@ -57,7 +59,6 @@ def create_smtp_connection(smtp_settings):
         try:
             context = create_secure_smtp_context()
             
-            # Use SMTP_SSL for more reliable connection
             server = smtplib.SMTP_SSL(
                 smtp_settings['smtp_server'],
                 smtp_settings['smtp_port'],
@@ -65,7 +66,6 @@ def create_smtp_connection(smtp_settings):
                 context=context
             )
             
-            # Login
             server.login(smtp_settings['smtp_user'], smtp_settings['smtp_pass'])
             return server
             
@@ -74,18 +74,10 @@ def create_smtp_connection(smtp_settings):
             if retry_count == MAX_RETRIES:
                 raise
             logger.warning(f"SMTP connection attempt {retry_count} failed: {str(e)}")
-            time.sleep(RETRY_DELAY * retry_count)  # Exponential backoff
+            time.sleep(RETRY_DELAY * retry_count)
 
 def add_hosted_link(html_content: str, hosted_url: str) -> str:
-    """Add a link to the hosted version at the top of the newsletter.
-    
-    Args:
-        html_content: Original HTML newsletter content
-        hosted_url: URL to the hosted version
-        
-    Returns:
-        str: HTML with hosted link added
-    """
+    """Add a link to the hosted version at the top of the newsletter."""
     hosted_link = f"""
     <div style="text-align: center; padding: 10px; margin: 10px 0; background-color: #f8fafc; border-radius: 8px;">
         <p style="margin: 0; color: #64748b;">
@@ -103,8 +95,52 @@ def add_hosted_link(html_content: str, hosted_url: str) -> str:
         return str(soup)
     return hosted_link + html_content
 
-def send_email(subject: str, body: str, hosted_url: str = None):
-    """Send the newsletter email.
+def strip_html(html_content: str) -> str:
+    """Convert HTML to plain text."""
+    if not html_content:
+        return ""
+    
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Remove script and style elements
+    for script in soup(["script", "style"]):
+        script.decompose()
+    
+    # Get text while preserving structure
+    lines = []
+    for element in soup.descendants:
+        if element.parent and element.parent.name in ['style', 'script']:
+            continue
+            
+        if element.name == 'p':
+            lines.append("\n\n")
+        elif element.name == 'br':
+            lines.append("\n")
+        elif element.name == 'h1' or element.name == 'h2':
+            lines.append("\n\n" + "="*40 + "\n")
+        elif element.name == 'h3':
+            lines.append("\n\n" + "-"*30 + "\n")
+        elif element.name == 'li':
+            lines.append("\n* ")
+        elif element.name == 'a' and element.string:
+            lines.append(f"{element.string} ({element.get('href', '')})")
+        elif element.string and element.string.strip():
+            lines.append(element.string.strip())
+            
+    # Join lines and fix spacing
+    text = ' '.join(lines)
+    text = text.replace(' .', '.')
+    text = text.replace(' ,', ',')
+    text = text.replace('\n ', '\n')
+    
+    # Fix multiple spaces and newlines
+    text = ' '.join(text.split())
+    text = '\n'.join(line.strip() for line in text.split('\n') if line.strip())
+    
+    return text
+
+def send_email(subject: str, body: str, hosted_url: str = None) -> None:
+    """Send the newsletter email with both HTML and plaintext versions.
     
     Args:
         subject: Email subject line
@@ -113,23 +149,26 @@ def send_email(subject: str, body: str, hosted_url: str = None):
     """
     smtp_settings = setup_email_settings()
     
-    # Create message
+    # Create multipart message
     msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
+    
+    # Set basic headers
+    msg['Subject'] = Header(subject, 'utf-8')
     msg['From'] = formataddr(('AI Newsletter', smtp_settings['from_email']))
     msg['To'] = smtp_settings['to_email']
     msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain=smtp_settings['smtp_server'])
     
     # Add hosted link if provided
     if hosted_url:
         body = add_hosted_link(body, hosted_url)
     
-    # Attach HTML version
-    msg.attach(MIMEText(body, 'html'))
-    
     # Create plain text version
-    plain_text = strip_html(body)
-    msg.attach(MIMEText(plain_text, 'plain'))
+    text_body = strip_html(body)
+    
+    # Attach both versions (plain must come first)
+    msg.attach(MIMEText(text_body, 'plain', 'utf-8'))
+    msg.attach(MIMEText(body, 'html', 'utf-8'))
     
     # Send email with retry logic
     server = None
@@ -148,24 +187,6 @@ def send_email(subject: str, body: str, hosted_url: str = None):
                 server.quit()
             except:
                 pass
-
-def strip_html(html_content):
-    """Convert HTML to plain text."""
-    if not html_content:
-        return ""
-    
-    soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # Remove script and style elements
-    for script in soup(["script", "style"]):
-        script.decompose()
-    
-    # Get text and clean up
-    text = soup.get_text()
-    lines = (line.strip() for line in text.splitlines())
-    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-    
-    return '\n'.join(chunk for chunk in chunks if chunk)
 
 def test_send_email():
     """Send a test email to verify configuration."""
