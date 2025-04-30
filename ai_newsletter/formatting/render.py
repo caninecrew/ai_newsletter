@@ -24,8 +24,8 @@ def format_article(article: Article, html: bool = False) -> str:
     url = article.get('url', '#')
     
     if html:
-        summary_block = format_summary_block(article)
-        tags_block = get_tags_html(article)
+        # summary_block = format_summary_block(article)
+        # tags_block = get_tags_html(article)
         takeaways = get_key_takeaways(article.get('summary', '') or description)
         
         return f"""
@@ -35,9 +35,6 @@ def format_article(article: Article, html: bool = False) -> str:
                 <span class="source">{source}</span> | 
                 <span class="date">{date_str}</span>
             </p>
-            {tags_block}
-            <p class="description">{description}</p>
-            {summary_block}
             {takeaways}
             <hr>
         </div>
