@@ -93,23 +93,6 @@ def build_newsletter(articles: List[Article]) -> str:
     
     sections = []
     
-    # Add trending section first if we have enough articles
-    if len(articles) >= 3:
-        top_stories = articles[:3]
-        trending_html = "\n".join([
-            f'<li><strong>{a["title"]}</strong> <span class="source-mini">({a.get("source", {}).get("name", "")})</span></li>'
-            for a in top_stories
-        ])
-        sections.append(f"""
-        <div class="section trending">
-            <h2>📊 Today's Top Stories</h2>
-            <p class="section-intro">Key developments you should know about:</p>
-            <ul class="highlights">
-                {trending_html}
-            </ul>
-        </div>
-        """)
-    
     # Add category sections
     for category, category_articles in categories.items():
         if category_articles:
@@ -121,16 +104,7 @@ def build_newsletter(articles: List[Article]) -> str:
                 {articles_html}
             </div>
             """)
-    
-    # Add "more stories" section if needed
-    if total_articles > max_total:
-        remaining = total_articles - max_total
-        sections.append(f"""
-        <div class="more-stories">
-            <p>...and {remaining} more stories. <a href="#">View full digest →</a></p>
-        </div>
-        """)
-    
+        
     # Combine all sections
     content = f"""
         {build_header()}
