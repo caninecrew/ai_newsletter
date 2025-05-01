@@ -1,6 +1,6 @@
 # AI Newsletter Project
 
-A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email, with web-hosted archives.
+A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email.
 
 ## Overview
 
@@ -10,52 +10,117 @@ This project automatically generates and sends a daily news digest by:
 3. Applying smart categorization and deduplication
 4. Delivering formatted newsletters via email
 5. Running automated daily delivery through GitHub Actions
-6. Archiving newsletters on samuelrumbley.com for web access
 
-## Project Structure
+## Detailed Project Structure
 
 ```
 ai_newsletter/
-├── config/               # Configuration and settings
-├── core/                # Core types and constants
-├── deploy/              # Deployment utilities
-├── email/              # Email formatting and sending
-├── feeds/              # News fetching and filtering
-├── formatting/         # Newsletter layout and styling
-├── llm/                # LLM integration (OpenAI)
-├── logging_cfg/        # Logging configuration
-└── utils/              # Utility functions
+├── config/                   # Configuration and settings
+│   ├── __init__.py
+│   └── settings.py          # Core configuration parameters
+│
+├── core/                    # Core type definitions and constants
+│   ├── __init__.py
+│   ├── constants.py         # Project-wide constants
+│   └── types.py            # TypeScript-like type definitions
+│
+├── deploy/                  # Deployment utilities
+│   ├── __init__.py
+│   └── url_builder.py      # URL generation for newsletters
+│
+├── email/                   # Email handling
+│   ├── __init__.py
+│   └── sender.py           # SMTP email sending functionality
+│
+├── feeds/                   # News source integration
+│   ├── __init__.py
+│   ├── fetcher.py          # Main article fetching logic
+│   ├── filters.py          # Article filtering and validation
+│   └── gnews_client.py     # GNews API integration
+│
+├── formatting/              # Content formatting
+│   ├── __init__.py
+│   ├── categorization.py   # Article category classification
+│   ├── components.py       # Reusable HTML components
+│   ├── date_utils.py       # Date handling and formatting
+│   ├── deduplication.py    # Article deduplication logic
+│   ├── formatter.py        # Main content formatting
+│   ├── layout.py          # Email layout templates
+│   ├── render.py          # HTML rendering
+│   ├── tags.py            # Content tagging system
+│   └── text_utils.py      # Text processing utilities
+│
+├── llm/                    # LLM integration
+│   ├── __init__.py
+│   ├── prompts.py         # OpenAI prompt templates
+│   ├── summarize.py       # Article summarization
+│   └── utils.py           # LLM utility functions
+│
+├── logging_cfg/            # Logging configuration
+│   ├── __init__.py
+│   └── logger.py          # Logging setup and utilities
+│
+├── utils/                  # General utilities
+│   └── __init__.py
+│
+└── web/                    # Web integration (Future)
+    ├── __init__.py
+    ├── archive.py         # Newsletter archiving
+    └── templates/         # Web templates
+        ├── archive_index.html
+        ├── robots.txt
+        └── sitemap.xml
+
+tests/                      # Test suite
+├── __init__.py
+├── test_email_send.py     # Email delivery tests
+├── test_fetch_news.py     # News fetching tests
+├── test_fetcher_validation.py  # Content validation tests
+├── test_smtp_direct.py    # SMTP connection tests
+└── test_web_archive.py    # Web archive tests (Future)
+
+Root files:
+├── cli.py                 # Command line interface
+├── email.html            # Email template
+├── main.py               # Application entry point
+├── project_requirements.md  # Project documentation
+├── pyproject.toml        # Python project metadata
+├── README.md             # Project documentation
+├── requirements.txt      # Package dependencies
+├── setup.cfg            # Project configuration
+└── todo.md              # Development tasks
 ```
 
-## Features
+## Current Features
 
 ### Content Management
-- Intelligent article fetching using GNews API
-- Smart deduplication to avoid redundant content
-- Article categorization (World News, Technology, Business, etc.)
-- Source balancing across political perspectives
-- Content filtering by date and relevance
+- ✅ Intelligent article fetching using GNews API
+- ✅ Smart deduplication to avoid redundant content
+- ✅ Article categorization (World News, Technology, Business, etc.)
+- ✅ Source balancing across political perspectives
+- ✅ Content filtering by date and relevance
 
 ### Enhanced Formatting
-- Key Takeaways sections for quick reading
-- "Why This Matters" contextual insights
-- Personalized content tags with emojis
-- Clean, responsive email layout
-- Clickable Table of Contents
-
-### Web Integration
-- Automatic archiving of newsletters to samuelrumbley.com
-- Responsive web design for newsletter archives
-- Historical newsletter browsing
-- Permanent link generation for each issue
-- Web-optimized newsletter formatting
+- ✅ Article summaries and key points
+- 🚧 Key Takeaways sections (In Progress)
+- 🚧 "Why This Matters" contextual insights (In Progress)
+- 🚧 Personalized content tags with emojis (In Progress)
+- ✅ Clean, responsive email layout
+- 🚧 Clickable Table of Contents (Planned)
 
 ### Technical Features
-- OpenAI API integration for summarization
-- Timezone-aware date handling
-- Error logging and monitoring
-- Retry mechanisms for API calls
-- Caching for improved performance
+- ✅ OpenAI API integration for summarization
+- ✅ Timezone-aware date handling (Central Time)
+- ✅ Error logging and monitoring
+- ✅ Retry mechanisms for API calls
+- 🚧 Caching for improved performance (Planned)
+
+### Web Integration (Future Implementation)
+- 🚧 Automatic archiving of newsletters (Planned)
+- 🚧 Responsive web design for archives (Planned)
+- 🚧 Historical newsletter browsing (Planned)
+- 🚧 Search and filtering capabilities (Planned)
+- 🚧 RSS feed generation (Planned)
 
 ## Requirements
 
@@ -66,11 +131,6 @@ ai_newsletter/
   - GNews API
   - OpenAI API
   - SMTP server for email delivery
-
-### Web Hosting Requirements
-- Access to samuelrumbley.com hosting
-- FTP or SSH access for deployment
-- SSL certificate for secure hosting
 
 ## Installation
 
@@ -91,10 +151,10 @@ GNEWS_API_KEY=your_gnews_api_key
 OPENAI_API_KEY=your_openai_api_key
 SMTP_SERVER=your_smtp_server
 SMTP_PORT=587
-SMTP_EMAIL=your_email
-SMTP_PASS=your_password
-RECIPIENT_EMAIL=recipient_email
-NEWSLETTER_DOMAIN=samuelrumbley.com
+SMTP_USERNAME=your_email
+SMTP_PASSWORD=your_password
+EMAIL_SENDER=sender_email
+EMAIL_RECIPIENTS=recipient1@email.com,recipient2@email.com
 ```
 
 ## Configuration
@@ -113,20 +173,6 @@ Customize email settings including:
 - Layout and formatting options
 - SMTP configuration
 
-### Web Hosting Settings
-Configure web hosting parameters in `config/settings.py`:
-- Archive retention period
-- URL structure
-- Web-specific styling
-- Hosting credentials
-
-### User Interests
-Define interests for personalized content filtering:
-- Technology areas (AI, Cloud, etc.)
-- Business sectors
-- Geographic regions
-- Custom topics
-
 ## Usage
 
 ### Manual Execution
@@ -135,32 +181,10 @@ Run the newsletter generator:
 python main.py
 ```
 
-### Command Line Options
-```bash
-python main.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD
-```
-
 ### Automated Execution
-The project includes GitHub Actions workflows for:
+The project includes GitHub Actions workflow for:
 - Daily newsletter generation (8:00 AM CT)
-- Email system testing
-- Web archive deployment
 - Error monitoring and logging
-
-## Web Access
-
-### Newsletter Archives
-- All newsletters are archived at `https://samuelrumbley.com/newsletters/`
-- Individual issues available at `https://samuelrumbley.com/newsletters/YYYY-MM-DD.html`
-- Mobile-responsive design
-- Search and filtering capabilities (planned)
-
-### Archive Features
-- Permanent links for sharing
-- Historical browsing
-- Categorized archives
-- Full-text search (planned)
-- Topic indexing (planned)
 
 ## Testing
 
@@ -169,77 +193,19 @@ Run the test suite:
 pytest tests/
 ```
 
-Key test areas:
-- Email delivery (`test_email_send.py`)
-- News fetching (`test_fetch_news.py`)
-- Content filtering (`test_fetcher_validation.py`)
-- Web archive deployment (planned)
+Current test coverage:
+- ✅ Email delivery (`test_email_send.py`)
+- ✅ News fetching (`test_fetch_news.py`)
+- ✅ Content filtering (`test_fetcher_validation.py`)
+- 🚧 Web archive deployment (Planned)
 
-## Architecture
+## Security
 
-### Core Components
-1. **Feed Management**
-   - GNews API integration
-   - Article filtering and validation
-   - Source categorization
-
-2. **Content Processing**
-   - OpenAI-powered summarization
-   - Deduplication logic
-   - Category classification
-
-3. **Email Generation**
-   - HTML template rendering
-   - Responsive styling
-   - Multi-part email creation
-
-4. **Web Integration**
-   - Newsletter archiving
-   - Static file generation
-   - Archive management
-   - URL routing
-
-5. **Deployment**
-   - GitHub Actions automation
-   - Error handling
-   - Logging and monitoring
-
-### Data Flow
-1. Article collection from GNews API
-2. Filtering and deduplication
-3. AI-powered summarization
-4. Newsletter formatting
-5. Email delivery
-6. Web archive deployment
-
-## Best Practices
-
-- Rate limiting for API calls
-- Error handling and retries
-- Secure credential management
-- Comprehensive logging
-- Test coverage
-- Code documentation
-- Web accessibility standards
-- SEO optimization
-
-## Security Considerations
-
-### API Security
-- Secure storage of API keys
-- Rate limiting implementation
-- Request validation
-
-### Email Security
-- TLS encryption
-- Authentication handling
-- Anti-spam compliance
-
-### Web Security
-- HTTPS enforcement
-- Content Security Policy
-- XSS prevention
-- CORS configuration
+- ✅ Secure storage of API keys using environment variables
+- ✅ Rate limiting for API calls
+- ✅ TLS encryption for email
+- ✅ Authentication handling
+- 🚧 Web security features (Planned with web implementation)
 
 ## Contributing
 
@@ -248,35 +214,6 @@ Key test areas:
 3. Make your changes
 4. Submit a pull request
 
-### Development Guidelines
-- Follow PEP 8 style guide
-- Write unit tests for new features
-- Update documentation
-- Test web compatibility
-
-## Roadmap
-
-### Planned Features
-- Full-text search for archives
-- Topic-based navigation
-- RSS feed integration
-- API access
-- Advanced analytics
-- User preferences portal
-
-### In Progress
-- Web archive deployment
-- Search functionality
-- Mobile optimization
-- Performance improvements
-
 ## License
 
 MIT License - See LICENSE file for details
-
-## Support
-
-For issues and feature requests:
-- Submit GitHub issues
-- Review documentation
-- Contact contributors
