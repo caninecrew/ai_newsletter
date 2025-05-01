@@ -1,11 +1,12 @@
 """Date handling utilities."""
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from datetime import datetime
 from dateutil import parser, tz as dateutil_tz
-import re
 from bs4 import BeautifulSoup
-import requests
+import re
+from urllib.parse import urlparse
 from ai_newsletter.logging_cfg.logger import setup_logger
+from ai_newsletter.core.types import Article, ArticleMetadata
 
 logger = setup_logger()
 
@@ -62,32 +63,66 @@ def extract_date_from_text(content: str) -> Tuple[Optional[str], float]:
             
     return None, 0.0
 
-def format_date(article: Dict) -> Tuple[str, bool, float]:
-    """Format a date string into a human-readable format with confidence score."""
+def format_date(article: Union[Dict, str]) -> Tuple[str, Dict]:
+    """Format article date with enhanced metadata tracking."""
+    metadata: Dict = {
+        'date_extracted': False,
+        'date_confidence': 0.0,
+        'original_date': None,
+        'source_confidence': 0.0,
+        'extracted_from_url': False
+    }
+    
+    # Handle string input
+    if isinstance(article, str):
+        metadata['original_date'] = article
+        if not article:
+            logger.warning("Empty date string provided")
+            return datetime.now(CENTRAL).strftime("%B %d, %Y"), metadata
+        
+        try:
+            parsed_date = parser.parse(article)
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=dateutil_tz.UTC)
+            central_date = parsed_date.astimezone(CENTRAL)
+            
+            metadata['date_extracted'] = True
+            metadata['date_confidence'] = 1.0
+            return central_date.strftime("%B %d, %Y"), metadata
+            
+        except Exception as e:
+            logger.warning(f"Date parsing error: {e}")
+            return "Date Not Available", metadata
+    
+    # Handle Dict input
     date_str = article.get('published_at')
-    original_date = date_str
+    metadata['original_date'] = date_str
     
     if not date_str:
-        # Try to extract date from article content
+        # Try to extract date from content
         if article.get('html_content'):
             date_str, confidence = extract_date_from_metadata(article['html_content'])
             if date_str:
+                metadata['date_extracted'] = True
+                metadata['date_confidence'] = confidence
                 logger.info(f"Extracted date from metadata: {date_str}")
-                return format_extracted_date(date_str), True, confidence
+                return format_extracted_date(date_str), metadata
         
         # Try text-based extraction
         content = article.get('description', '') or article.get('title', '')
         date_str, confidence = extract_date_from_text(content)
         if date_str:
+            metadata['date_extracted'] = True
+            metadata['date_confidence'] = confidence
             logger.info(f"Extracted date from text: {date_str}")
-            return format_extracted_date(date_str), True, confidence
+            return format_extracted_date(date_str), metadata
         
         # Use current date as fallback
         logger.warning("No date found, using current date")
-        return datetime.now(CENTRAL).strftime("%B %d, %Y"), False, 0.1
+        return datetime.now(CENTRAL).strftime("%B %d, %Y"), metadata
     
     try:
-        # Parse the original date string
+        # Parse the provided date
         if isinstance(date_str, datetime):
             parsed_date = date_str
         else:
@@ -96,14 +131,15 @@ def format_date(article: Dict) -> Tuple[str, bool, float]:
         # Ensure timezone awareness
         if parsed_date.tzinfo is None:
             parsed_date = parsed_date.replace(tzinfo=dateutil_tz.UTC)
-        
-        # Convert to Central time
         central_date = parsed_date.astimezone(CENTRAL)
-        return central_date.strftime("%B %d, %Y"), True, 1.0
+        
+        metadata['date_extracted'] = True
+        metadata['date_confidence'] = 1.0
+        return central_date.strftime("%B %d, %Y"), metadata
         
     except Exception as e:
         logger.warning(f"Date parsing error: {e}")
-        return "Date Not Available", False, 0.0
+        return "Date Not Available", metadata
 
 def format_extracted_date(date_str: str) -> str:
     """Format an extracted date string consistently."""
@@ -136,16 +172,16 @@ def filter_articles_by_date(articles: List[Dict],
     filtered_articles = []
     for article in articles:
         # Format and validate the date
-        formatted_date, extracted, confidence = format_date(article)
+        formatted_date, metadata = format_date(article)
         
         # Update article with date extraction metadata
-        article['date_extracted'] = extracted
-        article['date_confidence'] = confidence
-        article['original_date_string'] = article.get('published_at')
+        article['date_extracted'] = metadata['date_extracted']
+        article['date_confidence'] = metadata['date_confidence']
+        article['original_date_string'] = metadata['original_date']
         article['published_at'] = formatted_date
         
         # Skip articles without valid dates for filtering
-        if not extracted or confidence < 0.5:
+        if not metadata['date_extracted'] or metadata['date_confidence'] < 0.5:
             continue
 
         try:
