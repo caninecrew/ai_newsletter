@@ -1,14 +1,51 @@
-"""CLI interface for the AI Newsletter."""
+"""
+AI Newsletter Command Line Interface.
+
+This module provides the core CLI functionality for the AI Newsletter system.
+It handles the main workflow of:
+1. Article fetching and filtering
+2. AI-powered summarization
+3. Newsletter formatting
+4. Email delivery
+
+The system uses Central Time (America/Chicago) for all date operations.
+
+Example Usage:
+    # Generate newsletter for current day
+    python -m ai_newsletter
+
+    # Generate newsletter for specific date range
+    python -m ai_newsletter --start-date 2025-05-01 --end-date 2025-05-02
+
+Environment Variables:
+    GNEWS_API_KEY: API key for GNews
+    OPENAI_API_KEY: API key for OpenAI
+    SMTP_SERVER: SMTP server hostname
+    SMTP_PORT: SMTP server port
+    SMTP_USERNAME: SMTP authentication username
+    SMTP_PASSWORD: SMTP authentication password
+    EMAIL_SENDER: Sender email address
+    EMAIL_RECIPIENTS: Comma-separated list of recipient emails
+
+For detailed configuration options, see config/settings.py
+For complete documentation, see README.md
+
+MIT License - See LICENSE for details
+"""
+# Standard library imports
 import os
 import sys
 import argparse
 from datetime import datetime, timedelta
 import json
 import time
+
+# Third-party imports
 import click
 from dotenv import load_dotenv
 from dateutil import tz
 
+# Local imports
 from ai_newsletter.feeds import safe_fetch_news_articles
 from ai_newsletter.llm import summarize_article
 from ai_newsletter.feeds.filters import filter_articles_by_date
@@ -27,15 +64,71 @@ logger = setup_logger()
 # Define Central timezone
 CENTRAL = tz.gettz("America/Chicago")
 
-# Global variables for summary
-all_articles_global = []  # To store articles for summary
-failed_articles_global = []  # To store failed articles for summary
+# Global variables for summary statistics
+all_articles_global = []  # Tracks total articles processed
+failed_articles_global = []  # Tracks failed article processing
+
+def run_health_check():
+    """Run health check validation and return status.
+    
+    Checks:
+    1. API connectivity
+    2. Required directories
+    3. Environment variables
+    4. SMTP connection
+    """
+    try:
+        # Check required directories
+        for directory in ['logs', 'output']:
+            os.makedirs(directory, exist_ok=True)
+        
+        # Validate environment variables
+        required_vars = [
+            'GNEWS_API_KEY',
+            'OPENAI_API_KEY',
+            'SMTP_SERVER',
+            'SMTP_PORT',
+            'SMTP_USERNAME',
+            'SMTP_PASSWORD',
+            'EMAIL_SENDER',
+            'EMAIL_RECIPIENTS'
+        ]
+        
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+        if missing_vars:
+            logger.error(f"Missing environment variables: {', '.join(missing_vars)}")
+            sys.exit(1)
+            
+        # Test API connections
+        from ai_newsletter.feeds.gnews_client import test_gnews_connection
+        from ai_newsletter.llm.utils import test_openai_connection
+        
+        test_gnews_connection()
+        test_openai_connection()
+        
+        # Test SMTP connection
+        from ai_newsletter.email.sender import test_smtp_connection
+        test_smtp_connection()
+        
+        logger.info("Health check passed successfully")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        sys.exit(1)
 
 def parse_feed_args():
     """Parse command line arguments for feed configuration"""
     parser = argparse.ArgumentParser()
     parser.add_argument('--start-date', help='Start date for article filtering (YYYY-MM-DD)')
     parser.add_argument('--end-date', help='End date for article filtering (YYYY-MM-DD)')
+    parser.add_argument('--validate-config', action='store_true', help='Validate configuration')
+    parser.add_argument('--dry-run', action='store_true', help='Generate without sending')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    parser.add_argument('--test-email', action='store_true', help='Test email configuration')
+    parser.add_argument('--performance-log', action='store_true', help='Enable performance logging')
+    parser.add_argument('--check-storage', action='store_true', help='Check storage status')
+    parser.add_argument('--health-check', action='store_true', help='Run health check')
     return parser.parse_args()
 
 def ensure_output_dir():
@@ -145,7 +238,17 @@ def main():
     args = parse_feed_args()
     
     try:
+        if args.health_check:
+            run_health_check()
+            return
+            
+        if args.validate_config:
+            if run_health_check():
+                logger.info("Configuration is valid")
+            return
+            
         run_newsletter(args)
+        
     finally:
         # Add summary statistics
         end_time = time.time()
