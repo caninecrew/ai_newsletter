@@ -83,7 +83,7 @@ Root files:
 ├── cli.py                 # Command line interface
 ├── email.html            # Email template
 ├── main.py               # Application entry point
-├── project_requirements.md  # Project documentation
+├── project_requirements.md  # Class Project requirements
 ├── pyproject.toml        # Python project metadata
 ├── README.md             # Project documentation
 ├── requirements.txt      # Package dependencies
