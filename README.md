@@ -150,15 +150,15 @@ The project includes GitHub Actions workflows for:
 ## Web Access
 
 ### Newsletter Archives
-- All newsletters are archived at `https://samuelrumbley.com/newsletters/`
-- Individual issues available at `https://samuelrumbley.com/newsletters/YYYY-MM-DD.html`
-- Mobile-responsive design
+- All newsletters are archived at `https://samuelrumbley.com/newsletters/` (planned)
+- Individual issues available at `https://samuelrumbley.com/newsletters/YYYY-MM-DD.html` (planned)
+- Mobile-responsive design (planned)
 - Search and filtering capabilities (planned)
 
 ### Archive Features
-- Permanent links for sharing
-- Historical browsing
-- Categorized archives
+- Permanent links for sharing (planned)
+- Historical browsing (planned)
+- Categorized archives (planned)
 - Full-text search (planned)
 - Topic indexing (planned)
 
