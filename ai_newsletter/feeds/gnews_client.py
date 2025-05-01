@@ -115,3 +115,39 @@ class GNewsAPI:
         )
         
         return all_articles[:self.gnews.max_results]
+
+def test_gnews_connection() -> bool:
+    """Test GNews API connectivity.
+    
+    Returns:
+        bool: True if connection successful, False otherwise
+        
+    Raises:
+        Exception: If connection test fails
+    """
+    api_key = os.getenv('GNEWS_API_KEY')
+    if not api_key:
+        raise Exception("GNews API key not found")
+        
+    try:
+        # Test with minimal query to validate API key
+        response = requests.get(
+            'https://gnews.io/api/v4/search',
+            params={
+                'q': 'test',
+                'max': 1,
+                'apikey': api_key
+            },
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        # Verify response structure
+        data = response.json()
+        if 'articles' not in data:
+            raise Exception("Invalid API response structure")
+            
+        return True
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"GNews API connection failed: {str(e)}")
