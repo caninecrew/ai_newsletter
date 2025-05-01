@@ -1,6 +1,12 @@
 # AI Newsletter Project
 
-A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized news via email.
+A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email. Developed for Dr. Grant Clary's Spring 2025 DS-3850-001 Business Applications course at Tennessee Tech University - Quarterly Assessment 4.
+
+## Course Information
+- **Course**: DS-3850-001 Business Applications
+- **Term**: Spring 2025
+- **Instructor**: Dr. Grant Clary
+- **Project**: Quarterly Assessment 4 - AI-Powered News Newsletter
 
 ## Overview
 
