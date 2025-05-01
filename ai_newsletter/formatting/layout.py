@@ -225,8 +225,7 @@ def build_footer() -> str:
     <div class="footer">
         <p>This digest was automatically curated for you</p>
         <p>
-            <a href="#customize">Customize Topics</a> • 
-            <a href="#unsubscribe">Unsubscribe</a>
+            Unsubscribe from this newsletter by replying with "unsubscribe"
         </p>
     </div>
     """
