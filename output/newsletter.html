@@ -1,0 +1,621 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+  <meta content="text/html; charset=utf-8" http-equiv="Content-Type"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>
+   Your Daily News Summary
+  </title>
+  <style type="text/css">
+   /* Base styles */
+            body {
+                margin: 0;
+                padding: 0;
+                min-width: 100%;
+                font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+                line-height: 1.5;
+                color: #1a202c;
+                background-color: #f8fafc;
+                -webkit-font-smoothing: antialiased;
+            }
+
+            /* Email container */
+            .email-wrapper {
+                width: 100%;
+                margin: 0;
+                padding: 20px;
+                background-color: #f8fafc;
+            }
+            
+            .email-content {
+                max-width: 600px;
+                margin: 0 auto;
+            }
+
+            /* Header styles */
+            .header {
+                text-align: center;
+                padding: 24px;
+                background-color: #ffffff;
+                border-radius: 8px;
+                margin-bottom: 24px;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
+
+            .header h1 {
+                margin: 0;
+                font-size: 24px;
+                font-weight: 600;
+                color: #1a202c;
+            }
+
+            .date {
+                margin-top: 8px;
+                color: #64748b;
+                font-size: 14px;
+            }
+
+            /* Digest content */
+            .digest {
+                background-color: #ffffff;
+                border-radius: 8px;
+                padding: 24px;
+                margin-bottom: 24px;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
+
+            .digest h2 {
+                margin: 0 0 24px 0;
+                font-size: 20px;
+                font-weight: 600;
+                color: #1a202c;
+                padding-bottom: 16px;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            /* Article styling */
+            .article {
+                padding: 20px 0;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .article:last-child {
+                border-bottom: none;
+                padding-bottom: 0;
+            }
+
+            .article-title {
+                margin: 0 0 8px 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: #1a202c;
+                line-height: 1.4;
+            }
+
+            .article-meta {
+                font-size: 14px;
+                color: #64748b;
+                margin-bottom: 12px;
+            }
+
+            .read-more {
+                color: #3b82f6;
+                text-decoration: none;
+                font-weight: 500;
+            }
+
+            /* Tags styling */
+            .tag {
+                display: inline-block;
+                padding: 2px 8px;
+                margin: 0 4px 4px 0;
+                border-radius: 12px;
+                background-color: #f1f5f9;
+                color: #475569;
+                font-size: 12px;
+            }
+
+            /* Bullet points */
+            .takeaway-bullets {
+                margin: 12px 0 0 0;
+                padding-left: 20px;
+                list-style-type: disc;
+                color: #475569;
+            }
+
+            .takeaway-bullets li {
+                margin-bottom: 8px;
+                font-size: 14px;
+                line-height: 1.5;
+            }
+
+            .takeaway-bullets li:last-child {
+                margin-bottom: 0;
+            }
+
+            /* More stories section */
+            .more-stories {
+                text-align: center;
+                padding: 16px;
+                margin-top: 24px;
+                border-top: 1px solid #e2e8f0;
+                color: #64748b;
+                font-size: 14px;
+            }
+
+            .more-stories a {
+                color: #3b82f6;
+                text-decoration: none;
+                font-weight: 500;
+            }
+
+            /* Footer */
+            .footer {
+                text-align: center;
+                padding: 24px;
+                color: #64748b;
+                font-size: 14px;
+                background-color: #ffffff;
+                border-radius: 8px;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
+
+            .footer a {
+                color: #3b82f6;
+                text-decoration: none;
+            }
+
+            /* Mobile optimizations */
+            @media screen and (max-width: 600px) {
+                .email-wrapper {
+                    padding: 12px;
+                }
+
+                .header, .digest, .footer {
+                    padding: 16px;
+                    margin-bottom: 16px;
+                }
+
+                .article {
+                    padding: 16px 0;
+                }
+
+                .article-title {
+                    font-size: 15px;
+                }
+
+                .article-meta, .takeaway-bullets li {
+                    font-size: 13px;
+                }
+            }
+  </style>
+ </head>
+ <body>
+  <div class="email-wrapper">
+   <div class="email-content">
+    <div class="header">
+     <h1>
+      🗞️ Daily News Digest
+     </h1>
+     <div class="date">
+      April 30 - May 01, 2025
+     </div>
+    </div>
+    <div class="digest" style="background-color: #ffffff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+     <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 600; color: #1a202c; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0;">
+      Today's Key Stories
+     </h2>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Trump ousts Mike Waltz as national security adviser - Politico
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMiqgFBVV95cUxNRE82ZGt2dHFGTzNrSjhiWTNMcVEwYVNObXJ0c0dKZy1iYzNEa1g3RU8yMlhzOHdSSVc3dnJOODFKZmhpbXNyc2d1Q2xOVktyUjNoLVU3UFR6eFptdFlZUklxa1RfX2RHbTNlcDN5b2xhRFJRYXk2SVNVYjlNN2FXQlpRS0FCem4waXpBZDFfb1hyYXhjcnZYSHJhSkk1X01xbEVtbElnUWdSdw?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🗽 Us News
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         President Trump has removed Mike Waltz from his position as national security adviser and reassigned him to the U.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Judge bars deportations of Venezuelans from South Texas under the Alien Enemies Act - AP News
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMitAFBVV95cUxNUnFYMDNZa0w3d0hjbmx4cC05cTQwNVlka0k1WV95aHRPMDhMSDJJbUt2RmU3TDFMd005OFFlZDJ4NzlkSUhZTWZfaVYwRktxOHZ5NnhVYnhpYTFESTlzSEUxOENUYzdSMUNVTmh2dzVhRVpPanNqUk1PTDV3SnNrbjZvay1LSzZ0Y2Y4VktCWWpqVm1WS2lJaEtNemFBYzZRTWIzWE8tcGwzUlUxdFF0YzItMFU?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🔒 Legal
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         A judge in South Texas has barred the deportation of Venezuelans under the Alien Enemies Act, ruling that the Trump administration's use of the law exceeds its scope.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       May Day protesters will rally nationwide against the 'war on working people' - NPR
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMigAFBVV95cUxPUF9zWVZMb1NvVkp5MHVsQVNQZ2VfZEoxTGU5azAwQUZFZG1RdHNPeGtVd3NCSmR6M19LQVhBQjlBZ25DX0plbmtvX2hLNU9MajFWOTlnN2dTNnNXU1pHS25iLUhGdVNuTHRQUW5VNHNWSVpfM3RNVFRaWTB3Sk83aA?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        ⚡️ Technology
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         May Day protesters across the nation are rallying against the perceived 'war on working people,' with demonstrations planned in various cities.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       6-Day ICE Operation in Florida Resulted in More Than 1,000 Arrests - The New York Times
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMiigFBVV95cUxQMkR2UmFocTJBUV9La0h0UWdpNk5oVDk3UEwzN3EzSk9SZm9CaTJGMnlZRFNtQmFSMXNuWVAyaWFxbXpPcFp0VEFUdzNfeTliZG13TDY2NXlEcWI0NlExY0JkN2l0RmxaNUtWeDVHNEFzMUQ2SzNmRzltZFZUN21ENFhoUl9rdXc5YXc?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🔒 Legal
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         A recent 6-day ICE operation in Florida led to over 1,000 arrests of individuals in the US illegally.
+        </li>
+        <li>
+         The crackdown, named Operation Tidal Wave, resulted in a record-breaking number of arrests, with more than 1,100 individuals taken into custody by ICE and Florida law enforcement.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       AJC poll: Democratic support plummets in Georgia as base demands more fight - AJC.com
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMiywFBVV95cUxNcXUxYnpBUW0ydWdOQkVlOHBFY2g3SkljQVp6b0hDSW5TRDBaYks4V1FCV05PenIzMzlfdTctWG50ODczWGNaUThGSnZIVnFfc2cwOUtsUTBkQkdabFJkNUxTaExWZjByMlhZMlFmbXJvNkhwVWliQkVNUDZPcjFra3RkZk93TE5SZTJwVUIyT2IzeWstdV9mT1NGSWR3UHB2eWE1YUQ3S3AzdzNHNXppUEI4NXBxTFNyUjRaTWM3S3FfZW55bmE1R1UwSQ?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        ⚡ Technology
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         A recent AJC poll reveals a significant drop in Democratic support in Georgia, prompting calls from the party's base for a more aggressive approach.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Trump Administration Cancels $1 Billion in Grants for Student Mental Health - The New York Times
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMihAFBVV95cUxQRlA4ZmVsemJwZ0taMDJ4U015QkRESmxNWC1KeUJ0dl9oal9TV1F1OEQ1WlM2VzR0V3Z4UjQ5QXVzeWlnMDdFRkVyckQ1MGgzZlpjS3ctV1NuY01ITmRLSTFSam1Kbjl4azlwTXNJUWdsTV9QWE9XYnJ0U0V3bGpVUC1nRXg?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🏫 Education
+       </span>
+       <span class="tag">
+        🏥 Healthcare
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         The Trump Administration has decided to cancel $1 billion in grants intended for student mental health.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Ex-teammate speaks on Syracuse high school students charged in hazing incident - ABC News
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMiqAFBVV95cUxQMWpKazU5MTNNaGc5THI5RkFHQnVNRGNBclpuS3pPajJOZFMycGNyRWxUc2NTOW8yTEtBcjRmVEl2ZWFMdl90ajZHZ0ZRTUNnM2J4czV3YjlUX3lOdUprM0xYenBBZG10SWxFczVyTmdnRjBSNjJaZjNHbloxZkgxZ3Q3R19nNHl2OVZuUnBXQk1XQWN6MnpiUEtaZ2VWYkh2Y01PRUdTbmnSAa4BQVVfeXFMTUxCRllSUmFOSGNCUFR2d2VJcGhyWHZaMUplT2ctN3U1T0hPVnA0S0ltR0RQT3B5bWVPWlYyUVBmR082cmEtekJmenAxaHpYcE5PUk9CR1N0UDZmMlBaS1c1UmFMaEZZMi02bTBYeGxOakE4dWZTaGFzUC1LTTVkejFKZk5kWFkxZlhGS1QzMDI1cW5YS0xMMGp4aENjZVpmR1hVbjdwRXY4WWlkUFBB?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🏫 Education
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Eleven Syracuse high school athletes are facing charges over an alleged hazing incident, with potential punishments being discussed.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Kamala Harris Slams Trump’s ‘Narrow, Self-Serving Vision of America’ in Gala Speech - Rolling Stone
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMiqwFBVV95cUxQWW5VclJSSzE5OTRaZnl2a201eEJNbjk2blBQVDVRNWZkLWl4MGprai1DTUM1QVFheUYtYXJwNy0yc19BTGhIb0pETWxkY2ZkeTJYQWNOZjRqYzdjMWxJSlJEenVZVlpVa2VvYmlpZHNqWm4wb25QMEN5c1l0aUtjWVpwNTBtWnNXMDQ5YVc4N2FDcTZBMDJNNUxXODhPMjFoRkpTNkxjM0x5WGM?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🏛️ Politics
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Kamala Harris criticized former President Trump's vision for America as narrow and self-serving in a recent gala speech.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Trump will address graduating students at the University of Alabama - AP News
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMipgFBVV95cUxQcExYVUxXSTZHNGQ4RkNhUUF1RHJId05fX1pXdnBpYVJKQkZPai1KcHVhc0hxcUxaZU1BSUcybC0wSWhOQ25PX3RyTkNiTjhURG12UnN5c2VsM3lFS2xpZnZLYzI1QWZmWGhiTXFSRUNhOXpVTGRHNlBPXzFXeks5ODh2eTBDcklUQmgtLWJOeG5Rc2p1YVl6RmlGTktucmwybk40VEpB?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🏫 Education
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Former President Donald Trump is scheduled to address graduating students at the University of Alabama.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Republicans hit early snags as they start crafting a massive bill for Trump's agenda - NBC News
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMivwFBVV95cUxPckp1aXBRZnVJeFpfMXU3MnNKU0hOdl9Td2dEYVZLMjJWT3FaT3RlZGlMUnk1VDBvRWxfa3prN25LQ0MtUENmaDNoUWVZRk1IZlRnWjA1X2NVbWJqYVNUeS1Xc3VyRENydmtET1pVWUdsVW5uVldVbC1hN19mWldxdGRIVWc0N0d3RGJDRGlRS0RmU01iMHNQUnpXZVBnUXR3TlRlNV9uc1BhUTJMa3JHby1UMUZ1QS1hbEtNbkZGa9IBVkFVX3lxTE9RQUZIWGhKNUR2RkpySWRkcUR2TGRFQlM0S1FSWDVhS2k5SlFCdVR3cml1ZG9hZVlfWW5JVGxURV9lUE1IN0lhM0hUSFdQMHc4LUlNS193?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🏛️ Politics
+       </span>
+       <span class="tag">
+        ⚡️ Technology
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Republicans are facing challenges as they work on a large bill for Trump's agenda, with issues arising around tax cuts, spending cuts, and disagreements within the House.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Faith-based organizations challenge "Wall Street climate consensus" at UN forum - World Council of Churches
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMirAFBVV95cUxQOHRuS0k2ekxJMFgzYkIxa2FPVGJJcHc0anFRcmlzc29pNE1WSE51cEZIbFF5cmhHTGdWWHlmcEhXMkt0czl4eEhaNUJremF4ZkhsaW1QaTBBVjBtQU01bG54TGxSR2thSDduMnV2YW5pMXlNTDJjZ3FMUmNkLS0xRlNOZ3JuTUEtU0ZfaDVVcnlpX2RKRVhTVGcwQ2FySHVUUDlFczNqcGZjTkly?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🌱 Environment
+       </span>
+       <span class="tag">
+        📌 Global
+       </span>
+       <span class="tag">
+        ⚡️ Technology
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Faith-based organizations, represented by the World Council of Churches, are challenging the "Wall Street climate consensus" at a UN forum.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Frank M. Fanella’s “If Only I Were God” Audiobook Breaks Barriers — Now Accessible to the Blind Community Worldwide - WebWire
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMib0FVX3lxTE13OVpnQlpsQW1ienZGUUxtOU5fVEpnRzcxWjI3ZFhERUEzdHlhRmV5cGRoX1lEeHNTUUl4N01NRWdWSEw3NjV5MGdJSWg5N2tUbzMyVlVWUjE3UWhMWkk5QWFTTGY2cVV6NFRkOVVZcw?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        📌 Global
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Frank M.
+        </li>
+        <li>
+         Fanella's audiobook "If Only I Were God" is now accessible to the blind community worldwide, breaking barriers for visually impaired individuals.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Supreme Court appears inclined to establish Free Exercise Clause - Baptist News Global
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMingFBVV95cUxPa08xOHE2WHBLNmNYSFA3a2duYUVISXBpUjNwMGRoSkdYVDF2RF9iSWNOOUhxRmVXV1NDNmdPa3R1M3lmYkdUX3R1QUo1SllGZEtxR1BCU1h5QmhfeHhyT2lvV1JaZW5YcGFUdzRCSG1wejFUUEVHTjlBRTF4aXRsVzVHbkwzX1NlNlV4MVJCdUw1V3pIbGxYODgwZmszdw?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        📌 Global
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         The Supreme Court is showing a tendency towards establishing the Free Exercise Clause, as reported by Baptist News Global.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Local, Regional, International: A Varied May at Rozz-Tox - River Cities' Reader
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMigwFBVV95cUxOYjI1Sm4wNGo2MG40UXhIeVNIamRJS0NtdzJMUkJRdW9TNHFhQVcwMEs4Y2hMT0xjVnlNbFotNEtMWWZaYXNLTEhvWHdlZW9WTmdhcjJlNW1Qbjh4OXRGZV9ZeVdsR1J6aF9QUFN2LXFNMHB5QTY0MVpETHRoOUdEdG5pNA?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        📌 Global
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         The article discusses the diverse lineup of events scheduled for May at Rozz-Tox, featuring local, regional, and international acts.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
+      <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">
+       Minister inaugurates Qatar CSR Summit 2025 - MSN
+      </h3>
+      <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
+       <a class="read-more" href="https://news.google.com/rss/articles/CBMilgFBVV95cUxQS2tnVHZ1cl9ucE44dzhyQjVjX1F1VVdBNFJ5bnBodUUyRU9WMkN0akxfcXJqbjI0UkRick5EbHRLdzV3RGplR1FTYm9RYzdDZTJIV3RNRTVMRk9uaTVKS1VSckJPWnBGdW85WUtZYWZPUklCM3FPT29lcEc4VkNZa01QVVVVSFB6Q3ZnYmRuNGdkOTJNWkE?oc=5&amp;hl=en-US&amp;gl=US&amp;ceid=US:en" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        🔗 Read Full Article
+       </a>
+      </div>
+      <div class="tags" style="margin: 10px 0;">
+       <span class="tag">
+        🗽 Us News
+       </span>
+      </div>
+      <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
+       <h4 style="margin: 0 0 10px 0; color: #2c3e50;">
+        Key Takeaways
+       </h4>
+       <ul class="takeaway-bullets">
+        <li>
+         Minister inaugurates the Qatar CSR Summit 2025, signaling a focus on corporate social responsibility initiatives in the region.
+        </li>
+       </ul>
+      </div>
+     </div>
+     <div class="more-stories" style="text-align: center; padding: 16px; margin-top: 24px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px;">
+      <p>
+       ...and 1 more stories.
+       <a href="#" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        View full digest →
+       </a>
+      </p>
+     </div>
+    </div>
+    <div class="footer">
+     <p>
+      This digest was automatically curated for you
+     </p>
+     <p>
+      Unsubscribe from this newsletter by replying with "unsubscribe"
+     </p>
+    </div>
+   </div>
+  </div>
+ </body>
+</html>
