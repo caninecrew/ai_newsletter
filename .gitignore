@@ -1,16 +1,44 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.db
-*.sqlite3
-*.log
-*.csv
-*.json
-*.xlsx
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
 .env
-*.env
-logs.txt
-*.txt
-.lock
-PKG-INFO
+logs/
+output/
+.coverage
+htmlcov/
+coverage.xml
+
+# Operating System
+.DS_Store
+Thumbs.db
