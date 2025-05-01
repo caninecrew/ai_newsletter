@@ -186,6 +186,21 @@ The project includes GitHub Actions workflow for:
 - Daily newsletter generation (8:00 AM CT)
 - Error monitoring and logging
 
+## Web Access
+
+### Newsletter Archives
+- All newsletters are archived at `https://samuelrumbley.com/newsletters/` (planned)
+- Individual issues available at `https://samuelrumbley.com/newsletters/YYYY-MM-DD.html` (planned)
+- Mobile-responsive design (planned)
+- Search and filtering capabilities (planned)
+
+### Archive Features
+- Permanent links for sharing (planned)
+- Historical browsing (planned)
+- Categorized archives (planned)
+- Full-text search (planned)
+- Topic indexing (planned)
+
 ## Testing
 
 Run the test suite:
@@ -217,3 +232,10 @@ Current test coverage:
 ## License
 
 MIT License - See LICENSE file for details
+
+## Support
+
+For issues and feature requests:
+- Submit GitHub issues
+- Review documentation
+- Contact contributors
