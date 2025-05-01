@@ -205,11 +205,39 @@ def test_send_email():
         logger.error(f"Test email failed: {str(e)}")
         return False
 
+def test_smtp_connection() -> bool:
+    """Test SMTP server connectivity.
+    
+    Returns:
+        bool: True if connection successful
+        
+    Raises:
+        Exception: If connection test fails
+    """
+    # Get SMTP settings from environment
+    smtp_server = os.getenv('SMTP_SERVER')
+    smtp_port = os.getenv('SMTP_PORT')
+    smtp_username = os.getenv('SMTP_USERNAME')
+    smtp_password = os.getenv('SMTP_PASSWORD')
+    
+    if not all([smtp_server, smtp_port, smtp_username, smtp_password]):
+        raise Exception("Missing SMTP configuration")
+        
+    try:
+        # Create SMTP connection
+        with smtplib.SMTP(smtp_server, int(smtp_port)) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+        return True
+        
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP connection failed: {str(e)}")
+
 # Initialize email settings when module is imported
 setup_email_settings()
 
 # Expose these functions as the public API
-__all__ = ['send_email', 'test_send_email', 'setup_email_settings']
+__all__ = ['send_email', 'test_send_email', 'setup_email_settings', 'test_smtp_connection']
 
 if __name__ == "__main__":
     test_send_email()
