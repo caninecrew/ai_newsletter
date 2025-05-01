@@ -22,12 +22,26 @@ from ai_newsletter.logging_cfg.logger import setup_logger
 logger = setup_logger()
 
 def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) -> str:
-    """Format a single article with a clean, minimal layout."""
+    """Format a single article with enhanced metadata display."""
     title = article.get('title', 'No Title')
-    source = article.get('source', {}).get('name', 'Unknown Source')
-    date = format_date(article.get('published_at', ''))
     url = article.get('url', '#')
     summary = article.get('summary', '')
+    
+    # Format date and get metadata
+    date, metadata = format_date(article)
+    
+    # Get source information
+    source_data = article.get('source', {})
+    source_name = source_data.get('name', 'Unknown Source')
+    source_category = source_data.get('category', '')
+    source_reliability = source_data.get('reliability_score', None)
+    
+    # Date confidence indicator
+    date_indicator = ""
+    if not metadata['date_extracted']:
+        date_indicator = ' <span class="date-status low">(Estimated)</span>'
+    elif metadata['date_confidence'] < 0.7:
+        date_indicator = f' <span class="date-status medium">(~{metadata["date_confidence"]:.0%} confident)</span>'
     
     # Extract bullet points from summary
     bullet_points = []
@@ -65,7 +79,7 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
     text_bullets = "\n".join([f"* {point.strip()}." for point in bullet_points])
     return f"""
 {title}
-Source: {source} | {date}
+Source: {source_name} | {date}
 Link: {url}
 
 Key Takeaways:
