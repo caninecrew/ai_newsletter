@@ -76,13 +76,13 @@ def create_smtp_connection(smtp_settings):
             logger.warning(f"SMTP connection attempt {retry_count} failed: {str(e)}")
             time.sleep(RETRY_DELAY * retry_count)
 
-def add_hosted_link(html_content: str, hosted_url: str) -> str:
+def add_hosted_link(html_content: str, hosted_url: str) -> str: # future implementation
     """Add a link to the hosted version at the top of the newsletter."""
     hosted_link = f"""
     <div style="text-align: center; padding: 10px; margin: 10px 0; background-color: #f8fafc; border-radius: 8px;">
         <p style="margin: 0; color: #64748b;">
-            Having trouble viewing this email? 
-            <a href="{hosted_url}" style="color: #3b82f6; text-decoration: none;">View it in your browser →</a>
+            
+            <a href="{hosted_url}" style="color: #3b82f6; text-decoration: none;"></a>
         </p>
     </div>
     """
