@@ -51,7 +51,7 @@ def format_article(article: Dict, html: bool = False, max_takeaways: int = 2) ->
         <div class="article" style="padding: 20px 0; border-bottom: 1px solid #e2e8f0;">
             <h3 class="article-title" style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1a202c; line-height: 1.4;">{title}</h3>
             <div class="article-meta" style="font-size: 14px; color: #64748b; margin-bottom: 12px;">
-                {source} • {date} • <a href="{url}" class="read-more" style="color: #3b82f6; text-decoration: none; font-weight: 500;">🔗 Read Full Article</a>
+                <a href="{url}" class="read-more" style="color: #3b82f6; text-decoration: none; font-weight: 500;">🔗 Read Full Article</a>
             </div>
             <div class="tags" style="margin: 10px 0;">{tags}</div>
             <div class="key-takeaways" style="background-color: #f8f9fa; border-left: 3px solid #3498db; padding: 10px 15px; margin: 15px 0;">
