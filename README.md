@@ -1,6 +1,6 @@
 # AI Newsletter Project
 
-A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized AI and technology news via email.
+A Python-based automated newsletter system that aggregates, summarizes, and delivers personalized news via email.
 
 ## Overview
 
